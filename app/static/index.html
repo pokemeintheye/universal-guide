@@ -35,12 +35,21 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .dialog-card .meta{color:#b5c8e1;font-size:13px}
 .dialog-card p{line-height:1.6}
 .dialog-card .close{float:right}
+
+.player-backdrop[hidden]{display:none!important}
+.player-backdrop{position:fixed;inset:0;z-index:50;background:#05080f;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px}
+.player-backdrop video{width:min(100%,1300px);max-height:82vh;background:#000;border-radius:8px}
+.player-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;width:min(100%,1300px);margin-bottom:12px;flex-wrap:wrap}
+.player-tools strong{font-size:17px}
+#playerstatus{color:#bfd2ee;padding:10px;max-width:1000px;text-align:center}
+.player-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.player-actions button:disabled{opacity:.5;cursor:wait}
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
-<section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads only Plex metadata via its API. Does not mount or stream media files. Restrict access to your trusted LAN; this prototype does not include authentication.</p></section>
+<section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads Plex metadata and now relays requested Plex playback streams. No media folders are mounted. Keep this experimental server on your trusted LAN; it does not include authentication.</p></section>
 <section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Playback remains in the original apps.</p><div class="guide-controls" id="guidecontrols">
+<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback is being tested; Tablo and Philo playback integrations remain pending.</p><div class="guide-controls" id="guidecontrols">
 <button id="earlier" type="button">← Earlier</button>
 <button id="now" type="button">Now</button>
 <button id="later" type="button">Later →</button>
@@ -60,10 +69,14 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
 <div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="plexhandoff" hidden style="margin-top:14px">
-<p class="note">Playback integration test: this link opens the exact Plex library item in Plex Web. You must still press Play there; direct play and join-in-progress are the next milestone.</p>
+<div class="player-actions" id="playbackchoices" hidden>
+<button id="playbegin" type="button">▶ Start from Beginning</button>
+<button id="playjoin" type="button" hidden>◷ Join in Progress</button>
+</div>
+<p class="note">Plex browser playback is experimental. The Plex Web button remains available as a fallback.</p>
 <a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
 <p class="note" id="plexlinkerror"></p></div>
-<p class="note">Program information only. Playback remains in Plex, Tablo or Philo.</p></div></div><script>
+<p class="note">For programs available in Plex, choose a playback mode. Direct playback for Tablo and Philo is not yet implemented.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function req(url,opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
@@ -85,6 +98,7 @@ function setGuideAnchor(t){
  guide(view.plex);
 }
 function openDetails(program){
+ selectedProgram=program;
  const {channel:p,entry:e}=program;
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
@@ -98,6 +112,8 @@ function openDetails(program){
  $("detailplex").className=e.plex?"chip green":"";
  const panel=$("plexhandoff");
  panel.hidden=true;
+ $("playbackchoices").hidden=!e.plex;
+ $("playjoin").hidden=!(e.plex && Date.now()>=Date.parse(e.start) && Date.now()<Date.parse(e.stop));
  $("plexlinkerror").textContent="";
  if(e.plex?.rating_key){
    const key=String(e.plex.rating_key);
@@ -236,4 +252,81 @@ async function manageChannels(){
  }catch(e){$("guide").textContent=e.message}
 }
 status();guide(false);
+</script>
+<div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
+<div class="player-tools"><strong id="playertitle"></strong><button id="closeplayer" type="button">✕ Close player</button></div>
+<video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
+<div id="playerstatus" role="status"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
+<script>
+let playerHls=null;
+let playerSession=null;
+let selectedProgram=null;
+function playerMessage(msg){document.getElementById("playerstatus").textContent=msg}
+async function closePlexPlayer(){
+ const video=document.getElementById("plexvideo");
+ video.pause();
+ if(playerHls){playerHls.destroy();playerHls=null}
+ video.removeAttribute("src");video.load();
+ document.getElementById("playerbackdrop").hidden=true;
+ if(playerSession){
+  const sid=playerSession;playerSession=null;
+  try{await fetch("/api/player/"+encodeURIComponent(sid),{method:"DELETE"})}catch(_){}
+ }
+}
+document.getElementById("closeplayer").onclick=closePlexPlayer;
+document.addEventListener("keydown",e=>{
+ if(e.key==="Escape"&&!document.getElementById("playerbackdrop").hidden)closePlexPlayer();
+});
+async function launchPlex(mode){
+ if(!selectedProgram?.entry?.plex?.rating_key)return;
+ const program=selectedProgram.entry;
+ const beginning=document.getElementById("playbegin"),join=document.getElementById("playjoin");
+ beginning.disabled=true;join.disabled=true;
+ try{
+  const payload={rating_key:Number(program.plex.rating_key),mode,
+    airing_start:program.start,airing_end:program.stop};
+  const info=await req("/api/player/start",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
+  });
+  await closePlexPlayer();
+  document.getElementById("detailsmodal").hidden=true;
+  const sid=info.playlist_url.split("/")[3];
+  playerSession=sid;
+  document.getElementById("playertitle").textContent=info.title+
+    (info.offset_seconds>0?" · Join at ~"+Math.floor(info.offset_seconds/60)+"m":"");
+  document.getElementById("playerbackdrop").hidden=false;
+  playerMessage("Preparing Plex video stream…");
+  const video=document.getElementById("plexvideo");
+  if(video.canPlayType("application/vnd.apple.mpegurl")){
+    video.src=info.playlist_url;
+    video.addEventListener("loadedmetadata",()=>{
+      playerMessage("");
+      video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
+    },{once:true});
+  }else if(window.Hls&&Hls.isSupported()){
+    playerHls=new Hls({enableWorker:true});
+    playerHls.on(Hls.Events.ERROR,(_,data)=>{
+      if(data.fatal)playerMessage("Playback error: "+data.details+
+        ". You can close this player and use the Plex Web link instead.");
+    });
+    playerHls.on(Hls.Events.MANIFEST_PARSED,()=>{
+      playerMessage("");
+      video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
+    });
+    playerHls.loadSource(info.playlist_url);
+    playerHls.attachMedia(video);
+  }else{
+    playerMessage("HLS playback isn't available in this browser. Check the browser's internet connection for hls.js, or open the title in Plex Web.");
+  }
+ }catch(e){
+  playerMessage("Could not start Plex playback: "+e.message);
+  alert("Could not start Plex playback: "+e.message);
+ }finally{
+  beginning.disabled=false;join.disabled=false;
+ }
+}
+document.getElementById("playbegin").onclick=()=>launchPlex("beginning");
+document.getElementById("playjoin").onclick=()=>launchPlex("join");
 </script></body></html>
