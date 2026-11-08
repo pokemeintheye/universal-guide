@@ -22,7 +22,7 @@ PHILO_EPG_URL="https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_gui
 PHILO_REFRESH=max(6,int(os.getenv("PHILO_REFRESH_HOURS","24")))*3600
 app=FastAPI(title="Universal TV Guide",version="0.1.0")
 from app.philo_links import links_for as philo_handoff_links, channel_catalog as known_philo_channels
-from app.hgtv_fallback import fetch_hgtv
+from app.epgshare_supplement import fetch_missing as fetch_supplemental_epg
 from app.playback import router as playback_router
 app.include_router(playback_router)
 from app.tablo_live import router as tablo_live_router
@@ -262,14 +262,17 @@ def sync_philo():
                 winners[label]=(score,feed_id,entries)
         if not winners:
             raise RuntimeError("No matching Philo lineup schedules found in EPG; preserving existing guide")
-        # EPGTalk currently publishes no HGTV. Supplement only that channel,
-        # never override working channels, and don't fail normal sync when the
-        # optional source is unavailable or stale.
-        hgtv_status={"source":"EPGShare US2","programs":0,"error":"Primary feed already has HGTV"}
-        if "HGTV" not in winners:
-            hgtv_rows,hgtv_status=fetch_hgtv(xml_date,xmltv_kind,xmltv_episode)
-            if hgtv_rows:
-                winners["HGTV"]=((0,len(hgtv_rows)),"hgtv-supplement",hgtv_rows)
+        # Fill gaps for all published Philo station names with an explicit
+        # US/Eastern US2 ID. The primary EPG remains authoritative. This
+        # supplemental EPG does not discover authenticated Philo player IDs.
+        extra,supplement_status=fetch_supplemental_epg(
+            set(winners),set(PHILO_NAMES),xml_date,xmltv_kind,xmltv_episode)
+        for name,entries in extra.items():
+            winners[name]=((0,len(entries)),"us2-supplement",entries)
+        hgtv_status={"source":"EPGShare US2","programs":len(extra.get("HGTV",[])),
+                     "error":supplement_status.get("error",""),
+                     "selected_channel_id":"Home.and.Garden.Television.HD.us2" if "HGTV" in extra else None,
+                     "matched_channels":1 if "HGTV" in extra else 0}
         rows=[]
         for label,(_,feed_id,entries) in winners.items():
             key="philo:"+norm(label)
@@ -292,6 +295,9 @@ def sync_philo():
             putmeta(c,"philo_channel_count",len(winners))
             putmeta(c,"hgtv_epg_candidates",json.dumps(list(hgtv_candidates.values())))
             putmeta(c,"hgtv_fallback_status",json.dumps(hgtv_status))
+            putmeta(c,"supplemental_epg_status",json.dumps(supplement_status))
+            putmeta(c,"primary_epg_channels",json.dumps(sorted(set(winners)-set(extra))))
+            putmeta(c,"supplemental_epg_channels",json.dumps(sorted(extra)))
         errors["philo"]=""
         return {"programs":len(rows),"matched_channels":len(winners),"duplicate_variants_removed":len(by_feed)-len(winners),"published_philo_channels":len(PHILO_NAMES)}
     except Exception as e:
@@ -649,9 +655,18 @@ def philo_coverage():
         fallback_status=json.loads(metadata("hgtv_fallback_status","{}"))
     except (ValueError,TypeError):
         fallback_status={}
+    try:
+        supplemental_status=json.loads(metadata("supplemental_epg_status","{}"))
+        supplemental_names=json.loads(metadata("supplemental_epg_channels","[]"))
+        primary_names=json.loads(metadata("primary_epg_channels","[]"))
+    except (ValueError,TypeError):
+        supplemental_status,supplemental_names,primary_names={},[],[]
     return {"last_philo_sync":metadata("last_philo_sync"),
             "philo_error":errors["philo"],"hgtv_feed_candidates":raw_candidates,
-            "hgtv_fallback":fallback_status,"channels":result}
+            "hgtv_fallback":fallback_status,
+            "supplemental_epg":supplemental_status,
+            "epg_sources":{"primary":primary_names,"supplemental":supplemental_names},
+            "channels":result}
 
 
 @app.get("/api/guide")
