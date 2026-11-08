@@ -22,6 +22,8 @@ PHILO_REFRESH=max(6,int(os.getenv("PHILO_REFRESH_HOURS","24")))*3600
 app=FastAPI(title="Universal TV Guide",version="0.1.0")
 from app.playback import router as playback_router
 app.include_router(playback_router)
+from app.tablo_live import router as tablo_live_router
+app.include_router(tablo_live_router)
 sync_lock=threading.Lock()
 tablo_lock=threading.Lock()
 philo_lock=threading.Lock()
