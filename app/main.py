@@ -486,6 +486,26 @@ def plex_handoff(rating_key:int):
             "capability":"open_details_only",
             "note":"Opens the exact Plex library item details; automatic playback and join-in-progress are not yet implemented."}
 
+@app.get("/api/match-diagnostics")
+def match_diagnostics(q:str=Query(...,min_length=2,max_length=100)):
+    """LAN-only troubleshooting: show guide episode metadata and Plex match status."""
+    with db() as c:
+        catalog=c.execute("SELECT * FROM media").fetchall()
+        entries=[]
+        for table,source in (("philo_listings","philo"),("tablo_listings","tablo"),("listings","xmltv")):
+            found=c.execute("SELECT * FROM "+table+" WHERE title LIKE ? ORDER BY start DESC LIMIT 20",("%"+q+"%",)).fetchall()
+            for item in found:
+                p=dict(item)
+                match_result=match(p,catalog)
+                episodes=[m for m in catalog if m["kind"]=="episode" and m["normalized"]==norm(p["title"])]
+                entries.append({"source":source,"channel":p["channel_label"],
+                    "start":p["start"],"title":p["title"],"subtitle":p.get("subtitle"),
+                    "season":p.get("season"),"episode":p.get("episode"),
+                    "kind":p.get("program_kind"),"plex_series_episode_count":len(episodes),
+                    "matched":bool(match_result),
+                    "matched_title":match_result["title"] if match_result else None})
+    return {"query":q,"programs":entries[:50]}
+
 @app.get("/api/search")
 def search(q:str=Query("",max_length=200)):
     if len(q.strip())<2:return []
