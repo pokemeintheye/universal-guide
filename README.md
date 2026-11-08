@@ -218,3 +218,11 @@ The curated `app/philo_links.json` catalog now contains **73 distinct Philo chan
 The user directly confirmed **A&E**, **Hallmark Channel**, and **Nickelodeon** handoffs in the Philo iPhone app on 2026-11-08; their verification flags are now `iphone-tested`, joining Food Network. The other URLs are marked `public-listed` and displayed as **Test Link** until checked on the iPhone. A link opening a correct channel page does **not** imply automatic playback. The EPG import and Plex/Tablo playback are unchanged.
 
 Further development should verify the newly added links on iPhone, resolve the remaining three IDs from actually titled Philo player pages or known authenticated UI navigation, and keep the app's native Apple TV compatibility testing as a separate project.
+
+## Two or three short episodes in one broadcast slot (SpongeBob)
+
+Some 30-minute TV guide slots contain multiple separately stored Plex cartoon episodes, e.g. `Help Wanted / Reef Blower`. The matcher now recognizes **two or three explicitly separated exact episode titles** (using spaced `/`, `;`, `&`, or `+`) from the **same** Plex series. A multi-part broadcast is considered matched **only if every part has one unique Plex episode**; unclear, partially matched or cross-series episodes stay unmatched. Existing single-episode number/title matching is unchanged.
+
+The program detail modal displays a **Select the Plex segment to play** selector for matched combined broadcasts. Start from Beginning and the Plex Web handoff use the selected segment's specific Plex rating key. **Join in Progress is disabled for combined broadcasts** because the guide's half-hour clock cannot be mapped reliably onto a segment's individual timeline. Check sample data using `/api/match-diagnostics?q=SpongeBob` (returns `matched_parts` for combined records).
+
+On Apple TV, the platform's app switcher (double-press the TV/Control Center remote button) can return from Philo to the Universal Guide app without going to the Home Screen, once a native Universal Guide app exists and the Philo handoff has been tested on tvOS. The current Universal Guide is an iPhone-first browser/PWA, **not a native tvOS app**, and automatic Back-button return from Philo is not implemented or guaranteed. A future native client should restore the last selected guide channel and scroll position when activated.
