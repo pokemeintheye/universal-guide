@@ -1,0 +1,174 @@
+"""Experimental local Tablo live tuner, HLS transcoding, and diagnostics.
+
+Tune requests are limited to channel IDs already indexed from the Tablo API.
+No arbitrary URLs, shell evaluation, or media directories are exposed.
+Requires ffmpeg in the container and a working Tablo /watch endpoint.
+"""
+import os, re, shutil, secrets, subprocess, threading, time
+from pathlib import Path
+from urllib.parse import urlparse, urljoin
+from datetime import datetime, timezone
+import requests
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
+
+router=APIRouter(prefix="/api/tablo/live")
+USER_AGENT="UniversalGuide/0.2 (Local TV)"
+STORE=Path("/tmp/universal-guide-live")
+MAX_SESSIONS=2
+IDLE_SECONDS=85
+ACTIVE={}
+LOCK=threading.RLock()
+
+def _settings():
+    from app.main import TABLO_URL, DB
+    if not TABLO_URL:
+        raise HTTPException(503,"TABLO_URL is not configured")
+    p=urlparse(TABLO_URL)
+    if p.scheme!="http" or not p.hostname or p.username or p.password:
+        raise HTTPException(503,"Tablo live playback currently requires a local HTTP device URL")
+    return TABLO_URL,DB
+
+def _stop(sid):
+    with LOCK:
+        session=ACTIVE.pop(sid,None)
+    if not session:return False
+    process=session["process"]
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    shutil.rmtree(session["directory"],ignore_errors=True)
+    return True
+
+def _cleanup():
+    now=time.monotonic()
+    with LOCK:
+        expired=[sid for sid,state in ACTIVE.items()
+                 if now-state["last"]>IDLE_SECONDS or state["process"].poll() is not None]
+    for sid in expired:_stop(sid)
+
+def _allowed_url(origin,url):
+    """Only stream from the same device host on a local HTTP port."""
+    candidate=urljoin(origin+"/",url)
+    base=urlparse(origin)
+    target=urlparse(candidate)
+    if (target.scheme!="http" or target.hostname!=base.hostname
+            or target.username or target.password or target.fragment
+            or target.port not in (base.port,8885,8886,8887,8888,None)):
+        raise HTTPException(502,"Tablo supplied a playlist URL outside its local device")
+    return candidate
+
+@router.post("/start")
+def tune(channel_id:str):
+    origin,db_path=_settings()
+    if not re.fullmatch(r"/guide/channels/[A-Za-z0-9_-]{1,80}",channel_id):
+        raise HTTPException(400,"Invalid Tablo channel identifier")
+    import sqlite3
+    with sqlite3.connect(db_path) as c:
+        found=c.execute("SELECT 1 FROM tablo_channels WHERE channel_id=?",(channel_id,)).fetchone()
+    if not found:raise HTTPException(404,"Channel isn't in the indexed Tablo lineup")
+    _cleanup()
+    with LOCK:
+        if len(ACTIVE)>=MAX_SESSIONS:
+            raise HTTPException(409,"Two Tablo streams are already in use in Universal Guide")
+    try:
+        r=requests.post(origin+channel_id+"/watch",headers={
+            "User-Agent":USER_AGENT,"Accept":"application/json"
+        },timeout=(4,25),allow_redirects=False)
+    except requests.RequestException as exc:
+        raise HTTPException(502,"Tablo tune request failed: "+type(exc).__name__)
+    if r.status_code!=200:
+        detail=""
+        try:
+            d=r.json()
+            detail=str(d.get("code") or d.get("message") or d.get("details") or "")[:120]
+        except (ValueError,AttributeError):
+            pass
+        if r.status_code in (401,403):
+            raise HTTPException(502,"Tablo declined the tune (HTTP "+str(r.status_code)+
+                "). This firmware may require signed app authorization. "+detail)
+        raise HTTPException(502,"Tablo tune returned HTTP "+str(r.status_code)+
+            (": "+detail if detail else ""))
+    try:
+        data=r.json()
+    except ValueError:
+        raise HTTPException(502,"Tablo did not return JSON from the watch endpoint")
+    playlist=data.get("playlist_url") if isinstance(data,dict) else None
+    if not isinstance(playlist,str) or not playlist:
+        raise HTTPException(502,"Tablo watch response did not contain playlist_url")
+    playlist=_allowed_url(origin,playlist)
+    if shutil.which("ffmpeg") is None:
+        raise HTTPException(503,"ffmpeg is not installed in the Universal Guide container")
+    sid=secrets.token_urlsafe(20)
+    directory=STORE/sid
+    directory.mkdir(mode=0o700,parents=True,exist_ok=False)
+    args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+          "-user_agent",USER_AGENT,"-i",playlist,
+          "-map","0:v:0","-map","0:a:0?","-vf","yadif",
+          "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
+          "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
+          "-c:a","aac","-ac","2","-b:a","128k",
+          "-f","hls","-hls_time","4","-hls_list_size","7",
+          "-hls_flags","delete_segments+omit_endlist",
+          "-hls_segment_filename",str(directory/"seg_%05d.ts"),
+          str(directory/"index.m3u8")]
+    try:
+        process=subprocess.Popen(args,stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                                 close_fds=True)
+    except OSError as exc:
+        shutil.rmtree(directory,ignore_errors=True)
+        raise HTTPException(502,"Could not launch ffmpeg: "+type(exc).__name__)
+    with LOCK:
+        ACTIVE[sid]={"id":sid,"directory":directory,"process":process,
+                     "last":time.monotonic(),"created":time.monotonic(),
+                     "channel":channel_id,"tune_status":r.status_code}
+    return {"session_id":sid,"playlist_url":"/api/tablo/live/"+sid+"/index.m3u8",
+            "note":"Live tuner starting. HLS may need several seconds to buffer."}
+
+@router.get("/{sid}/status")
+def live_status(sid:str):
+    _cleanup()
+    with LOCK:
+        item=ACTIVE.get(sid)
+        if not item:raise HTTPException(404,"Tablo stream ended or was unavailable")
+        item["last"]=time.monotonic()
+        return {"transcoder_running":item["process"].poll() is None,
+                "manifest_ready":(item["directory"]/"index.m3u8").exists(),
+                "seconds_since_start":round(time.monotonic()-item["created"],1)}
+
+@router.get("/{sid}/{file_name}")
+def live_segment(sid:str,file_name:str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    if file_name!="index.m3u8" and not re.fullmatch(r"seg_\d{5,10}\.ts",file_name):
+        raise HTTPException(404,"Invalid media filename")
+    _cleanup()
+    with LOCK:
+        item=ACTIVE.get(sid)
+        if not item:raise HTTPException(404,"Tablo stream expired")
+        item["last"]=time.monotonic()
+        directory=item["directory"]
+    path=directory/file_name
+    if file_name=="index.m3u8" and not path.exists():
+        for _ in range(32):
+            if path.exists():break
+            with LOCK:
+                process=item["process"]
+                if process.poll() is not None:break
+            time.sleep(.5)
+    if not path.is_file():
+        raise HTTPException(503,"Tablo stream is buffering or transcoding failed")
+    return FileResponse(path,media_type=("application/vnd.apple.mpegurl" if
+       file_name.endswith(".m3u8") else "video/mp2t"),
+       headers={"Cache-Control":"no-store"})
+
+@router.delete("/{sid}")
+def close_live(sid:str):
+    return {"stopped":_stop(sid)}
