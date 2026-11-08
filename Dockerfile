@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY tests ./tests
-RUN python -m py_compile app/main.py app/playback.py app/tablo_live.py app/philo_links.py app/hgtv_fallback.py && python -m unittest discover -s tests -v && rm -rf tests
+RUN python -m py_compile app/main.py app/playback.py app/tablo_live.py app/philo_links.py app/hgtv_fallback.py app/epgshare_supplement.py && python -m unittest discover -s tests -v && rm -rf tests
 RUN useradd -r -u 10001 guide && mkdir -p /data && chown guide:guide /data
 USER guide
 EXPOSE 8787
