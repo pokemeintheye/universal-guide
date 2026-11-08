@@ -48,6 +48,10 @@ def initialize():
             cols={x["name"] for x in c.execute("PRAGMA table_info("+table+")")}
             if "program_kind" not in cols:
                 c.execute("ALTER TABLE "+table+" ADD COLUMN program_kind TEXT DEFAULT 'unknown'")
+            if table in ("listings","philo_listings"):
+                for key in ("season","episode"):
+                    if key not in cols:
+                        c.execute("ALTER TABLE "+table+" ADD COLUMN "+key+" INTEGER")
 initialize()
 
 def metadata(key,default=""):
@@ -133,6 +137,21 @@ def xmltv_kind(program):
         return "series"
     return "unknown"
 
+def xmltv_episode(program):
+    """Parse explicit XMLTV episode IDs; XMLTV_NS numbers are zero-based."""
+    for item in program.findall("episode-num"):
+        raw=(item.text or "").strip()
+        system=(item.get("system") or "").lower().strip()
+        if system=="xmltv_ns":
+            m=re.fullmatch(r"(\d+)\.(\d+)\.(?:\d+)?(?:/\d+)?",raw)
+            if m:
+                return int(m.group(1))+1,int(m.group(2))+1
+        elif system in ("onscreen","common"):
+            m=re.fullmatch(r"[Ss]?(\d+)\s*[EeXx]\s*(\d+)",raw)
+            if m:
+                return int(m.group(1)),int(m.group(2))
+    return None,None
+
 def import_guide():
     if not GUIDE.exists():
         return {"imported":0,"note":"Supply guide.xml in the appdata folder"}
@@ -149,11 +168,11 @@ def import_guide():
                     get=lambda tag:(node.findtext(tag) or "").strip()
                     year_text=get("date")
                     year=int(year_text[:4]) if re.match(r"^\d{4}",year_text) else 0
-                    rows.append((node.get("channel"),a,b,get("title"),get("sub-title"),year,get("desc")[:600],xmltv_kind(node)))
+                    rows.append((node.get("channel"),a,b,get("title"),get("sub-title"),year,get("desc")[:600],xmltv_kind(node),*xmltv_episode(node)))
             if node.tag in ("channel","programme"):node.clear()
         with db() as c:
             c.execute("DELETE FROM listings")
-            c.executemany("INSERT INTO listings(channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind) VALUES (?,?,?,?,?,?,?,?,?)",[(ch,names.get(ch,ch),a,b,title,sub,year,desc,kind) for ch,a,b,title,sub,year,desc,kind in rows])
+            c.executemany("INSERT INTO listings(channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind,season,episode) VALUES (?,?,?,?,?,?,?,?,?,?,?)",[(ch,names.get(ch,ch),a,b,title,sub,year,desc,kind,season,episode) for ch,a,b,title,sub,year,desc,kind,season,episode in rows])
             putmeta(c,"last_guide_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"guide_mtime",GUIDE.stat().st_mtime)
         errors["guide"]=""
@@ -211,7 +230,7 @@ def sync_philo():
             year=int(date[:4]) if re.match(r"^\\d{4}",date) else 0
             by_feed.setdefault(feed_id,[]).append((
                 channel_names[feed_id],start,stop,value("title"),
-                value("sub-title"),year,value("desc")[:600],xmltv_kind(p)
+                value("sub-title"),year,value("desc")[:600],xmltv_kind(p),*xmltv_episode(p)
             ))
         # Prefer the feed variant with the most usable schedule coverage.
         # Channel IDs are stable canonical names, not unstable feed-specific IDs.
@@ -239,8 +258,8 @@ def sync_philo():
                        hidden=MAX(channel_prefs.hidden,excluded.hidden)""",(key,pref["favorite"],pref["hidden"]))
             c.execute("DELETE FROM philo_listings")
             c.executemany("""INSERT INTO philo_listings
-              (channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind)
-              VALUES (?,?,?,?,?,?,?,?,?)""",rows)
+              (channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind,season,episode)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?)""",rows)
             putmeta(c,"last_philo_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"philo_channel_count",len(winners))
         errors["philo"]=""
