@@ -12,19 +12,24 @@ MAX_COMPRESSED=20*1024*1024
 MAX_XML=150*1024*1024
 
 def _channel_score(labels,channel_id):
-    """Only the US Eastern HGTV schedule; avoid Canada or Pacific feeds."""
-    texts=[str(v or "").strip().casefold() for v in labels]
-    for label in texts:
-        clean=re.sub(r"[^a-z0-9]+"," ",label).strip()
-        if clean in ("hgtv usa eastern feed","hgtv us eastern feed",
-                     "hgtv hd east","hgtv east","hgtv usa east"):
-            return 100
-        if clean in ("hgtv usa","hgtv us","hgtv","hgtv hd"):
-            return 70
-    # Some sources carry an informative ID but an abbreviated display name.
-    normalized=re.sub(r"[^a-z0-9]+"," ",str(channel_id or "").casefold())
-    if normalized.startswith("hgtv usa eastern feed ") and "us2" in normalized:
-        return 85
+    """Match the HGTV US East feed, including its full EPGShare name."""
+    values=[str(v or "").casefold() for v in [*labels,channel_id]]
+    normalized=[re.sub(r"[^a-z0-9]+"," ",v).strip() for v in values]
+    if any(re.search(r"\b(pacific|west|canada|canadian)\b",v) for v in normalized):
+        return 0
+    preferred={
+        "home and garden television hd us2",
+        "home and garden television hd",
+        "home and garden television east",
+        "hgtv usa eastern feed",
+        "hgtv us eastern feed",
+        "hgtv hd east",
+        "hgtv east",
+        "hgtv usa east",
+    }
+    generic={"hgtv usa","hgtv us","hgtv","hgtv hd","home and garden television"}
+    if any(v in preferred for v in normalized):return 100
+    if any(v in generic for v in normalized):return 70
     return 0
 
 def fetch_hgtv(xml_date,xmltv_kind,xmltv_episode):
