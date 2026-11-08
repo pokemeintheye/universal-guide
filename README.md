@@ -178,3 +178,9 @@ A Philo guide listing automatically receives available links when its channel na
 The UI labels untested entries **Test Link** and explains that the user must confirm the result in the installed Philo app. Even tested links generally require pressing Play inside Philo; no unauthorized DRM media access or automatic live tuning is attempted.
 
 **Next iterations:** Catalog growth is still limited by publicly discoverable ID metadata. There is no verified officially supported Philo search API that turns arbitrary EPG titles into Philo IDs. Public SEO page discovery can be expanded, but it must match exact titles, distinguish look-alike shows/movies, and undergo device testing; we do not fabricate IDs or call an unsupported private authenticated streaming API.
+
+## Missing Philo schedules (e.g. HGTV)
+
+The curated Philo channel-link catalog and the third-party EPGTalk program schedule are separate sources. A channel such as HGTV may have a publicly listed Philo deep link even when the external XMLTV import has no mapped or usable program rows in the selected guide window. The guide now retains those cataloged channels as visible **Schedule unavailable** rows with an **Open channel in Philo · Test Link** action (until verified on the user's iPhone). No program titles or airtimes are invented.
+
+The fallback rows appear when **All programs** or **Philo** is selected and there are no matching listings. Like normal channels, they respect the hidden and favorites filters; they are excluded by **Available in Plex**. For troubleshooting, open `/api/philo/coverage` on the Universal Guide server to see the last EPG refresh, available future rows per catalog channel, hidden/favorite status, and the last live Philo error. If HGTV is missing schedules, inspect EPGTalk channel aliases and guide coverage separately rather than treating its deep link as a guide listing. The live channel page may still require tapping a program and Play in Philo.
