@@ -68,7 +68,10 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
-<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
+<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="philohandoff" hidden class="player-actions" style="margin-top:12px">
+<a id="philoopen" href="https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg" style="display:inline-block;background:#3b5786;color:white;padding:11px 16px;border-radius:9px;text-decoration:none">▶ Watch on Philo</a>
+<span class="note">Opens the series page in the Philo app on iPhone; select an episode there. Exact episode/live playback isn't verified.</span>
+</div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
 <div class="player-actions" id="playbackchoices" hidden>
 <button id="playbegin" type="button">▶ Start from Beginning</button>
 <button id="playjoin" type="button" hidden>◷ Join in Progress</button>
@@ -76,7 +79,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <p class="note">Plex browser playback is experimental. The Plex Web button remains available as a fallback.</p>
 <a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
 <p class="note" id="plexlinkerror"></p></div>
-<p class="note">For Plex matches choose a playback mode. Live Tablo is experimental and may need tuner authorization; Philo playback is not yet implemented.</p></div></div><script>
+<p class="note">For Plex matches choose a playback mode. Live Tablo is experimental. Philo handoff is being tested for confirmed titles; direct episode and channel playback are not yet verified.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function req(url,opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
@@ -100,6 +103,9 @@ function setGuideAnchor(t){
 function openDetails(program){
  const {channel:p,entry:e}=program;
  selectedProgram=program;
+ // Confirmed iPhone Universal Link for The Office (US). Do not invent
+ // provider IDs or claim specific episode / live-channel handoff.
+ $("philohandoff").hidden=!(p.source==="philo" && e.title?.trim().toLowerCase()==="the office");
  $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
