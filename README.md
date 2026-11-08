@@ -258,3 +258,35 @@ change live playback or recording behavior.
 to the trusted local network; the diagnostic endpoint is not suitable for
 internet exposure. Do not share raw upstream Tablo stream URLs or session tokens.
 
+
+## Experimental Tablo native-buffer playback (seek proof of concept)
+
+The local Tablo player now offers **Test playback 2 min ago** after the live
+channel has accumulated at least ~135 seconds of native video history.
+This is explicitly a **test**, not the finished timeshift player.
+
+A new `POST /api/tablo/live/{session_id}/preview?seconds_behind_live=120`
+endpoint reads the original Tablo HLS playlist, selects approximately 75
+seconds of previously recorded **Tablo-owned** segments, and launches a
+separate temporary FFmpeg conversion for browser compatibility. It does
+**not** re-tune the Tablo or make a rolling DVR recording on Unraid.
+The original live playback session continues separately. On the iPhone,
+use **Return to Live** to reattach the original live stream.
+
+The preview is a finite test clip and will stop at its end. It is designed
+to establish that **consecutive older segments can be decoded and played**.
+It is *not* continuous rewind/live seeking, and you should not expect it to
+stay synchronized with the live edge. The short converted test clip is
+temporarily written in the container's existing HLS scratch directory,
+and is deleted on close/expiry.
+
+To validate: watch a Tablo channel for at least 3 minutes; press **Test
+playback 2 min ago**; confirm that video and audio start and play for
+30–60 seconds continuously; use **Return to Live**. If it fails, report the
+on-screen message and `/api/tablo/live/{preview_id}/status?probe=true`
+without exposing any Tablo-origin tokenized URLs.
+
+This is a best-effort experimental branch of the existing player.
+Normal **Watch Live on Tablo** and the existing recording/guide integrations
+remain unchanged.
+
