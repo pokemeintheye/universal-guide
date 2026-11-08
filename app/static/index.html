@@ -76,8 +76,9 @@ function openDetails(program){
  const episode=(e.season!=null&&e.episode!=null)?"Season "+e.season+", Episode "+e.episode:"";
  $("detailepisode").textContent=[episode,e.subtitle,e.year||""].filter(Boolean).join(" · ");
  $("detaildesc").textContent=e.description||"No program description provided by this guide source.";
- $("detailplex").textContent=e.plex?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title:"Not confirmed in Plex library";
- $("detailplex").className=e.plex?"chip green":"chip";
+ $("detailplex").hidden=!e.plex;
+ $("detailplex").textContent=e.plex?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title:"";
+ $("detailplex").className=e.plex?"chip green":"";
  $("detailsmodal").hidden=false;
  $("closedetails").focus();
 }
