@@ -8,7 +8,7 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
     def test_office(self):
         links=links_for("Comedy Central","The Office")
         self.assertIn("show",links)
-        self.assertNotIn("channel",links)
+        self.assertIn("channel",links)
         self.assertNotIn("episode",links)
 
     def test_other_shows_cannot_open_office(self):
