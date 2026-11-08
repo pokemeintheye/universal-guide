@@ -43,6 +43,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .player-tools strong{font-size:17px}
 #playerstatus{color:#bfd2ee;padding:10px;max-width:1000px;text-align:center}
 .player-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.player-actions[hidden]{display:none!important}
 .player-actions button:disabled{opacity:.5;cursor:wait}
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
@@ -69,7 +70,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
 <div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="philohandoff" hidden class="player-actions" style="margin-top:12px">
-<a id="philoopen" href="https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg" style="display:inline-block;background:#3b5786;color:white;padding:11px 16px;border-radius:9px;text-decoration:none">▶ Watch on Philo</a>
+<a id="philoopen" style="display:inline-block;background:#3b5786;color:white;padding:11px 16px;border-radius:9px;text-decoration:none">▶ Watch on Philo</a>
 <span class="note">Opens the series page in the Philo app on iPhone; select an episode there. Exact episode/live playback isn't verified.</span>
 </div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
 <div class="player-actions" id="playbackchoices" hidden>
@@ -105,7 +106,14 @@ function openDetails(program){
  selectedProgram=program;
  // Confirmed iPhone Universal Link for The Office (US). Do not invent
  // provider IDs or claim specific episode / live-channel handoff.
- $("philohandoff").hidden=!(p.source==="philo" && e.title?.trim().toLowerCase()==="the office");
+ const confirmedOffice=p.source==="philo" && e.title?.trim().toLowerCase()==="the office";
+ $("philohandoff").hidden=!confirmedOffice;
+ // Remove the destination entirely for unrelated shows as a second guard.
+ if(confirmedOffice){
+   $("philoopen").href="https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg";
+ }else{
+   $("philoopen").removeAttribute("href");
+ }
  $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
