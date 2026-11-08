@@ -411,7 +411,7 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
         output.append("#EXTINF:"+format(duration,".3f")+",")
         output.append(url)
     output.append("#EXT-X-ENDLIST")
-    return "\\n".join(output)+"\\n",{"start_seconds_behind_live":round(total-accumulated,1),
+    return "\n".join(output)+"\n",{"start_seconds_behind_live":round(total-accumulated,1),
                                   "clip_duration_seconds":round(elapsed,1),
                                   "segment_count":len(chosen)}
 
