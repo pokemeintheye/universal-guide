@@ -72,7 +72,7 @@ def _allowed_url(origin,url):
     stream_path=target.path.startswith("/stream/") and target.path.endswith(".m3u8")
     if (target.scheme!="http" or target.hostname!=base.hostname
             or target.username or target.password or target.fragment
-            or target.port not in allowed_ports or not stream_path):
+            or (target.port or 80) not in allowed_ports or not stream_path):
         # Only scheme/host/port/path (no credentials, query or stream tokens).
         raise HTTPException(502,"Tablo supplied an unexpected playlist destination: "+
             str(target.scheme)+"://"+str(target.hostname)+":"+
@@ -335,7 +335,7 @@ def _media_segment_urls(origin,playlist,body):
             # Preserve the same strict local origin restriction used for /watch.
             # Segment paths are not playlist paths and must be .ts media.
             if (target.scheme!="http" or target.hostname!=base.hostname
-                    or target.port not in allowed_ports
+                    or (target.port or 80) not in allowed_ports
                     or target.username or target.password or target.fragment
                     or not target.path.startswith("/stream/")
                     or not target.path.lower().endswith(".ts")):
