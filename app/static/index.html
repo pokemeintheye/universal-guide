@@ -144,12 +144,17 @@ function openDetails(program){
    target.hidden=!valid;
    if(valid){
      target.href=choice.url;
+     target.textContent=(choice.level==="episode"?"▶ Open This Episode in Philo":
+       choice.level==="channel"?"▶ Open Live Channel in Philo":"▶ Open Show in Philo")+
+       (choice.verification==="iphone-tested"?"":" · Test Link");
      philoCount++;
    }else target.removeAttribute("href");
  }
  $("philohandoff").hidden=philoCount===0;
- $("philonote").textContent="Opens the Philo app when supported. "+
-   "The current channel or episode may need you to press Play in Philo.";
+ const hasUntested=Object.values(options).some(choice=>choice&&choice.verification!=="iphone-tested");
+ $("philonote").textContent=hasUntested
+   ?"Test Link means the URL is listed on Philo's public site but has not yet been verified on your iPhone. Check the destination; playback may require another tap."
+   :"Opens the Philo app when supported. The channel or episode may need you to press Play in Philo.";
  $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
