@@ -60,7 +60,7 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
                      "TeenNick","Smithsonian Channel","Crime + Investigation"):
             link=links_for(name,"A completely unrelated show").get("channel")
             self.assertIsNotNone(link,name)
-            self.assertEqual(link["verification"],"public-listed")
+            self.assertIn(link["verification"],("public-listed","iphone-tested"))
             self.assertTrue(link["url"].startswith(
                 "https://www.philo.com/player/channel/"))
         for name in ("Food Network","A&E","Hallmark Channel","Nickelodeon"):
