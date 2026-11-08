@@ -404,6 +404,23 @@ async function launchPlex(mode){
   beginning.disabled=false;join.disabled=false;
  }
 }
+async function explainTabloFailure(message,generation){
+ if(generation!==playerGeneration)return;
+ const sid=tabloSession;
+ if(!sid){playerMessage(message);return}
+ try{
+  const status=await req("/api/tablo/live/"+encodeURIComponent(sid)+"/status");
+  if(generation!==playerGeneration)return;
+  let detail=message+" | FFmpeg "+(status.transcoder_running?"running":"exited ("+status.ffmpeg_exit_code+")")+
+   " | manifest "+(status.manifest_ready?"ready":"missing")+
+   " | segments "+status.segment_count+
+   " | elapsed "+status.seconds_since_start+"s";
+  if(status.ffmpeg_error)detail+=" | FFmpeg: "+status.ffmpeg_error;
+  playerMessage(detail);
+ }catch(e){
+  if(generation===playerGeneration)playerMessage(message+" | Tablo status: "+e.message);
+ }
+}
 async function launchTabloLive(){
  if(selectedProgram?.channel?.source!=="tablo")return;
  const channel=selectedProgram.channel;
@@ -428,8 +445,8 @@ async function launchTabloLive(){
   const url=info.playlist_url;
   video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
   video.addEventListener("error",()=>{if(generation===playerGeneration)
-    playerMessage("Live Tablo media failed (browser error "+(video.error?.code||"?")+
-      "). Check Tablo tuner status and Unraid Docker logs.")},{once:true});
+    explainTabloFailure("Live Tablo media failed (browser error "+(video.error?.code||"?")+
+      ")",generation)},{once:true});
   if(video.canPlayType("application/vnd.apple.mpegurl")){
    video.src=url;
    video.addEventListener("loadedmetadata",()=>video.play().catch(()=>
@@ -441,9 +458,9 @@ async function launchTabloLive(){
       manifestLoadingMaxRetry:5,levelLoadingMaxRetry:5});
    playerHls.on(Hls.Events.ERROR,(_,data)=>{
     if(generation!==playerGeneration)return;
-    if(data.fatal)playerMessage("Tablo HLS error: "+data.details+
+    if(data.fatal)explainTabloFailure("Tablo HLS error: "+data.details+
        (data.response?.code?" · HTTP "+data.response.code:"")+
-       ". If the stream did not start, close and retry.");
+       (data.error?.message?" · "+data.error.message.slice(0,120):""),generation);
    });
    playerHls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>
      playerMessage("Press Play in the video controls.")));
