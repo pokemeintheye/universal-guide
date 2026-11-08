@@ -44,10 +44,18 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <button id="earlier" type="button">← Earlier</button>
 <button id="now" type="button">Now</button>
 <button id="later" type="button">Later →</button>
+<button id="nextday" type="button">+1 day</button>
+<label class="note" for="jumpdate">Jump to date</label><input id="jumpdate" type="date" style="width:auto;max-width:170px;padding:8px" aria-label="Jump to guide date">
 <span class="date" id="viewtime"></span>
 <button id="tablofilter" type="button">Local</button>
 <button id="philofilter" type="button">Philo</button>
-</div><div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
+</div>
+<div class="guide-controls">
+<input id="findshow" placeholder="Find a future show (e.g. The Office)" aria-label="Find a show in the guide" style="min-width:260px;flex:1">
+<button id="findbutton" type="button">Find upcoming</button>
+</div>
+<div id="findresults" class="note" aria-live="polite"></div>
+<div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
@@ -69,7 +77,12 @@ let lastGuideToken=0;
 const halfHour=30*60*1000;
 function currentAnchor(){return Math.floor(Date.now()/halfHour)*halfHour}
 function guideAnchor(){return view.anchor??currentAnchor()}
-function setGuideAnchor(t){view.anchor=t;guide(view.plex)}
+function setGuideAnchor(t){
+ const now=Date.now(),min=now-3*86400000,max=now+7*86400000;
+ if(t<min||t>max){$("viewtime").textContent="No schedule beyond available guide dates";return}
+ view.anchor=t;
+ guide(view.plex);
+}
 function openDetails(program){
  const {channel:p,entry:e}=program;
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
@@ -110,11 +123,14 @@ async function guide(only){
  const token=++lastGuideToken;
  $("guidecontrols").hidden=false;
  const start=guideAnchor(),end=start+8*60*60*1000;
+ $("guide").setAttribute("aria-busy","true");
+ $("viewtime").textContent="Loading guide…";
  $("viewtime").textContent=new Date(start).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
  try{
   const url="/api/guide?hours=8&start="+encodeURIComponent(new Date(start).toISOString())+"&plex_only="+view.plex+"&favorites_only="+view.favorites+"&source="+view.source;
   const data=await req(url);
   if(token!==lastGuideToken)return;
+  $("guide").removeAttribute("aria-busy");
   if(!data.channels.length){$("guide").textContent="No programs found in this time range. Try Now, Earlier, or Later.";return}
   const channels=data.channels.slice().sort((a,b)=>{
     if(a.source!==b.source)return a.source==="tablo"?-1:b.source==="tablo"?1:a.source.localeCompare(b.source);
@@ -147,10 +163,43 @@ async function guide(only){
   }
   $("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
   $("guide").querySelectorAll("[data-program]").forEach(el=>el.onclick=()=>openDetails(shownPrograms[Number(el.dataset.program)]));
- }catch(e){if(token===lastGuideToken)$("guide").textContent=e.message}
+ }catch(e){if(token===lastGuideToken){$("guide").removeAttribute("aria-busy");$("guide").textContent=e.message}}
 }
 $("earlier").onclick=()=>setGuideAnchor(guideAnchor()-2*60*60*1000);
 $("later").onclick=()=>setGuideAnchor(guideAnchor()+2*60*60*1000);
+$("nextday").onclick=()=>setGuideAnchor(guideAnchor()+24*60*60*1000);
+$("jumpdate").onchange=()=>{
+ const value=$("jumpdate").value;
+ if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value))return;
+ const [y,m,d]=value.split("-").map(Number);
+ const today=new Date(guideAnchor());
+ const chosen=new Date(y,m-1,d,today.getHours(),today.getMinutes(),0,0);
+ setGuideAnchor(chosen.getTime());
+};
+async function findUpcoming(){
+ const q=$("findshow").value.trim();
+ if(q.length<2){$("findresults").textContent="Enter at least two letters.";return}
+ $("findresults").textContent="Searching the upcoming guide…";
+ try{
+  const rows=await req("/api/guide/find?q="+encodeURIComponent(q));
+  if(!rows.length){$("findresults").textContent="No upcoming listings found for "+q;return}
+  $("findresults").innerHTML=rows.slice(0,30).map((p,i)=>
+    '<div class="result"><button class="findjump" data-index="'+i+'">Go to airing</button> <b>'+
+    esc(p.title)+'</b> · '+esc(p.channel_label)+' · '+
+    new Date(p.start).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})+
+    (p.subtitle?' · '+esc(p.subtitle):'')+'</div>').join("");
+  $("findresults").querySelectorAll(".findjump").forEach(el=>el.onclick=()=>{
+    const p=rows[Number(el.dataset.index)];
+    view.source="all";view.plex=false;view.favorites=false;
+    const t=Math.floor(Date.parse(p.start)/halfHour)*halfHour;
+    $("findresults").textContent="";
+    setGuideAnchor(t);
+  });
+ }catch(e){$("findresults").textContent="Search error: "+e.message}
+}
+$("findbutton").onclick=findUpcoming;
+$("findshow").onkeydown=e=>{if(e.key==="Enter")findUpcoming()};
+
 $("now").onclick=()=>{view.anchor=null;guide(view.plex)};
 $("tablofilter").onclick=()=>{view.source=view.source==="tablo"?"all":"tablo";guide(view.plex)};
 $("philofilter").onclick=()=>{view.source=view.source==="philo"?"all":"philo";guide(view.plex)};
