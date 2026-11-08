@@ -30,9 +30,28 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
         self.assertEqual(links["episode"]["autoplay"],False)
 
     def test_episode_mismatch(self):
-        for subtitle,season,episode in (("Not Pilot",1,1),("Pilot",2,1),("Pilot",1,2)):
+        for subtitle,season,episode in (("Not Pilot",1,1),("Pilot",2,1),("Pilot",1,2),
+                                        ("Pilot",None,1),("Pilot",1,None)):
             self.assertNotIn("episode",links_for(
                 "TV Land","Everybody Loves Raymond",subtitle,season,episode))
+
+    def test_publicly_discovered_channel_links(self):
+        for network in ("AMC","HGTV","HISTORY","Discovery Channel","TLC","TV Land"):
+            link=links_for(network,"Unknown TV program").get("channel")
+            self.assertIsNotNone(link,network)
+            self.assertEqual(link["verification"],"public-listed")
+            self.assertFalse(link["autoplay"])
+
+    def test_publicly_discovered_show_links(self):
+        for show in ("The Kitchen","House Hunters"):
+            link=links_for("HGTV",show).get("show")
+            self.assertIsNotNone(link,show)
+            self.assertEqual(link["verification"],"public-listed")
+
+    def test_exact_kitchen_episode(self):
+        links=links_for("Food Network","The Kitchen","World on a Plate",41,1)
+        self.assertIn("episode",links)
+        self.assertNotIn("episode",links_for("Food Network","The Kitchen","World on a Plate",40,1))
 
 
 if __name__=="__main__":
