@@ -237,11 +237,12 @@ def sync_philo():
         by_feed={}
         for p in root.findall("programme"):
             feed_id=p.get("channel")
-            if feed_id not in channel_names:continue
+            if feed_id not in channel_names and feed_id not in hgtv_candidates:continue
             start=xml_date(p.get("start"));stop=xml_date(p.get("stop"))
             if not start or not stop:continue
             if feed_id in hgtv_candidates and stop>now.isoformat() and start<=(now+timedelta(days=8)).isoformat():
                 hgtv_candidates[feed_id]["future_programs_in_source"]+=1
+            if feed_id not in channel_names:continue
             if stop<now.isoformat() or start>(now+timedelta(days=8)).isoformat():continue
             value=lambda key:(p.findtext(key) or "").strip()
             date=value("date")
