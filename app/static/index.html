@@ -106,6 +106,11 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <a id="philochannel" hidden class="philo-link" rel="noopener" aria-label="Open live channel page in Philo">▶ Open Live Channel in Philo</a>
 <span id="philonote" class="note">Opens the installed Philo app on iPhone. Playback may require pressing Play inside Philo.</span>
 </div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
+<div id="plexpartchooser" hidden style="margin-bottom:12px">
+<label for="plexepisodechoice">Select the Plex segment to play</label>
+<select id="plexepisodechoice" style="display:block;width:100%;margin-top:6px;padding:11px;border-radius:9px;background:#192237;color:#f4f6fc;border:1px solid #6581a3"></select>
+<p class="note">This broadcast contains multiple episodes in one TV slot. Choose either part to play from its beginning.</p>
+</div>
 <div class="player-actions" id="playbackchoices" hidden>
 <button id="playbegin" type="button">▶ Start from Beginning</button>
 <button id="playjoin" type="button" hidden>◷ Join in Progress</button>
@@ -168,30 +173,60 @@ function openDetails(program){
  $("detailepisode").textContent=[episode,e.subtitle,e.year||""].filter(Boolean).join(" · ");
  $("detaildesc").textContent=e.description||"No program description provided by this guide source.";
  $("detailplex").hidden=!e.plex;
- $("detailplex").textContent=e.plex?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title:"";
+ const isMulti=Array.isArray(e.plex?.parts)&&e.plex.parts.length>1;
+ $("detailplex").textContent=e.plex
+   ?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title+
+    (isMulti?" ("+e.plex.parts.length+" separate episodes)":""):"";
  $("detailplex").className=e.plex?"chip green":"";
  const panel=$("plexhandoff");
- panel.hidden=true;
+ panel.hidden=!e.plex;
  $("playbackchoices").hidden=!e.plex;
- $("playjoin").hidden=!(e.plex && Date.now()>=Date.parse(e.start) && Date.now()<Date.parse(e.stop));
- $("plexlinkerror").textContent="";
- if(e.plex?.rating_key){
-   const key=String(e.plex.rating_key);
-   req("/api/playback/plex/"+encodeURIComponent(key)).then(info=>{
-     // Ignore stale requests if the user already selected another program.
-     if($("detailsmodal").hidden || $("detailtitle").textContent!==(e.title||"Untitled"))return;
-     $("plexopen").href=info.web_url;
-     panel.hidden=false;
-   }).catch(err=>{
-     panel.hidden=false;
-     $("plexopen").hidden=true;
-     $("plexlinkerror").textContent="Plex handoff unavailable: "+err.message;
+ $("plexpartchooser").hidden=!isMulti;
+ const choice=$("plexepisodechoice");
+ choice.replaceChildren();
+ if(isMulti){
+   e.plex.parts.forEach((part,i)=>{
+     const option=document.createElement("option");
+     option.value=String(i);
+     option.textContent="Part "+(i+1)+": "+part.title;
+     choice.appendChild(option);
    });
-   $("plexopen").hidden=false;
  }
+ // A split broadcast's EPG start time can't be reliably mapped to either
+ // short episode's timeline; offer start-from-beginning only.
+ $("playjoin").hidden=!(e.plex&&!isMulti&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
+ $("plexlinkerror").textContent="";
+ $("plexopen").hidden=!e.plex;
+ if(e.plex?.rating_key)refreshPlexHandoff(e);
  $("detailsmodal").hidden=false;
  $("closedetails").focus();
 }
+function selectedPlexEpisode(entry){
+ if(!entry?.plex)return null;
+ const parts=entry.plex.parts;
+ if(!Array.isArray(parts)||!parts.length)return entry.plex;
+ const index=Number($("plexepisodechoice").value);
+ return parts[Number.isInteger(index)&&index>=0&&index<parts.length?index:0];
+}
+async function refreshPlexHandoff(entry){
+ const part=selectedPlexEpisode(entry);
+ const key=String(part?.rating_key||"");
+ $("plexopen").hidden=true;
+ $("plexlinkerror").textContent="";
+ if(!key)return;
+ try{
+   const info=await req("/api/playback/plex/"+encodeURIComponent(key));
+   // Reject response for a replaced program or changed episode selection.
+   if(selectedProgram?.entry!==entry ||
+      String(selectedPlexEpisode(entry)?.rating_key)!==key)return;
+   $("plexopen").href=info.web_url;
+   $("plexopen").hidden=false;
+ }catch(err){
+   if(selectedProgram?.entry!==entry)return;
+   $("plexlinkerror").textContent="Plex handoff unavailable: "+err.message;
+ }
+}
+$("plexepisodechoice").onchange=()=>{if(selectedProgram?.entry)refreshPlexHandoff(selectedProgram.entry)};
 $("closedetails").onclick=()=>$("detailsmodal").hidden=true;
 $("detailsmodal").onclick=e=>{if(e.target===$("detailsmodal"))$("detailsmodal").hidden=true};
 document.addEventListener("keydown",e=>{if(e.key==="Escape")$("detailsmodal").hidden=true});
@@ -396,8 +431,10 @@ async function launchPlex(mode){
   // Cleanup is complete before the next Plex start request.
   await closePlexPlayer();
   const generation=++playerGeneration;
-  const payload={rating_key:Number(program.plex.rating_key),mode,
-    airing_start:program.start,airing_end:program.stop};
+  const selected=selectedPlexEpisode(program);
+  const split=Array.isArray(program.plex.parts)&&program.plex.parts.length>1;
+  const payload={rating_key:Number(selected.rating_key),mode:split?"beginning":mode,
+    airing_start:split?null:program.start,airing_end:split?null:program.stop};
   const info=await req("/api/player/start",{
     method:"POST",headers:{"Content-Type":"application/json"},
     cache:"no-store",body:JSON.stringify(payload)
