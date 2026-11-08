@@ -133,6 +133,35 @@ def _rewrite_playlist(session, parent, raw):
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _record(session, **values):
+    with _guard:
+        for key,value in values.items():
+            session[key] = value
+
+
+def _decision(session, url):
+    """Register a fresh Plex playback session once, before the HLS master."""
+    if session["decision_attempted"]:
+        return
+    _record(session, decision_attempted=True)
+    from urllib.parse import urlsplit, urlunsplit
+    u=urlsplit(url)
+    if not u.path.endswith("/start.m3u8"):
+        return
+    decision=urlunsplit((u.scheme,u.netloc,u.path.rsplit("/",1)[0]+"/decision",u.query,""))
+    _,base,token=_config()
+    headers={"X-Plex-Token":token,"X-Plex-Client-Identifier":"universal-guide-"+session["id"],
+             "X-Plex-Session-Identifier":session["id"],"X-Plex-Product":"Universal TV Guide",
+             "X-Plex-Platform":"Chrome","X-Plex-Client-Profile-Name":"Chrome"}
+    try:
+        response=requests.get(decision,headers=headers,timeout=(5,15),allow_redirects=False)
+        _record(session, decision_http=response.status_code)
+        response.close()
+    except requests.RequestException as exc:
+        _record(session, decision_http="network-error", last_error=type(exc).__name__)
+    # An unsupported decision route should not break an otherwise working stream.
+
+
 def _upstream(session, url, *, stream=False):
     _, base, token = _config()
     # Callers can only use registered resources previously validated by _safe_resource.
@@ -145,6 +174,7 @@ def _upstream(session, url, *, stream=False):
     headers = {
         "X-Plex-Token": token,
         "X-Plex-Client-Identifier": "universal-guide-" + session["id"],
+        "X-Plex-Session-Identifier": session["id"],
         "X-Plex-Product": "Universal TV Guide",
         "X-Plex-Platform": "Chrome",
         "X-Plex-Client-Profile-Name": "Chrome",
@@ -152,11 +182,16 @@ def _upstream(session, url, *, stream=False):
     try:
         response = requests.get(url, headers=headers, timeout=(5, 90),
                                 stream=stream, allow_redirects=False)
+        _record(session, last_http=response.status_code,
+                last_resource=("playlist" if urlparse(url).path.endswith(".m3u8") else "segment"),
+                requests=session["requests"]+1)
         if response.status_code != 200:
+            _record(session, last_error="Plex HTTP "+str(response.status_code))
             response.close()
             raise HTTPException(502, "Plex stream returned HTTP " + str(response.status_code))
         return response
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        _record(session, last_error=type(exc).__name__)
         raise HTTPException(502, "Plex stream is unavailable or timed out")
 
 
@@ -227,11 +262,15 @@ def start_playback(body: PlaybackRequest):
         "X-Plex-Product": "Universal TV Guide",
         "X-Plex-Platform": "Chrome",
         "X-Plex-Client-Identifier": "universal-guide-" + sid,
+        "X-Plex-Session-Identifier": sid,
         "X-Plex-Client-Profile-Name": "Chrome",
     }
     master = endpoint + "?" + urlencode(params)
     session = {"id": sid, "resources": {"master.m3u8": master},
-               "last": time.monotonic()}
+               "last": time.monotonic(), "rating_key": body.rating_key,
+               "requests": 0, "playlists": 0, "segments": 0,
+               "last_resource": None, "last_http": None, "last_error": None,
+               "decision_http": None, "decision_attempted": False}
     with _guard:
         _sessions[sid] = session
     return {"title": item[1], "kind": item[2],
@@ -252,7 +291,12 @@ def serve_resource(session_id: str, resource_id: str):
     if not url:
         raise HTTPException(404, "Resource not in this playback session")
     is_playlist = urlparse(url).path.endswith(".m3u8")
+    if resource_id=="master.m3u8":
+        _decision(session,url)
     response = _upstream(session, url, stream=not is_playlist)
+    with _guard:
+        counter="playlists" if is_playlist else "segments"
+        session[counter]+=1
     if is_playlist:
         try:
             body = response.content
@@ -275,6 +319,16 @@ def serve_resource(session_id: str, resource_id: str):
             response.close()
     return StreamingResponse(data(), media_type=content_type,
                              headers={"Cache-Control": "no-store"})
+
+
+@router.get("/{session_id}/diagnostics")
+def stream_diagnostics(session_id: str):
+    """Safe counters only: no Plex URLs, API tokens or media paths."""
+    session=_session(session_id)
+    with _guard:
+        return {key:session.get(key) for key in
+                ("requests","playlists","segments","last_resource","last_http",
+                 "last_error","decision_http","decision_attempted")}
 
 
 @router.delete("/{session_id}")
