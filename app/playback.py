@@ -9,6 +9,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
@@ -144,7 +145,6 @@ def _plex_duration(key):
                          headers={"X-Plex-Token": token, "Accept": "application/xml"},
                          timeout=(5, 20), allow_redirects=False)
         r.raise_for_status()
-        import xml.etree.ElementTree as ET
         root = ET.fromstring(r.content)
         video = root.find("Video")
         if video is None:
