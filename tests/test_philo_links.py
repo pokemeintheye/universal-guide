@@ -66,7 +66,7 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
         for name in ("Food Network","A&E","Hallmark Channel","Nickelodeon"):
             self.assertEqual(links_for(name,"Any show")["channel"]["verification"],
                              "iphone-tested")
-        for name in ("Comedy Central","MTV","Catchy Comedy"):
+        for name in ("Comedy Central","MTV"):
             self.assertNotIn("channel",links_for(name,"Some show"))
 
         self.assertNotIn("channel",links_for("The Wrong Channel","The Office"))
@@ -78,6 +78,15 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
             self.assertIsNotNone(link,show)
             self.assertEqual(link["verification"],"public-listed")
 
+    def test_user_supplied_catchy_comedy_live_handoff(self):
+        links=links_for("Catchy Comedy","A random live program")
+        self.assertIn("channel",links)
+        self.assertEqual(links["channel"]["url"],
+                         "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2OTU")
+        self.assertEqual(links["channel"]["verification"],"public-listed")
+        self.assertFalse(links["channel"]["autoplay"])
+        self.assertNotIn("channel",links_for("Comedy Central","A random live program"))
+
     def test_show_fallbacks_for_unmapped_popular_channels(self):
         for channel,title in (("Comedy Central","South Park"),
                               ("Catchy Comedy","Cheers"),
@@ -87,7 +96,8 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
             links=links_for(channel,title)
             self.assertIn("show",links)
             self.assertEqual(links["show"]["verification"],"public-listed")
-            self.assertNotIn("channel",links)
+            if channel=="Comedy Central":self.assertNotIn("channel",links)
+            else:self.assertIn("channel",links)
         self.assertNotIn("show",links_for("Catchy Comedy","Unknown Show"))
         self.assertNotIn("channel",links_for("Comedy Central","South Park"))
 
