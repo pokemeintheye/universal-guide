@@ -31,6 +31,11 @@ def _settings():
     return TABLO_URL,DB
 
 def _stop(sid):
+    # Closing the original tuner also closes previews sharing its Tablo session.
+    with LOCK:
+        children=[key for key,state in ACTIVE.items() if state.get("parent")==sid]
+    for child in children:
+        _stop(child)
     with LOCK:
         session=ACTIVE.pop(sid,None)
     if not session:return False
@@ -85,7 +90,7 @@ def tune(channel_id:str):
     if not found:raise HTTPException(404,"Channel isn't in the indexed Tablo lineup")
     _cleanup()
     with LOCK:
-        if sum(1 for state in ACTIVE.values() if state["process"].poll() is None)>=MAX_SESSIONS:
+        if sum(1 for state in ACTIVE.values() if not state.get("parent") and state["process"].poll() is None)>=MAX_SESSIONS:
             raise HTTPException(409,"Two Tablo streams are already in use in Universal Guide")
     try:
         r=requests.post(origin+channel_id+"/watch",headers={
@@ -363,6 +368,109 @@ def _probe_source_segment(url):
         return {"readable":False,"error":type(exc).__name__}
 
 
+def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_seconds=75):
+    """Make a bounded, finite HLS timeline for a seek playback proof of concept.
+
+    The original Tablo still holds the buffer; only a short clip is transcoded
+    to the existing temporary playback directory, not the entire history.
+    """
+    if not isinstance(seconds_behind_live,int) or not 30<=seconds_behind_live<=1800:
+        raise HTTPException(400,"Preview offset must be 30 to 1800 seconds")
+    urls=_media_segment_urls(origin,media_url,body)
+    durations=[]
+    for line in body.splitlines():
+        if line.startswith("#EXTINF:"):
+            try:durations.append(float(line[8:].split(",",1)[0]))
+            except ValueError:raise HTTPException(502,"Invalid Tablo segment duration")
+    if not urls or len(durations)!=len(urls):
+        raise HTTPException(502,"Tablo playlist segment metadata was incomplete")
+    total=sum(durations)
+    if total<seconds_behind_live+15:
+        raise HTTPException(409,"Not enough Tablo buffer has accumulated yet")
+    # Find the media segment containing the requested historical position.
+    start_time=max(0,total-seconds_behind_live)
+    accumulated=0.0
+    start=0
+    for i,d in enumerate(durations):
+        if accumulated+d>start_time:
+            start=i
+            break
+        accumulated+=d
+    chosen=[]
+    elapsed=0.0
+    for index in range(start,len(urls)):
+        chosen.append((urls[index],durations[index]))
+        elapsed+=durations[index]
+        if elapsed>=clip_seconds:break
+    if elapsed<15:
+        raise HTTPException(409,"Not enough buffered video for a test clip")
+    output=["#EXTM3U","#EXT-X-VERSION:3",
+            "#EXT-X-TARGETDURATION:"+str(max(1,int(__import__("math").ceil(max(d for _,d in chosen))))),
+            "#EXT-X-MEDIA-SEQUENCE:0"]
+    for url,duration in chosen:
+        output.append("#EXTINF:"+format(duration,".3f")+",")
+        output.append(url)
+    output.append("#EXT-X-ENDLIST")
+    return "\\n".join(output)+"\\n",{"start_seconds_behind_live":round(total-accumulated,1),
+                                  "clip_duration_seconds":round(elapsed,1),
+                                  "segment_count":len(chosen)}
+
+
+@router.post("/{sid}/preview")
+def historical_preview(sid:str,seconds_behind_live:int=120):
+    """Experimental 75s clip from existing Tablo history; original live tuner untouched."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    _cleanup()
+    with LOCK:
+        parent=ACTIVE.get(sid)
+        if not parent or parent.get("parent"):
+            raise HTTPException(404,"Original Tablo stream has ended")
+        if parent["process"].poll() is not None:
+            raise HTTPException(409,"Original Tablo stream is no longer running")
+        if any(x.get("parent")==sid for x in ACTIVE.values()):
+            raise HTTPException(409,"A historical preview is already running")
+        parent["last"]=time.monotonic()
+        origin,source=parent["origin"],parent["source_playlist"]
+    media_url,body,_=_source_media_playlist(origin,source)
+    manifest,info=_historic_clip_manifest(origin,media_url,body,seconds_behind_live)
+    child_id=secrets.token_urlsafe(20)
+    directory=STORE/child_id
+    directory.mkdir(mode=0o700,parents=True,exist_ok=False)
+    input_path=directory/"historical-input.m3u8"
+    input_path.write_text(manifest)
+    input_path.chmod(0o600)
+    args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+          "-protocol_whitelist","file,http,tcp,crypto",
+          "-user_agent",USER_AGENT,"-i",str(input_path),
+          "-map","0:v:0","-map","0:a:0?","-vf","yadif",
+          "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
+          "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
+          "-c:a","aac","-ac","2","-b:a","128k",
+          "-f","hls","-hls_time","4","-hls_list_size","0",
+          "-hls_segment_filename",str(directory/"seg_%05d.ts"),
+          str(directory/"index.m3u8")]
+    try:
+        with (directory/"ffmpeg.log").open("wb") as log:
+            process=subprocess.Popen(args,stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.DEVNULL,stderr=log,close_fds=True)
+    except OSError as exc:
+        shutil.rmtree(directory,ignore_errors=True)
+        raise HTTPException(502,"Could not launch preview transcoder: "+type(exc).__name__)
+    with LOCK:
+        if ACTIVE.get(sid) is not parent:
+            process.terminate()
+            shutil.rmtree(directory,ignore_errors=True)
+            raise HTTPException(409,"Original Tablo stream closed while starting preview")
+        ACTIVE[child_id]={"id":child_id,"directory":directory,"process":process,
+                          "last":time.monotonic(),"created":time.monotonic(),
+                          "channel":parent["channel"],"parent":sid}
+    return {"session_id":child_id,
+            "playlist_url":"/api/tablo/live/"+child_id+"/index.m3u8",
+            "experiment":"finite_historical_preview",**info,
+            "note":"Preview ends after the buffered test clip. Original live stream remains active."}
+
+
 @router.get("/{sid}/segment-diagnostics")
 def segment_diagnostics(sid:str):
     """Read small samples of old/middle/recent native Tablo HLS segments."""
@@ -460,6 +568,8 @@ def live_segment(sid:str,file_name:str):
         item=ACTIVE.get(sid)
         if not item:raise HTTPException(404,"Tablo stream expired")
         item["last"]=time.monotonic()
+        if item.get("parent") in ACTIVE:
+            ACTIVE[item["parent"]]["last"]=time.monotonic()
         directory=item["directory"]
     path=directory/file_name
     if file_name=="index.m3u8" and not path.exists():
