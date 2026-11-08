@@ -421,6 +421,23 @@ async function explainTabloFailure(message,generation){
   if(generation===playerGeneration)playerMessage(message+" | Tablo status: "+e.message);
  }
 }
+async function waitForTabloReady(sessionId,generation){
+ const started=Date.now();
+ while(Date.now()-started<35000){
+  if(generation!==playerGeneration)return false;
+  const health=await req("/api/tablo/live/"+encodeURIComponent(sessionId)+"/status");
+  if(health.manifest_ready&&health.segment_count>0)return true;
+  if(!health.transcoder_running){
+   throw Error("Tablo transcoder exited "+health.ffmpeg_exit_code+
+     (health.ffmpeg_error?" · "+health.ffmpeg_error:""));
+  }
+  playerMessage("Tablo tuner buffering… "+Math.round(health.seconds_since_start)+
+    "s (segments: "+health.segment_count+")");
+  await new Promise(resolve=>setTimeout(resolve,900));
+ }
+ throw Error("Tablo did not produce a playable HLS playlist within 35 seconds. "+
+   "Check tuner signal and FFmpeg diagnostics.");
+}
 async function launchTabloLive(){
  if(selectedProgram?.channel?.source!=="tablo")return;
  const channel=selectedProgram.channel;
@@ -443,6 +460,7 @@ async function launchTabloLive(){
   playerMessage("Starting Tablo tuner and transcoder. This may take 15–30 seconds…");
   const video=document.getElementById("plexvideo");
   const url=info.playlist_url;
+  if(!await waitForTabloReady(info.session_id,generation))return;
   video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
   video.addEventListener("error",()=>{if(generation===playerGeneration)
     explainTabloFailure("Live Tablo media failed (browser error "+(video.error?.code||"?")+
