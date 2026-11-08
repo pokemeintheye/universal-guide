@@ -200,3 +200,13 @@ This resolves missing listings when supplemental data exists, but it **does not*
 On Unraid, update the container and run **Refresh Philo EPG**. Open `/api/philo/coverage` to inspect `supplemental_epg.added`, `supplemental_epg.programs`, `supplemental_epg.error` and `epg_sources.supplemental`. A successful Docker build validates local parser tests; actual live source coverage must be checked by running a refresh on the deployed server.
 
 EPGShare publishes a current human-readable station listing at https://epgshare01.online/epgshare01/epg_ripper_US2.txt; channel IDs can change. This integration uses its public community feed, which has no guaranteed availability or coverage and may require checking data usage terms.
+
+## Philo app handoff expansion (2026-11-08)
+
+The curated `app/philo_links.json` catalog now contains **36 exact channel player URLs** (up from 7). The 29 added links were discovered as public `philo.com/player/channel/<ID>` pages whose titles identify the expected networks, rather than by decoding or guessing Philo IDs. All new entries use `verification: "public-listed"` and are displayed in the iPhone guide with **Test Link** until device-confirmed. Previously tested Food Network stays `iphone-tested`. Each link opens the Philo channel page; a second tap to start playing may be needed. A public listed channel is **not** proof that a user's subscription includes it.
+
+Examples of new mapped channels: A&E, Animal Planet, BET/BET Her, BBC America, CMT, FETV, Game Show Network, the three Hallmark networks, HSN, Investigation Discovery, Lifetime, MeTV and MeTV Toons, MTV2, MTV Live, Nick Jr., Nickelodeon, Oprah Winfrey Network, Paramount Network, Science Channel, Sundance TV, Travel Channel, TV One, UPtv, VH1, and We TV. Source URLs for every new entry are retained in JSON.
+
+The existing `/api/philo/coverage` diagnostics now include `philo_handoff_coverage`: `mapped`, `lineup_total`, and `not_mapped`. The missing list identifies the next batch of public player URLs to research. TV schedules still come from the two independent XMLTV sources; the Philo catalog holds only the independently confirmed *player-page* identifiers. Do not infer player-page IDs from XMLTV station IDs.
+
+After installing the new Docker image, open a show on a newly covered channel such as **A&E** or **Hallmark Channel** and select **Open Live Channel in Philo · Test Link**. Confirm that the installed iPhone app opens the matching channel, even if playback still requires a tap.
