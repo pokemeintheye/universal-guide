@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#192237"><link rel="manifest" href="/static/manifest.webmanifest">
 <title>Universal TV Guide</title>
 <style>
 :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0e1320;color:#f4f6fc;color-scheme:dark}
@@ -45,12 +45,39 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .player-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .player-actions[hidden]{display:none!important}
 .player-actions button:disabled{opacity:.5;cursor:wait}
+.philo-link{display:block;background:#3b5786;color:#fff;padding:12px 16px;border-radius:9px;text-decoration:none;text-align:center;font-weight:650}
+.philo-link[hidden]{display:none!important}
+.philo-link:hover{background:#476ca7}
+/* iPhone first: keep station labels visible while the timeline scrolls. */
+@media(max-width:650px){
+ header{padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top))}
+ h1{font-size:20px}
+ .container{padding:12px}
+ .panel{padding:12px;margin-bottom:12px}
+ .panel h2{margin:3px 0}
+ .bar{gap:7px}
+ .bar button,.guide-controls button{padding:10px 12px;min-height:42px}
+ .timeline{max-height:68dvh}
+ .epg{min-width:0}
+ .epg-station{width:110px;min-width:110px;padding:10px 7px}
+ .epg-station .net{font-size:12px}
+ .epg-slot{width:150px;min-width:150px}
+ .epg-tracks{width:2400px;min-width:2400px;background:repeating-linear-gradient(to right,transparent 0,transparent 149px,#33425c 149px,#33425c 150px)}
+ .epg-program{padding:7px 6px}
+ .dialog-backdrop{padding:12px;align-items:flex-end}
+ .dialog-card{max-height:88dvh;width:100%;padding:18px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
+ .player-backdrop{padding:10px;padding-top:max(10px,env(safe-area-inset-top))}
+ .player-tools{width:100%}
+ .player-actions{flex-direction:column}
+ .player-actions a,.player-actions button{min-height:46px;text-align:center}
+ #findshow{min-width:0!important}
+}
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
 <section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads Plex metadata and now relays requested Plex playback streams. No media folders are mounted. Keep this experimental server on your trusted LAN; it does not include authentication.</p></section>
 <section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback works; live Tablo tuner playback is experimental; Philo playback remains pending.</p><div class="guide-controls" id="guidecontrols">
+<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback works; live Tablo tuner playback is experimental; Philo show, episode, and channel handoffs are available for verified links; playback may require additional taps in Philo.</p><div class="guide-controls" id="guidecontrols">
 <button id="earlier" type="button">← Earlier</button>
 <button id="now" type="button">Now</button>
 <button id="later" type="button">Later →</button>
@@ -70,8 +97,10 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
 <div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="philohandoff" hidden class="player-actions" style="margin-top:12px">
-<a id="philoopen" style="display:inline-block;background:#3b5786;color:white;padding:11px 16px;border-radius:9px;text-decoration:none">▶ Watch on Philo</a>
-<span class="note">Opens the series page in the Philo app on iPhone; select an episode there. Exact episode/live playback isn't verified.</span>
+<a id="philoepisode" hidden class="philo-link" rel="noopener" aria-label="Open exact episode in Philo">▶ Open This Episode in Philo</a>
+<a id="philoshow" hidden class="philo-link" rel="noopener" aria-label="Open show in Philo">▶ Open Show in Philo</a>
+<a id="philochannel" hidden class="philo-link" rel="noopener" aria-label="Open live channel page in Philo">▶ Open Live Channel in Philo</a>
+<span id="philonote" class="note">Opens the installed Philo app on iPhone. Playback may require pressing Play inside Philo.</span>
 </div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
 <div class="player-actions" id="playbackchoices" hidden>
 <button id="playbegin" type="button">▶ Start from Beginning</button>
@@ -80,7 +109,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <p class="note">Plex browser playback is experimental. The Plex Web button remains available as a fallback.</p>
 <a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
 <p class="note" id="plexlinkerror"></p></div>
-<p class="note">For Plex matches choose a playback mode. Live Tablo is experimental. Philo handoff is being tested for confirmed titles; direct episode and channel playback are not yet verified.</p></div></div><script>
+<p class="note">For Plex matches choose a playback mode. Live Tablo is experimental. Verified Philo links can open a show, an episode, or a live channel page in the installed app. Playback may require a tap inside Philo.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function req(url,opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
@@ -104,16 +133,23 @@ function setGuideAnchor(t){
 function openDetails(program){
  const {channel:p,entry:e}=program;
  selectedProgram=program;
- // Confirmed iPhone Universal Link for The Office (US). Do not invent
- // provider IDs or claim specific episode / live-channel handoff.
- const confirmedOffice=p.source==="philo" && e.title?.trim().toLowerCase()==="the office";
- $("philohandoff").hidden=!confirmedOffice;
- // Remove the destination entirely for unrelated shows as a second guard.
- if(confirmedOffice){
-   $("philoopen").href="https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg";
- }else{
-   $("philoopen").removeAttribute("href");
+ // Show only server-matched provider links, never a reused hard-coded URL.
+ // Opening Philo is a handoff, not embedded playback or guaranteed autoplay.
+ const options=p.source==="philo" ? (e.philo_links||{}) : {};
+ let philoCount=0;
+ for(const [kind,id] of [["episode","philoepisode"],["show","philoshow"],["channel","philochannel"]]){
+   const target=$(id),choice=options[kind];
+   const valid=Boolean(choice&&typeof choice.url==="string"&&
+     /^https:\/\/www\.philo\.com\/player\/(show|channel)\/[A-Za-z0-9_-]+(?:\?episode=[A-Za-z0-9_-]+)?$/.test(choice.url));
+   target.hidden=!valid;
+   if(valid){
+     target.href=choice.url;
+     philoCount++;
+   }else target.removeAttribute("href");
  }
+ $("philohandoff").hidden=philoCount===0;
+ $("philonote").textContent="Opens the Philo app when supported. "+
+   "The current channel or episode may need you to press Play in Philo.";
  $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
