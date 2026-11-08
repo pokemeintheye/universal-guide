@@ -1,7 +1,61 @@
 {
-  "version": 2,
-  "notes": "iPhone-tested and public-listed Philo player IDs; public-listed are not yet device tested. No title-to-ID guessing; opening a page does not auto-play.",
+  "version": 3,
+  "notes": "All channel identifiers from exact titled Philo public player pages; iphone-tested entries are device verified, public-listed are to test. No guessed IDs; cannot guarantee app autoplay or subscription.",
   "channels": [
+    {
+      "name": "A&E",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MjI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MjI"
+    },
+    {
+      "name": "AMC",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg"
+    },
+    {
+      "name": "Animal Planet",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDY"
+    },
+    {
+      "name": "BBC America",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MTg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MTg"
+    },
+    {
+      "name": "BET",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MDM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MDM"
+    },
+    {
+      "name": "BET Her",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzg"
+    },
+    {
+      "name": "CMT",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1OTk",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1OTk"
+    },
+    {
+      "name": "Discovery Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA"
+    },
+    {
+      "name": "FETV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MTc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MTc"
+    },
     {
       "name": "Food Network",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzI",
@@ -9,10 +63,28 @@
       "verification": "iphone-tested"
     },
     {
-      "name": "AMC",
-      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg",
+      "name": "Game Show Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTE",
       "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg"
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTE"
+    },
+    {
+      "name": "Hallmark Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjY"
+    },
+    {
+      "name": "Hallmark Family",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjM"
+    },
+    {
+      "name": "Hallmark Mystery",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjc"
     },
     {
       "name": "HGTV",
@@ -27,10 +99,82 @@
       "source": "https://www.philo.com/player/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Mjg"
     },
     {
-      "name": "Discovery Channel",
-      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA",
+      "name": "HSN",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4NjM",
       "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA"
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4NjM"
+    },
+    {
+      "name": "Investigation Discovery",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTM"
+    },
+    {
+      "name": "Lifetime",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjU",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjU"
+    },
+    {
+      "name": "MeTV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDE",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDE"
+    },
+    {
+      "name": "MeTV Toons",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4MTQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4MTQ"
+    },
+    {
+      "name": "MTV Live",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg4NTU",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg4NTU"
+    },
+    {
+      "name": "MTV2",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTg"
+    },
+    {
+      "name": "Nick Jr.",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDg"
+    },
+    {
+      "name": "Nickelodeon",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NzI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NzI"
+    },
+    {
+      "name": "Oprah Winfrey Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTQ"
+    },
+    {
+      "name": "Paramount Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0ODQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0ODQ"
+    },
+    {
+      "name": "Science Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTA"
+    },
+    {
+      "name": "Sundance TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTA"
     },
     {
       "name": "TLC",
@@ -39,10 +183,40 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDM"
     },
     {
+      "name": "Travel Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Mzg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Mzg"
+    },
+    {
       "name": "TV Land",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Nzg",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Nzg"
+    },
+    {
+      "name": "TV One",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzM"
+    },
+    {
+      "name": "UPtv",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjE",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjE"
+    },
+    {
+      "name": "VH1",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTI"
+    },
+    {
+      "name": "We TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDk",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDk"
     }
   ],
   "shows": [
