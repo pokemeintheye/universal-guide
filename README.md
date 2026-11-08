@@ -145,3 +145,22 @@ The live player now prefers HLS.js / MediaSource on Chrome and Edge, using nativ
 
 ## iPhone Philo Universal Link handoff (first verified test)
 An iPhone with the Philo app installed and signed in successfully opened the **The Office** program page using `https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg`. Universal Guide now offers **Watch on Philo** for that exact Philo guide series as a conservative test, alongside Plex options when it matches. The link targets the show page, **not a particular episode or live Comedy Central stream**. The public `/go/comedycentral` URL remained in Safari and is not used. Other series must have their provider-specific link verified before a handoff button is enabled.
+
+## iPhone-first Philo catalog prototype
+
+The guide now contains a curated link resolver (`app/philo_links.py`) and an editable catalog (`app/philo_links.json`) for **confirmed Philo player links only**. Each Philo guide program receives separate verified `channel`, `show` and, where episode title/number matches, `episode` handoff options. Links point to the official philo.com site so iOS can open the installed app via Universal Links. This is provider handoff: no Philo DRM streams are proxied, and launching a Philo link doesn't automatically start playback.
+
+Initially verified on the user's iPhone:
+- **The Office**: series page
+- **Everybody Loves Raymond — Pilot (S1E1)**: exact episode page (user tapped Play there)
+- **Food Network**: live channel page (user must select/play inside Philo)
+
+**Important:** Matching is intentionally conservative. Other programs never reuse the Office ID. The guide has external EPG schedules, not a verified Philo subscription lineup. Verified links need to be added to `philo_links.json`; do not derive an ID from a title or assume a random Philo page corresponds to the right show. Add another link only after verifying the destination on an iPhone; a channel page is not the same as live autoplay. The integration is not yet validated on tvOS.
+
+### Add Universal Guide to the iPhone Home Screen
+
+Connect your iPhone to the LAN where Unraid is reachable. Open the Universal Guide WebUI in Safari, tap **Share → Add to Home Screen**, enable **Open as Web App** if offered, and add it. The page now declares a standalone web-app manifest and includes narrower-screen layout adjustments. **Do not expose this prototype publicly**: it has no user authentication and can control local Plex and Tablo playback. Testing whether Philo links launch the iPhone app from standalone Home Screen mode is a next validation step.
+
+### Verify after update
+
+Open a current *The Office* Philo listing: expect **Open Show in Philo** only, unless an independently verified channel match exists. Open a Food Network listing: expect **Open Live Channel in Philo**, which shows its channel page and may require selecting the current program to play. Open *Everybody Loves Raymond* pilot listing: expect an episode-specific button if the schedule contains a matching episode subtitle and no conflicting season/episode metadata. Other titles without verified IDs must not display Philo options.
