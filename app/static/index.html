@@ -98,9 +98,9 @@ function setGuideAnchor(t){
  guide(view.plex);
 }
 function openDetails(program){
+ const {channel:p,entry:e}=program;
  selectedProgram=program;
  $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
- const {channel:p,entry:e}=program;
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
  const fmt={weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"};
