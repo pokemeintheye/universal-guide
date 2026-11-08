@@ -423,6 +423,7 @@ status();guide(view.plex);
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
+<button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
 <pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
@@ -470,6 +471,7 @@ async function closePlexPlayer(){
  video.replaceWith(clean);
  document.getElementById("playerbackdrop").hidden=true;
  document.getElementById("tablobuffer").hidden=true;
+ document.getElementById("tablosegments").hidden=true;
  document.getElementById("tablobufferresult").hidden=true;
  const sid=playerSession;
  playerSession=null;
@@ -634,6 +636,7 @@ async function launchTabloLive(){
   }
   tabloSession=info.session_id;
   document.getElementById("tablobuffer").hidden=false;
+  document.getElementById("tablosegments").hidden=false;
   document.getElementById("tablobufferresult").hidden=true;
   document.getElementById("detailsmodal").hidden=true;
   document.getElementById("playertitle").textContent="Live Tablo · "+(channel.network||channel.label);
@@ -690,6 +693,17 @@ document.getElementById("tablobuffer").onclick=async function(){
   if(sid!==tabloSession)return;
   output.textContent=JSON.stringify(info,null,2);
  }catch(e){output.textContent="Diagnostic failed: "+e.message}
+ finally{button.disabled=false}
+};
+document.getElementById("tablosegments").onclick=async function(){
+ if(!tabloSession)return;
+ const sid=tabloSession,button=this,output=document.getElementById("tablobufferresult");
+ button.disabled=true;output.hidden=false;output.textContent="Checking older native Tablo segments (small samples only)…";
+ try{
+  const info=await req("/api/tablo/live/"+encodeURIComponent(sid)+"/segment-diagnostics");
+  if(sid!==tabloSession)return;
+  output.textContent=JSON.stringify(info,null,2);
+ }catch(e){output.textContent="Segment diagnostic failed: "+e.message}
  finally{button.disabled=false}
 };
 document.getElementById("watchtablo").onclick=launchTabloLive;
