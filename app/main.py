@@ -20,7 +20,7 @@ TABLO_REFRESH=max(1,int(os.getenv("TABLO_REFRESH_HOURS","6")))*3600
 PHILO_EPG_URL="https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz"
 PHILO_REFRESH=max(6,int(os.getenv("PHILO_REFRESH_HOURS","24")))*3600
 app=FastAPI(title="Universal TV Guide",version="0.1.0")
-from app.philo_links import links_for as philo_handoff_links
+from app.philo_links import links_for as philo_handoff_links, channel_catalog as known_philo_channels
 from app.playback import router as playback_router
 app.include_router(playback_router)
 from app.tablo_live import router as tablo_live_router
@@ -643,6 +643,21 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
             channel["number"]=info.get("number") or entry["channel_label"]
             channel["network"]=info.get("network") or info.get("callsign") or ""
         channel["programs"].append(entry)
+    # A public Philo channel link does not imply the EPG has listings.
+    # Keep known channels discoverable without inventing broadcast schedules.
+    if source in ("all","philo") and not plex_only:
+        for item in known_philo_channels():
+            key="philo:philo:"+norm(item["name"])
+            pref=prefs.get(("philo","philo:"+norm(item["name"])))
+            if (pref and bool(pref["hidden"]) and not include_hidden) or (
+                    favorites_only and not (pref and bool(pref["favorite"]))):
+                continue
+            if key not in channels:
+                channels[key]={"id":key,"label":item["name"],"source":"philo",
+                               "favorite":bool(pref["favorite"]) if pref else False,
+                               "programs":[],"schedule_unavailable":True,
+                               "philo_channel_url":item["url"],
+                               "philo_verification":item["verification"]}
     return {"generated_at":datetime.now(timezone.utc).isoformat(),"window_start":now.isoformat(),"window_end":until.isoformat(),"channels":list(channels.values())}
 
 @app.on_event("startup")
