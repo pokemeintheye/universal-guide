@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "notes": "Only exact links tested on user's iPhone. IDs are from real Philo player URLs; not derived from titles. Opening links does not auto-play.",
+  "channels": [
+    {
+      "name": "Food Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzI",
+      "verified": "2026-11-08"
+    }
+  ],
+  "shows": [
+    {
+      "name": "The Office",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg",
+      "verified": "2026-11-08",
+      "episodes": []
+    },
+    {
+      "name": "Everybody Loves Raymond",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0NDMyNTU",
+      "verified": "2026-11-08",
+      "episodes": [
+        {
+          "subtitle": "Pilot",
+          "season": 1,
+          "episode": 1,
+          "id": "RXBpc29kZTo2MDg1NDg4OTk2NDg2NzU5NTU"
+        }
+      ]
+    }
+  ]
+}
