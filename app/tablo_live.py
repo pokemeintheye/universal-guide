@@ -158,7 +158,33 @@ def _safe_ffmpeg_message(directory):
         return ""
 
 
-def _health(item):
+def _probe_segment(directory):
+    """Lightweight ffprobe inspection; no media filenames or external URLs returned."""
+    segments=sorted(directory.glob("seg_*.ts"))
+    if not segments:return {"status":"no_segments"}
+    segment=segments[-1]
+    if not segment.is_file() or segment.stat().st_size<188:
+        return {"status":"empty_segment"}
+    try:
+        import json
+        cmd=["ffprobe","-v","error","-show_entries",
+             "stream=codec_type,codec_name,width,height,pix_fmt",
+             "-of","json",str(segment)]
+        p=subprocess.run(cmd,capture_output=True,text=True,timeout=5,check=False)
+        if p.returncode:
+            return {"status":"probe_failed","exit_code":p.returncode,
+                    "message":p.stderr[-180:].strip()}
+        streams=json.loads(p.stdout).get("streams",[])
+        return {"status":"ok" if streams else "no_decodable_streams",
+                "segment_bytes":segment.stat().st_size,
+                "streams":[{k:v for k,v in stream.items()
+                           if k in ("codec_type","codec_name","width","height","pix_fmt")}
+                          for stream in streams[:3]]}
+    except (OSError,ValueError,subprocess.TimeoutExpired) as exc:
+        return {"status":"probe_error","error":type(exc).__name__}
+
+
+def _health(item,probe=False):
     directory=item["directory"]
     playlist=directory/"index.m3u8"
     returncode=item["process"].poll()
@@ -166,22 +192,33 @@ def _health(item):
         segments=len(list(directory.glob("seg_*.ts")))
     except OSError:
         segments=0
-    return {"transcoder_running":returncode is None,
+    result={"transcoder_running":returncode is None,
             "ffmpeg_exit_code":returncode,
             "manifest_ready":playlist.is_file(),
             "segment_count":segments,
             "seconds_since_start":round(time.monotonic()-item["created"],1),
             "ffmpeg_error":_safe_ffmpeg_message(directory) if returncode is not None else ""}
+    if probe:
+        result["segment_probe"]=_probe_segment(directory)
+        if playlist.is_file():
+            try:
+                lines=playlist.read_text(errors="replace").splitlines()
+                result["playlist_valid"]=bool(lines and lines[0].strip()=="#EXTM3U")
+                result["playlist_segment_refs"]=sum(1 for line in lines
+                                  if line.strip().endswith(".ts") and not line.startswith("#"))
+            except OSError:
+                result["playlist_valid"]=False
+    return result
 
 
 @router.get("/{sid}/status")
-def live_status(sid:str):
+def live_status(sid:str,probe:bool=False):
     _cleanup()
     with LOCK:
         item=ACTIVE.get(sid)
         if not item:raise HTTPException(404,"Tablo stream ended or was unavailable")
         item["last"]=time.monotonic()
-        return _health(item)
+        return _health(item,probe=probe)
 
 
 @router.get("/{sid}/{file_name}")
