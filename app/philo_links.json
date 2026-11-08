@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "notes": "All channel identifiers from exact titled Philo public player pages; iphone-tested entries are device verified, public-listed are to test. No guessed IDs; cannot guarantee app autoplay or subscription.",
   "channels": [
     {
@@ -449,11 +449,11 @@
   ],
   "shows": [
     {
-      "name": "The Office",
-      "id": "U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg",
-      "verified": "2026-11-08",
-      "episodes": [],
-      "verification": "iphone-tested"
+      "name": "Cheers",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0NzIzMTQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0NzIzMTQ",
+      "episodes": []
     },
     {
       "name": "Everybody Loves Raymond",
@@ -468,6 +468,41 @@
         }
       ],
       "verification": "iphone-tested"
+    },
+    {
+      "name": "Full House",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0NDM2NjI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0NDM2NjI",
+      "episodes": []
+    },
+    {
+      "name": "Hot in Cleveland",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzk0MDQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzk0MDQ",
+      "episodes": []
+    },
+    {
+      "name": "House Hunters",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
+      "episodes": []
+    },
+    {
+      "name": "South Park",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzg3NTA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzg3NTA",
+      "episodes": []
+    },
+    {
+      "name": "Taxi",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg1MTM3ODg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg1MTM3ODg",
+      "episodes": []
     },
     {
       "name": "The Kitchen",
@@ -485,11 +520,11 @@
       ]
     },
     {
-      "name": "House Hunters",
-      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
-      "verification": "public-listed",
-      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
-      "episodes": []
+      "name": "The Office",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg",
+      "verified": "2026-11-08",
+      "episodes": [],
+      "verification": "iphone-tested"
     }
   ]
 }
