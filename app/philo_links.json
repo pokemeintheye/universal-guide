@@ -76,6 +76,12 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1OTk"
     },
     {
+      "name": "Cooking Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzM"
+    },
+    {
       "name": "Crime + Investigation",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzc",
       "verification": "public-listed",
