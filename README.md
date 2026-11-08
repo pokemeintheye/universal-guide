@@ -2,7 +2,7 @@
 
 Metadata-only TV guide prototype for Plex, local OTA listings and Philo channel schedules.
 
-**Status:** Initial Plex metadata indexing and optional XMLTV guide import. No automatic Philo/Tablo schedule acquisition, native Apple TV app, or verified app deep links yet. This is an experimental prototype.
+**Status:** Initial Plex metadata indexing and optional XMLTV guide import. No automatic Philo schedule acquisition, native Apple TV app, or verified app deep links yet. This is an experimental prototype.
 
 ## Install from Unraid Docker > Add Container
 
@@ -16,6 +16,8 @@ Metadata-only TV guide prototype for Plex, local OTA listings and Philo channel 
    - `PLEX_TOKEN`: your Plex API token (secret; **never commit it**).
    - `REFRESH_MINUTES`: `30`
    - `GUIDE_XMLTV`: `/data/guide.xml`
+   - `TABLO_URL`: `http://YOUR-TABLO-IP:8885` (legacy network Tablo)
+   - `TABLO_REFRESH_HOURS`: `6`
 7. Ensure `/mnt/user/appdata/universal-guide` exists and is writable by container UID **10001**.
 8. Launch, then browse `http://YOUR-UNRAID-IP:8787`.
 
@@ -33,7 +35,7 @@ Copy `.env.example` to `.env` locally and set the Plex URL and token. Run `docke
 
 ## Optional live guide data
 
-Place an XMLTV-format guide at `/mnt/user/appdata/universal-guide/guide.xml`. Click **Reload guide.xml** or allow the background watcher to import it. Schedule collection from Philo and Tablo is **not implemented**; XMLTV feeds must be provided independently.
+Place an XMLTV-format guide at `/mnt/user/appdata/universal-guide/guide.xml`. Click **Reload guide.xml** or allow the background watcher to import it. Tablo can be read directly from the local legacy API; Philo XMLTV feeds must be provided independently.
 
 ## Updating
 
@@ -51,3 +53,9 @@ The GitHub Actions workflow rebuilds GHCR `latest` whenever code is committed to
 - Add selected OTA and Philo channel groups and schedules.
 - Improve program matching using external metadata identifiers.
 - Test Apple TV app handoff and plan a native tvOS client.
+
+## Legacy Tablo OTA guide
+
+Set `TABLO_URL` as an Unraid environment variable to the local address of your network Tablo, e.g. `http://192.168.1.50:8885`. Click **Refresh Tablo** in the web interface (or allow the background scan approximately every six hours). The integration makes read-only GET requests to `/guide/airings` and the returned individual program records. It uses broadcast start times, durations, channels, and episode metadata. Existing Plex and XMLTV metadata stays independent.
+
+To avoid overloading Tablo the import uses no more than six concurrent requests, caps the guide at 4,000 program references, and reports truncation. The importer may require changes for different Tablo firmware. There is no video/recording access. Do not expose this application to the public internet.

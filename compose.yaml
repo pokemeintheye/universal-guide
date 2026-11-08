@@ -10,6 +10,8 @@ services:
       PLEX_TOKEN: "${PLEX_TOKEN}"
       REFRESH_MINUTES: "30"
       GUIDE_XMLTV: /data/guide.xml
+      TABLO_URL: "${TABLO_URL:-}"
+      TABLO_REFRESH_HOURS: "6"
     volumes:
       - /mnt/user/appdata/universal-guide:/data
     security_opt:

@@ -3,6 +3,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
@@ -11,9 +13,12 @@ GUIDE=Path(os.getenv("GUIDE_XMLTV","/data/guide.xml"))
 PLEX_URL=os.getenv("PLEX_URL","").rstrip("/")
 PLEX_TOKEN=os.getenv("PLEX_TOKEN","")
 REFRESH=max(5,int(os.getenv("REFRESH_MINUTES","30")))*60
+TABLO_URL=os.getenv("TABLO_URL","").rstrip("/")
+TABLO_REFRESH=max(1,int(os.getenv("TABLO_REFRESH_HOURS","6")))*3600
 app=FastAPI(title="Universal TV Guide",version="0.1.0")
 sync_lock=threading.Lock()
-errors={"plex":"","guide":""}
+tablo_lock=threading.Lock()
+errors={"plex":"","guide":"","tablo":""}
 
 @contextmanager
 def db():
@@ -32,7 +37,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_media_norm ON media(normalized);
         CREATE TABLE IF NOT EXISTS listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);
         CREATE INDEX IF NOT EXISTS idx_guide_time ON listings(start,stop);
-        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);""")
+        CREATE TABLE IF NOT EXISTS tablo_listings(id TEXT PRIMARY KEY,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT,season INT,episode INT);\n        CREATE INDEX IF NOT EXISTS idx_tablo_time ON tablo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);""")
 initialize()
 
 def metadata(key,default=""):
@@ -139,6 +144,78 @@ def import_guide():
         errors["guide"]=str(e)
         raise
 
+
+def tablo_get(path):
+    """Read-only queries to a trusted local legacy Tablo host."""
+    parsed=urlparse(TABLO_URL)
+    if parsed.scheme!="http" or not parsed.hostname:
+        raise RuntimeError("Set TABLO_URL to http://YOUR-TABLO-IP:8885")
+    if not path.startswith("/guide/") or "//" in path or ".." in path:
+        raise ValueError("Unsupported Tablo path")
+    response=requests.get(TABLO_URL+path,timeout=(3,12),headers={"Accept":"application/json"})
+    response.raise_for_status()
+    return response.json()
+
+def fetch_tablo_airing(path):
+    try:
+        data=tablo_get(path)
+        details=data.get("airing_details") or {}
+        raw=details.get("datetime")
+        duration=int(details.get("duration") or 0)
+        if not raw or duration<=0:return None
+        start=datetime.fromisoformat(raw.replace("Z","+00:00")).astimezone(timezone.utc)
+        stop=start+timedelta(seconds=duration)
+        if stop<datetime.now(timezone.utc)-timedelta(hours=1):return None
+        channel=(details.get("channel") or {}).get("channel") or {}
+        channel_path=details.get("channel_path") or ""
+        label=str(channel.get("major") or "")+"."+str(channel.get("minor") or "")
+        if not channel.get("major"):label=channel.get("call_sign") or channel_path
+        title=details.get("show_title") or (data.get("event") or {}).get("title") or ""
+        episode=data.get("episode") or {}
+        movie=data.get("movie") or {}
+        subtitle=episode.get("title") or ""
+        desc=episode.get("description") or movie.get("description") or (data.get("event") or {}).get("description") or ""
+        year=movie.get("release_year") or movie.get("year") or 0
+        season=episode.get("season_number")
+        number=episode.get("number")
+        return (path,channel_path,label,start.isoformat(),stop.isoformat(),title,subtitle,int(year or 0),str(desc)[:600],season,number)
+    except (requests.RequestException,ValueError,TypeError,KeyError):
+        return None
+
+def sync_tablo():
+    if not TABLO_URL:raise RuntimeError("Configure TABLO_URL first")
+    if not tablo_lock.acquire(blocking=False):
+        raise RuntimeError("Tablo refresh already in progress")
+    try:
+        paths=tablo_get("/guide/airings")
+        if not isinstance(paths,list):raise RuntimeError("Unexpected Tablo airings response")
+        paths=[p for p in paths if isinstance(p,str) and p.startswith("/guide/")]
+        if not paths:raise RuntimeError("Tablo returned no program references; preserving previous schedule")
+        # Bound requests so a malformed or unexpectedly huge response cannot overload the device.
+        max_items=4000
+        truncated=len(paths)>max_items
+        paths=paths[:max_items]
+        rows=[]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures=[pool.submit(fetch_tablo_airing,p) for p in paths]
+            for f in as_completed(futures):
+                row=f.result()
+                if row:rows.append(row)
+        if not rows:raise RuntimeError("No usable airing details returned; preserving previous schedule")
+        with db() as c:
+            c.execute("DELETE FROM tablo_listings")
+            c.executemany("INSERT OR REPLACE INTO tablo_listings VALUES (?,?,?,?,?,?,?,?,?,?,?)",rows)
+            putmeta(c,"last_tablo_sync",datetime.now(timezone.utc).isoformat())
+            putmeta(c,"tablo_truncated",int(truncated))
+            putmeta(c,"tablo_requested",len(paths))
+        errors["tablo"]=""
+        return {"imported":len(rows),"requested":len(paths),"truncated":truncated}
+    except Exception as e:
+        errors["tablo"]=str(e)
+        raise
+    finally:
+        tablo_lock.release()
+
 def match(p,catalog):
     title=norm(p["title"]);year=p["year"] or 0
     if not title:return None
@@ -161,7 +238,8 @@ def status():
     with db() as c:
         media=c.execute("SELECT COUNT(*) FROM media").fetchone()[0]
         listings=c.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
-    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists()}
+        tablo_count=c.execute("SELECT COUNT(*) FROM tablo_listings").fetchone()[0]
+    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists(),"tablo_configured":bool(TABLO_URL),"tablo_count":tablo_count,"tablo_sync":metadata("last_tablo_sync"),"tablo_error":errors["tablo"],"tablo_truncated":metadata("tablo_truncated","0")=="1"}
 
 @app.post("/api/sync/plex")
 def refresh_plex():
@@ -171,6 +249,11 @@ def refresh_plex():
 @app.post("/api/sync/guide")
 def refresh_guide():
     try:return import_guide()
+    except Exception as e:raise HTTPException(502,detail=str(e))
+
+@app.post("/api/sync/tablo")
+def refresh_tablo():
+    try:return sync_tablo()
     except Exception as e:raise HTTPException(502,detail=str(e))
 
 @app.get("/api/search")
@@ -184,13 +267,15 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False):
     now=datetime.now(timezone.utc);until=now+timedelta(hours=hours)
     with db() as c:
         listings=c.execute("SELECT * FROM listings WHERE start < ? AND stop > ? ORDER BY channel_label,start",(until.isoformat(),now.isoformat())).fetchall()
+        tablo=c.execute("SELECT * FROM tablo_listings WHERE start < ? AND stop > ? ORDER BY channel_label,start",(until.isoformat(),now.isoformat())).fetchall()
         catalog=c.execute("SELECT * FROM media").fetchall()
     channels={}
-    for item in listings:
+    for item in list(listings)+list(tablo):
         entry=dict(item)
+        entry["source"]="tablo" if item in tablo else "xmltv"
         entry["plex"]=match(entry,catalog)
         if plex_only and not entry["plex"]:continue
-        ch=entry["channel_id"]
+        ch=entry["source"]+":"+entry["channel_id"]
         channels.setdefault(ch,{"id":ch,"label":entry["channel_label"],"programs":[]})["programs"].append(entry)
     return {"generated_at":now.isoformat(),"channels":list(channels.values())}
 
@@ -204,6 +289,13 @@ def start_background_refresh():
             except Exception:pass
             try:
                 if GUIDE.exists() and float(metadata("guide_mtime","0"))!=GUIDE.stat().st_mtime:import_guide()
+            except Exception:pass
+            try:
+                if TABLO_URL:
+                    last=metadata("last_tablo_attempt")
+                    if not last or time.time()-datetime.fromisoformat(last).timestamp()>TABLO_REFRESH:
+                        with db() as c:putmeta(c,"last_tablo_attempt",datetime.now(timezone.utc).isoformat())
+                        sync_tablo()
             except Exception:pass
             time.sleep(60)
     threading.Thread(target=worker,daemon=True).start()
