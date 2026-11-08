@@ -78,8 +78,9 @@
     {
       "name": "Cooking Channel",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzM",
-      "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzM"
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzM",
+      "verified": "2026-11-08"
     },
     {
       "name": "Crime + Investigation",
@@ -259,8 +260,9 @@
     {
       "name": "Magnolia Network",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njk",
-      "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njk"
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njk",
+      "verified": "2026-11-08"
     },
     {
       "name": "MeTV",
@@ -320,8 +322,9 @@
     {
       "name": "Nicktoons",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDk",
-      "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDk"
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDk",
+      "verified": "2026-11-08"
     },
     {
       "name": "Oprah Winfrey Network",
