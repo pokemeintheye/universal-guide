@@ -422,6 +422,8 @@ status();guide(view.plex);
 <div class="player-tools"><strong id="playertitle"></strong><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
+<button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
+<pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
 <script>
@@ -467,6 +469,8 @@ async function closePlexPlayer(){
  const clean=video.cloneNode(false);
  video.replaceWith(clean);
  document.getElementById("playerbackdrop").hidden=true;
+ document.getElementById("tablobuffer").hidden=true;
+ document.getElementById("tablobufferresult").hidden=true;
  const sid=playerSession;
  playerSession=null;
  const oldTablo=tabloSession;tabloSession=null;
@@ -629,6 +633,8 @@ async function launchTabloLive(){
    return;
   }
   tabloSession=info.session_id;
+  document.getElementById("tablobuffer").hidden=false;
+  document.getElementById("tablobufferresult").hidden=true;
   document.getElementById("detailsmodal").hidden=true;
   document.getElementById("playertitle").textContent="Live Tablo · "+(channel.network||channel.label);
   document.getElementById("playerbackdrop").hidden=false;
@@ -675,6 +681,17 @@ async function launchTabloLive(){
   playerMessage("Tablo live playback unavailable: "+e.message);
  }finally{button.disabled=false}
 }
+document.getElementById("tablobuffer").onclick=async function(){
+ if(!tabloSession)return;
+ const sid=tabloSession,button=this,output=document.getElementById("tablobufferresult");
+ button.disabled=true;output.hidden=false;output.textContent="Inspecting Tablo-origin playlist…";
+ try{
+  const info=await req("/api/tablo/live/"+encodeURIComponent(sid)+"/source-diagnostics");
+  if(sid!==tabloSession)return;
+  output.textContent=JSON.stringify(info,null,2);
+ }catch(e){output.textContent="Diagnostic failed: "+e.message}
+ finally{button.disabled=false}
+};
 document.getElementById("watchtablo").onclick=launchTabloLive;
 document.getElementById("playbegin").onclick=()=>launchPlex("beginning");
 document.getElementById("playjoin").onclick=()=>launchPlex("join");
