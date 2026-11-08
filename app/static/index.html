@@ -100,7 +100,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
-<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="philohandoff" hidden class="player-actions" style="margin-top:12px">
+<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><p id="epgaccuracywarning" hidden class="note" style="border-left:3px solid #e7b85b;padding:9px 12px;background:#2b2931;border-radius:5px"></p><div id="detailplex"></div><div id="philohandoff" hidden class="player-actions" style="margin-top:12px">
 <a id="philoepisode" hidden class="philo-link" rel="noopener" aria-label="Open exact episode in Philo">▶ Open This Episode in Philo</a>
 <a id="philoshow" hidden class="philo-link" rel="noopener" aria-label="Open show in Philo">▶ Open Show in Philo</a>
 <a id="philochannel" hidden class="philo-link" rel="noopener" aria-label="Open live channel page in Philo">▶ Open Live Channel in Philo</a>
@@ -172,6 +172,12 @@ function openDetails(program){
  const episode=(e.season!=null&&e.episode!=null)?"Season "+e.season+", Episode "+e.episode:"";
  $("detailepisode").textContent=[episode,e.subtitle,e.year||""].filter(Boolean).join(" · ");
  $("detaildesc").textContent=e.description||"No program description provided by this guide source.";
+ const scheduleWarning=$("epgaccuracywarning");
+ const suspect=p.source==="philo"&&p.label==="Catchy Comedy";
+ scheduleWarning.hidden=!suspect;
+ scheduleWarning.textContent=suspect
+   ?"Schedule caution: Catchy Comedy listings from our third-party EPG have differed from Philo's live guide. Philo showed ALF while the EPG showed Laverne & Shirley (Nov 8). Check Philo for the current program."
+   :"";
  $("detailplex").hidden=!e.plex;
  const isMulti=Array.isArray(e.plex?.parts)&&e.plex.parts.length>1;
  $("detailplex").textContent=e.plex
