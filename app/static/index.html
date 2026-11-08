@@ -424,6 +424,8 @@ status();guide(view.plex);
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
+<button id="tablopreview" type="button" hidden>▶ Test playback 2 min ago</button>
+<button id="tabloliveback" type="button" hidden>↩ Return to Live</button>
 <pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
@@ -431,6 +433,8 @@ status();guide(view.plex);
 let playerHls=null;
 let playerSession=null;
 let tabloSession=null;
+let tabloPreviewSession=null;
+let tabloLivePlaylist=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -476,6 +480,11 @@ async function closePlexPlayer(){
  const sid=playerSession;
  playerSession=null;
  const oldTablo=tabloSession;tabloSession=null;
+ const oldPreview=tabloPreviewSession;tabloPreviewSession=null;
+ tabloLivePlaylist=null;
+ document.getElementById("tablopreview").hidden=true;
+ document.getElementById("tabloliveback").hidden=true;
+ if(oldPreview){try{await fetch("/api/tablo/live/"+encodeURIComponent(oldPreview),{method:"DELETE"})}catch(e){console.warn("Preview cleanup:",e)}}
  if(oldTablo){
   try{await fetch("/api/tablo/live/"+encodeURIComponent(oldTablo),{method:"DELETE"})}
   catch(err){console.warn("Tablo session cleanup:",err)}
@@ -635,6 +644,9 @@ async function launchTabloLive(){
    return;
   }
   tabloSession=info.session_id;
+  tabloLivePlaylist=info.playlist_url;
+  document.getElementById("tablopreview").hidden=false;
+  document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablobuffer").hidden=false;
   document.getElementById("tablosegments").hidden=false;
   document.getElementById("tablobufferresult").hidden=true;
@@ -684,6 +696,60 @@ async function launchTabloLive(){
   playerMessage("Tablo live playback unavailable: "+e.message);
  }finally{button.disabled=false}
 }
+async function switchTabloExperimentSource(url,generation){
+ const video=document.getElementById("plexvideo");
+ video.pause();
+ if(playerHls){playerHls.destroy();playerHls=null}
+ video.removeAttribute("src");video.load();
+ const play=()=>video.play().catch(()=>playerMessage("Press Play to begin."));
+ if(window.Hls&&Hls.isSupported()){
+  playerHls=new Hls({enableWorker:true,manifestLoadingTimeOut:22000,
+      levelLoadingTimeOut:22000,fragLoadingTimeOut:22000});
+  playerHls.on(Hls.Events.ERROR,(_,data)=>{
+   if(generation===playerGeneration&&data.fatal)playerMessage("Historical playback error: "+data.details);
+  });
+  playerHls.on(Hls.Events.MANIFEST_PARSED,play);
+  playerHls.attachMedia(video);
+  playerHls.loadSource(url);
+ }else if(video.canPlayType("application/vnd.apple.mpegurl")){
+  video.addEventListener("loadedmetadata",play,{once:true});
+  video.src=url;video.load();
+ }else throw Error("No HLS playback engine found");
+}
+document.getElementById("tablopreview").onclick=async function(){
+ if(!tabloSession||tabloPreviewSession)return;
+ const button=this;button.disabled=true;
+ const generation=playerGeneration;
+ try{
+  playerMessage("Preparing a historical clip from Tablo's own buffer…");
+  const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
+     "/preview?seconds_behind_live=120",{method:"POST",cache:"no-store"});
+  if(generation!==playerGeneration){
+   fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),{method:"DELETE"}).catch(()=>{});
+   return;
+  }
+  tabloPreviewSession=info.session_id;
+  if(!await waitForTabloReady(info.session_id,generation))return;
+  await switchTabloExperimentSource(info.playlist_url,generation);
+  document.getElementById("tabloliveback").hidden=false;
+  playerMessage("Historical test clip · about "+Math.round(info.start_seconds_behind_live)+
+     " seconds behind live. Choose Return to Live when finished.");
+ }catch(e){playerMessage("Historical preview failed: "+e.message+" · Return to Live to recover.");
+  document.getElementById("tabloliveback").hidden=false;
+ }finally{button.disabled=false}
+};
+document.getElementById("tabloliveback").onclick=async function(){
+ if(!tabloSession||!tabloLivePlaylist)return;
+ const button=this;button.disabled=true;
+ try{
+  playerMessage("Returning to live broadcast…");
+  await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration);
+  this.hidden=true;playerMessage("Live stream restored.");
+  const old=tabloPreviewSession;tabloPreviewSession=null;
+  if(old)fetch("/api/tablo/live/"+encodeURIComponent(old),{method:"DELETE"}).catch(()=>{});
+ }catch(e){playerMessage("Return to Live failed: "+e.message)}
+ finally{button.disabled=false}
+};
 document.getElementById("tablobuffer").onclick=async function(){
  if(!tabloSession)return;
  const sid=tabloSession,button=this,output=document.getElementById("tablobufferresult");
