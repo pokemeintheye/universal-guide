@@ -20,6 +20,7 @@ TABLO_REFRESH=max(1,int(os.getenv("TABLO_REFRESH_HOURS","6")))*3600
 PHILO_EPG_URL="https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz"
 PHILO_REFRESH=max(6,int(os.getenv("PHILO_REFRESH_HOURS","24")))*3600
 app=FastAPI(title="Universal TV Guide",version="0.1.0")
+from app.philo_links import links_for as philo_handoff_links
 from app.playback import router as playback_router
 app.include_router(playback_router)
 from app.tablo_live import router as tablo_live_router
@@ -625,6 +626,10 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         entry["hidden"]=bool(pref["hidden"]) if pref else False
         if (entry["hidden"] and not include_hidden) or (favorites_only and not entry["favorite"]):continue
         entry["plex"]=match(entry,index)
+        if source_name=="philo":
+            entry["philo_links"]=philo_handoff_links(
+                entry["channel_label"],entry["title"],entry.get("subtitle"),
+                entry.get("season"),entry.get("episode"))
         if plex_only and not entry["plex"]:continue
         ch=entry["source"]+":"+entry["channel_id"]
         channel=channels.setdefault(ch,{"id":ch,"label":entry["channel_label"],"source":source_name,"favorite":entry["favorite"],"programs":[]})
