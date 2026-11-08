@@ -43,6 +43,11 @@ def initialize():
         CREATE TABLE IF NOT EXISTS listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);
         CREATE INDEX IF NOT EXISTS idx_guide_time ON listings(start,stop);
         CREATE TABLE IF NOT EXISTS tablo_listings(id TEXT PRIMARY KEY,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT,season INT,episode INT);\n        CREATE INDEX IF NOT EXISTS idx_tablo_time ON tablo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS philo_listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);\n        CREATE INDEX IF NOT EXISTS idx_philo_time ON philo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS channel_prefs(source TEXT,channel_id TEXT,favorite INTEGER NOT NULL DEFAULT 0,hidden INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(source,channel_id));\n        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);""")
+        # Existing installations retain their databases; add classification safely.
+        for table in ("listings","tablo_listings","philo_listings"):
+            cols={x["name"] for x in c.execute("PRAGMA table_info("+table+")")}
+            if "program_kind" not in cols:
+                c.execute("ALTER TABLE "+table+" ADD COLUMN program_kind TEXT DEFAULT 'unknown'")
 initialize()
 
 def metadata(key,default=""):
@@ -120,6 +125,14 @@ def xml_date(raw):
         return dt.replace(tzinfo=zone).astimezone(timezone.utc).isoformat()
     except (ValueError,TypeError,IndexError):return None
 
+def xmltv_kind(program):
+    categories=[norm(n.text) for n in program.findall("category") if n.text]
+    if any(c in ("movie","movies","film","films","feature film") for c in categories):
+        return "movie"
+    if any(c in ("series","tv series","tv show","episode") for c in categories):
+        return "series"
+    return "unknown"
+
 def import_guide():
     if not GUIDE.exists():
         return {"imported":0,"note":"Supply guide.xml in the appdata folder"}
@@ -136,11 +149,11 @@ def import_guide():
                     get=lambda tag:(node.findtext(tag) or "").strip()
                     year_text=get("date")
                     year=int(year_text[:4]) if re.match(r"^\d{4}",year_text) else 0
-                    rows.append((node.get("channel"),a,b,get("title"),get("sub-title"),year,get("desc")[:600]))
+                    rows.append((node.get("channel"),a,b,get("title"),get("sub-title"),year,get("desc")[:600],xmltv_kind(node)))
             if node.tag in ("channel","programme"):node.clear()
         with db() as c:
             c.execute("DELETE FROM listings")
-            c.executemany("INSERT INTO listings(channel_id,channel_label,start,stop,title,subtitle,year,description) VALUES (?,?,?,?,?,?,?,?)",[(ch,names.get(ch,ch),a,b,title,sub,year,desc) for ch,a,b,title,sub,year,desc in rows])
+            c.executemany("INSERT INTO listings(channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind) VALUES (?,?,?,?,?,?,?,?,?)",[(ch,names.get(ch,ch),a,b,title,sub,year,desc,kind) for ch,a,b,title,sub,year,desc,kind in rows])
             putmeta(c,"last_guide_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"guide_mtime",GUIDE.stat().st_mtime)
         errors["guide"]=""
@@ -175,34 +188,63 @@ def sync_philo():
         with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as gz:
             xml=gz.read(180*1024*1024+1)
         if len(xml)>180*1024*1024:raise RuntimeError("Uncompressed EPG exceeded size limit")
+        # One guide row per actual network: the free feed can contain multiple
+        # station IDs (time-shifted feeds and duplicate sources) for AMC, etc.
         channel_names={}
-        entries=[]
         root=ET.fromstring(xml)
         for channel in root.findall("channel"):
             labels=[x.text.strip() for x in channel.findall("display-name") if x.text]
             matches={philo_name(v) for v in labels}
             matches.discard(None)
-            # Accept unambiguous matches only. Avoid falsely labeling unrelated networks.
-            if len(matches)==1:channel_names[channel.get("id")]=next(iter(matches))
+            if len(matches)==1:
+                channel_names[channel.get("id")]=next(iter(matches))
         now=datetime.now(timezone.utc)
+        by_feed={}
         for p in root.findall("programme"):
-            ch=p.get("channel")
-            if ch not in channel_names:continue
+            feed_id=p.get("channel")
+            if feed_id not in channel_names:continue
             start=xml_date(p.get("start"));stop=xml_date(p.get("stop"))
             if not start or not stop:continue
             if stop<now.isoformat() or start>(now+timedelta(days=8)).isoformat():continue
             value=lambda key:(p.findtext(key) or "").strip()
             date=value("date")
-            year=int(date[:4]) if re.match(r"^\d{4}",date) else 0
-            entries.append((ch,channel_names[ch],start,stop,value("title"),value("sub-title"),year,value("desc")[:600]))
-        if not entries:raise RuntimeError("No matching Philo lineup schedules found in EPG; preserving existing guide")
+            year=int(date[:4]) if re.match(r"^\\d{4}",date) else 0
+            by_feed.setdefault(feed_id,[]).append((
+                channel_names[feed_id],start,stop,value("title"),
+                value("sub-title"),year,value("desc")[:600],xmltv_kind(p)
+            ))
+        # Prefer the feed variant with the most usable schedule coverage.
+        # Channel IDs are stable canonical names, not unstable feed-specific IDs.
+        winners={}
+        for feed_id,entries in by_feed.items():
+            label=channel_names[feed_id]
+            score=(sum(max(0,(datetime.fromisoformat(row[2])-max(now,datetime.fromisoformat(row[1]))).total_seconds()) for row in entries),len(entries))
+            if label not in winners or score>winners[label][0]:
+                winners[label]=(score,feed_id,entries)
+        if not winners:
+            raise RuntimeError("No matching Philo lineup schedules found in EPG; preserving existing guide")
+        rows=[]
+        for label,(_,feed_id,entries) in winners.items():
+            key="philo:"+norm(label)
+            rows.extend((key,label,*row[1:]) for row in entries)
         with db() as c:
+            # Migrate prior favorites/hide flags to the new canonical channel IDs.
+            for old in c.execute("SELECT DISTINCT channel_id,channel_label FROM philo_listings").fetchall():
+                key="philo:"+norm(old["channel_label"])
+                pref=c.execute("SELECT favorite,hidden FROM channel_prefs WHERE source='philo' AND channel_id=?",(old["channel_id"],)).fetchone()
+                if pref:
+                    c.execute("""INSERT INTO channel_prefs(source,channel_id,favorite,hidden)
+                       VALUES ('philo',?,?,?) ON CONFLICT(source,channel_id) DO UPDATE SET
+                       favorite=MAX(channel_prefs.favorite,excluded.favorite),
+                       hidden=MAX(channel_prefs.hidden,excluded.hidden)""",(key,pref["favorite"],pref["hidden"]))
             c.execute("DELETE FROM philo_listings")
-            c.executemany("INSERT INTO philo_listings(channel_id,channel_label,start,stop,title,subtitle,year,description) VALUES (?,?,?,?,?,?,?,?)",entries)
+            c.executemany("""INSERT INTO philo_listings
+              (channel_id,channel_label,start,stop,title,subtitle,year,description,program_kind)
+              VALUES (?,?,?,?,?,?,?,?,?)""",rows)
             putmeta(c,"last_philo_sync",datetime.now(timezone.utc).isoformat())
-            putmeta(c,"philo_channel_count",len(set(e[0] for e in entries)))
+            putmeta(c,"philo_channel_count",len(winners))
         errors["philo"]=""
-        return {"programs":len(entries),"matched_channels":len(set(e[0] for e in entries)),"published_philo_channels":len(PHILO_NAMES)}
+        return {"programs":len(rows),"matched_channels":len(winners),"duplicate_variants_removed":len(by_feed)-len(winners),"published_philo_channels":len(PHILO_NAMES)}
     except Exception as e:
         errors["philo"]=str(e)
         raise
@@ -242,7 +284,8 @@ def fetch_tablo_airing(path):
         year=movie.get("release_year") or movie.get("year") or 0
         season=episode.get("season_number")
         number=episode.get("number")
-        return (path,channel_path,label,start.isoformat(),stop.isoformat(),title,subtitle,int(year or 0),str(desc)[:600],season,number)
+        kind="movie" if "/movies/" in path or data.get("movie") else ("series" if "/series/" in path else "other")
+        return (path,channel_path,label,start.isoformat(),stop.isoformat(),title,subtitle,int(year or 0),str(desc)[:600],season,number,kind)
     except (requests.RequestException,ValueError,TypeError,KeyError):
         return None
 
@@ -268,7 +311,7 @@ def sync_tablo():
         if not rows:raise RuntimeError("No usable airing details returned; preserving previous schedule")
         with db() as c:
             c.execute("DELETE FROM tablo_listings")
-            c.executemany("INSERT OR REPLACE INTO tablo_listings VALUES (?,?,?,?,?,?,?,?,?,?,?)",rows)
+            c.executemany("INSERT OR REPLACE INTO tablo_listings(id,channel_id,channel_label,start,stop,title,subtitle,year,description,season,episode,program_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",rows)
             putmeta(c,"last_tablo_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"tablo_truncated",int(truncated))
             putmeta(c,"tablo_requested",len(paths))
@@ -281,16 +324,35 @@ def sync_tablo():
         tablo_lock.release()
 
 def match(p,catalog):
-    title=norm(p["title"]);year=p["year"] or 0
+    """Match only equivalent media types; never equate a TV series with a movie."""
+    title=norm(p["title"])
     if not title:return None
-    for m in catalog:
-        if m["kind"]=="movie" and m["normalized"]==title and (not year or not m["year"] or abs(m["year"]-year)<=1):
+    kind=p.get("program_kind","unknown")
+    year=int(p.get("year") or 0)
+    if kind=="movie":
+        candidates=[m for m in catalog if m["kind"]=="movie" and m["normalized"]==title]
+        if year:
+            candidates=[m for m in candidates if m["year"] and abs(m["year"]-year)<=1]
+        # Missing release year plus multiple remakes = ambiguous.
+        if len(candidates)==1:
+            m=candidates[0]
             return {"kind":"movie","title":m["title"],"rating_key":m["id"].split(":",1)[1]}
-    subtitle=norm(p["subtitle"])
-    if subtitle:
-        for m in catalog:
-            if m["kind"]=="episode" and m["normalized"]==title and norm(m["title"])==subtitle:
-                return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
+        return None
+    if kind in ("other","movie"):
+        return None
+    # A series title alone is not proof we own the specific broadcast episode.
+    episodes=[m for m in catalog if m["kind"]=="episode" and m["normalized"]==title]
+    season=p.get("season")
+    number=p.get("episode")
+    if season is not None and number is not None:
+        episodes=[m for m in episodes if m["season"]==season and m["episode"]==number]
+    else:
+        subtitle=norm(p.get("subtitle"))
+        if not subtitle:return None
+        episodes=[m for m in episodes if norm(m["title"])==subtitle]
+    if len(episodes)==1:
+        m=episodes[0]
+        return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
     return None
 
 @app.get("/")

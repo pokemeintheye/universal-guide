@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>Universal-TV-Guide</Name>
+  <Repository>ghcr.io/pokemeintheye/universal-guide:latest</Repository>
+  <Registry>https://github.com/pokemeintheye/universal-guide/pkgs/container/universal-guide</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/pokemeintheye/universal-guide</Project>
+  <TemplateURL>https://raw.githubusercontent.com/pokemeintheye/universal-guide/main/templates/universal-guide.xml</TemplateURL>
+  <Overview>Metadata-only guide combining legacy Tablo OTA listings, national EPG schedules and Plex library availability.</Overview>
+  <Icon>https://raw.githubusercontent.com/pokemeintheye/universal-guide/main/assets/icon.png</Icon>
+  <WebUI>http://[IP]:[PORT:8787]/</WebUI>
+  <Config Name="WebUI" Target="8787" Default="8787" Mode="tcp" Description="Browser guide interface" Type="Port" Display="always" Required="true" Mask="false">8787</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/universal-guide" Mode="rw" Description="SQLite metadata and guide cache" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/universal-guide</Config>
+  <Config Name="PLEX_URL" Target="PLEX_URL" Default="" Mode="" Description="Plex URL such as http://192.168.1.50:32400" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="PLEX_TOKEN" Target="PLEX_TOKEN" Default="" Mode="" Description="Plex API authentication token" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="TABLO_URL" Target="TABLO_URL" Default="" Mode="" Description="Legacy Tablo IP and port e.g. http://192.168.1.60:8885" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="REFRESH_MINUTES" Target="REFRESH_MINUTES" Default="30" Mode="" Description="Plex metadata refresh frequency" Type="Variable" Display="advanced" Required="false" Mask="false">30</Config>
+  <Config Name="TABLO_REFRESH_HOURS" Target="TABLO_REFRESH_HOURS" Default="6" Mode="" Description="Tablo schedule refresh frequency" Type="Variable" Display="advanced" Required="false" Mask="false">6</Config>
+  <Config Name="PHILO_REFRESH_HOURS" Target="PHILO_REFRESH_HOURS" Default="24" Mode="" Description="National EPG refresh frequency" Type="Variable" Display="advanced" Required="false" Mask="false">24</Config>
+</Container>

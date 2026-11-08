@@ -2,7 +2,7 @@
 
 Metadata-only TV guide prototype for Plex, local OTA listings and Philo channel schedules.
 
-**Status:** Initial Plex metadata indexing and optional XMLTV guide import. No automatic Philo schedule acquisition, native Apple TV app, or verified app deep links yet. This is an experimental prototype.
+**Status:** Initial Plex metadata indexing and optional XMLTV guide import. No native Apple TV app, or verified app deep links yet. This is an experimental prototype.
 
 ## Install from Unraid Docker > Add Container
 
@@ -65,3 +65,16 @@ To avoid overloading Tablo the import uses no more than six concurrent requests,
 The backend fetches EPGTalk's compressed US national XMLTV feed automatically every 24 hours (or click **Refresh Philo EPG**). Matching is based on the published Philo Essential channel names and conservative aliases. Only clearly matched channels are imported; channels missing from the feed won't appear. This feed is not provided by Philo, and the listings do not prove a particular channel is included in your individual plan. No Philo credentials, video playback, or recordings are accessed. The download uses a fixed trusted HTTPS URL with size limits.
 
 Use **Manage channels** to mark channels as favorites or hide them. Settings persist in SQLite in /data. **Favorites** filters the guide. Programs imported from Tablo and manual XMLTV remain independent. Future improvements include official lineup selection for add-on tiers and channel matching overrides.
+
+## Matching accuracy and duplicate schedules
+Free guide feeds may contain multiple station IDs for one network. The Philo importer selects the source with the greatest upcoming program coverage per canonical network name, and stores it under a stable ID. Existing channel favorites/hidden settings are migrated when practical. A source variant may differ from Philo's actual East/West feed; this is not an official Philo lineup.
+
+Plex badges are **conservative**: a program marked as a movie can match only Plex movies; series episodes can match only Plex episodes with season/episode IDs or matching episode subtitles. Unclassified entries will not be matched to movies. This reduces false positives (e.g. a Batman TV episode incorrectly matching a Batman film) but may temporarily miss some real movies where the free feed lacks program categories.
+
+## Unraid icon and WebUI
+The repository includes `templates/universal-guide.xml` and `assets/icon.png`. Existing containers do **not** automatically pick up new template metadata when the image updates. Open your existing container's **Edit** page, switch to **Advanced View**, set:
+
+- **Icon URL:** `https://raw.githubusercontent.com/pokemeintheye/universal-guide/main/assets/icon.png`
+- **WebUI:** `http://[IP]:[PORT:8787]/`
+
+Then Apply. Keep your existing environment variables, mappings, and credentials. Alternatively, install from the provided XML template for a fresh deployment.
