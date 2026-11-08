@@ -20,7 +20,7 @@ small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}bu
 .epg-program:hover{background:#354c70}.epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .epg-program.owned{background:#194b43;border-color:#39896d}
 .epg-program em{font-style:normal;font-size:10px;color:#aef6d7}
-</style></head>
+input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:pointer} .result label{display:inline-flex;align-items:center;gap:6px;font-size:13px}</style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
 <section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads only Plex metadata via its API. Does not mount or stream media files. Restrict access to your trusted LAN; this prototype does not include authentication.</p></section>
