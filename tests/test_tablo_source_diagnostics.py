@@ -36,6 +36,33 @@ seg_501.ts
         with self.assertRaises(ValueError):
             tablo_live._summarize_source_playlist("<html>no playlist</html>")
 
+    def test_segment_urls_restricted_to_tablo_origin(self):
+        body="#EXTM3U\n#EXTINF:1,\nseg_1.ts\n#EXTINF:1,\nseg_2.ts\n"
+        urls=tablo_live._media_segment_urls(
+            "http://192.168.1.9:8885",
+            "http://192.168.1.9/stream/session/index.m3u8",body)
+        self.assertEqual(len(urls),2)
+        self.assertTrue(urls[0].endswith("/stream/session/seg_1.ts"))
+        with self.assertRaises(HTTPException):
+            tablo_live._media_segment_urls(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/session/index.m3u8",
+                "#EXTM3U\n#EXTINF:1,\nhttp://evil.example/stream/x.ts\n")
+
+    def test_segment_samples_bounded_and_no_raw_url(self):
+        import requests
+        class Response:
+            status_code=206
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def iter_content(self,chunk_size=8192):
+                yield bytes([0x47])+bytes(187)+bytes([0x47])+bytes(200000)
+        with patch.object(tablo_live.requests,"get",return_value=Response()):
+            r=tablo_live._probe_source_segment("http://tablo/stream/seg.ts?token=SECRET")
+        self.assertEqual(r["sample_bytes"],65536)
+        self.assertTrue(r["mpeg_ts_sync"])
+        self.assertNotIn("SECRET",str(r))
+
     def test_error_never_includes_signed_stream_url(self):
         import requests
         with patch.object(tablo_live.requests,"get",side_effect=requests.Timeout(
