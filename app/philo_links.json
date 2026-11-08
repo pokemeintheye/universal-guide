@@ -1,11 +1,48 @@
 {
-  "version": 1,
-  "notes": "Only exact links tested on user's iPhone. IDs are from real Philo player URLs; not derived from titles. Opening links does not auto-play.",
+  "version": 2,
+  "notes": "iPhone-tested and public-listed Philo player IDs; public-listed are not yet device tested. No title-to-ID guessing; opening a page does not auto-play.",
   "channels": [
     {
       "name": "Food Network",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0NzI",
-      "verified": "2026-11-08"
+      "verified": "2026-11-08",
+      "verification": "iphone-tested"
+    },
+    {
+      "name": "AMC",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg"
+    },
+    {
+      "name": "HGTV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njc"
+    },
+    {
+      "name": "HISTORY",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Mjg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Mjg"
+    },
+    {
+      "name": "Discovery Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA"
+    },
+    {
+      "name": "TLC",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDM"
+    },
+    {
+      "name": "TV Land",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Nzg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1Nzg"
     }
   ],
   "shows": [
@@ -13,7 +50,8 @@
       "name": "The Office",
       "id": "U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg",
       "verified": "2026-11-08",
-      "episodes": []
+      "episodes": [],
+      "verification": "iphone-tested"
     },
     {
       "name": "Everybody Loves Raymond",
@@ -26,7 +64,30 @@
           "episode": 1,
           "id": "RXBpc29kZTo2MDg1NDg4OTk2NDg2NzU5NTU"
         }
+      ],
+      "verification": "iphone-tested"
+    },
+    {
+      "name": "The Kitchen",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzg1NTc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzg1NTc",
+      "episodes": [
+        {
+          "subtitle": "World on a Plate",
+          "season": 41,
+          "episode": 1,
+          "id": "RXBpc29kZTo2MDg1NDg4OTk2NDk3MTY3OTQ",
+          "verification": "public-listed"
+        }
       ]
+    },
+    {
+      "name": "House Hunters",
+      "id": "U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0Mzg0NTA",
+      "episodes": []
     }
   ]
 }
