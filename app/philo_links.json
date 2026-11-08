@@ -1,12 +1,19 @@
 {
-  "version": 3,
+  "version": 4,
   "notes": "All channel identifiers from exact titled Philo public player pages; iphone-tested entries are device verified, public-listed are to test. No guessed IDs; cannot guarantee app autoplay or subscription.",
   "channels": [
     {
       "name": "A&E",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MjI",
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MjI",
+      "verified": "2026-11-08"
+    },
+    {
+      "name": "AccuWeather Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2ODE",
       "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1MjI"
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2ODE"
     },
     {
       "name": "AMC",
@@ -15,10 +22,28 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDg"
     },
     {
+      "name": "American Heroes Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDI"
+    },
+    {
       "name": "Animal Planet",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDY",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDY"
+    },
+    {
+      "name": "aspireTV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjA"
+    },
+    {
+      "name": "AXS TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTc"
     },
     {
       "name": "BBC America",
@@ -39,16 +64,64 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzg"
     },
     {
+      "name": "CLEO TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjg"
+    },
+    {
       "name": "CMT",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1OTk",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1OTk"
     },
     {
+      "name": "Crime + Investigation",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1Nzc"
+    },
+    {
+      "name": "Dabl",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3OTc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3OTc"
+    },
+    {
+      "name": "Destination America",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzY"
+    },
+    {
       "name": "Discovery Channel",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDA"
+    },
+    {
+      "name": "Discovery Family",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1ODg",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1ODg"
+    },
+    {
+      "name": "Discovery Life",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjI"
+    },
+    {
+      "name": "Discovery Turbo",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDU",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NDU"
+    },
+    {
+      "name": "EarthX",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3ODI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3ODI"
     },
     {
       "name": "FETV",
@@ -63,16 +136,41 @@
       "verification": "iphone-tested"
     },
     {
+      "name": "FYI",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjQ",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjQ"
+    },
+    {
       "name": "Game Show Network",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTE",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1OTE"
     },
     {
+      "name": "Great",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzE",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzE"
+    },
+    {
+      "name": "Great American Faith & Living",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2OTM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2OTM"
+    },
+    {
+      "name": "Great American Family",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Njc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Njc"
+    },
+    {
       "name": "Hallmark Channel",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjY",
-      "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjY"
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjY",
+      "verified": "2026-11-08"
     },
     {
       "name": "Hallmark Family",
@@ -85,6 +183,12 @@
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjc",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2Mjc"
+    },
+    {
+      "name": "Heroes & Icons",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDI"
     },
     {
       "name": "HGTV",
@@ -105,16 +209,52 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4NjM"
     },
     {
+      "name": "IFC",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTE",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTE"
+    },
+    {
+      "name": "INSP",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2NzI"
+    },
+    {
       "name": "Investigation Discovery",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTM",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTM"
     },
     {
+      "name": "Law&Crime",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MjI"
+    },
+    {
       "name": "Lifetime",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjU",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjU"
+    },
+    {
+      "name": "LMN",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjY"
+    },
+    {
+      "name": "Logo",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MzM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MzM"
+    },
+    {
+      "name": "Magnolia Network",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njk",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0Njk"
     },
     {
       "name": "MeTV",
@@ -127,6 +267,24 @@
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4MTQ",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4MTQ"
+    },
+    {
+      "name": "MeTV+",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3NTY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3NTY"
+    },
+    {
+      "name": "Military History Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzA"
+    },
+    {
+      "name": "MTV Classic",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTM"
     },
     {
       "name": "MTV Live",
@@ -149,8 +307,15 @@
     {
       "name": "Nickelodeon",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NzI",
+      "verification": "iphone-tested",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NzI",
+      "verified": "2026-11-08"
+    },
+    {
+      "name": "Nicktoons",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDk",
       "verification": "public-listed",
-      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NzI"
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MDk"
     },
     {
       "name": "Oprah Winfrey Network",
@@ -165,16 +330,58 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg0ODQ"
     },
     {
+      "name": "Pop TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MTc",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MTc"
+    },
+    {
+      "name": "QVC",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4NjI",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4NjI"
+    },
+    {
       "name": "Science Channel",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTA",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg1NTA"
     },
     {
+      "name": "Smithsonian Channel",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg4NTM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg4NTM"
+    },
+    {
+      "name": "Start TV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2OTY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2OTY"
+    },
+    {
+      "name": "Story Television",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDA",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk3MDA"
+    },
+    {
       "name": "Sundance TV",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTA",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MTA"
+    },
+    {
+      "name": "Tastemade",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MTU",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk2MTU"
+    },
+    {
+      "name": "TeenNick",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MzU",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MzU"
     },
     {
       "name": "TLC",
@@ -213,10 +420,22 @@
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MTI"
     },
     {
+      "name": "Vice",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MjM"
+    },
+    {
       "name": "We TV",
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDk",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1MDk"
+    },
+    {
+      "name": "WEST",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4OTM",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk4OTM"
     }
   ],
   "shows": [
