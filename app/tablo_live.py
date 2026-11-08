@@ -341,11 +341,12 @@ def source_diagnostics(sid:str):
         playlist=item["source_playlist"]
         previous=item.get("source_snapshot")
     try:
-        summary=_summarize_source_playlist(_read_source_playlist(playlist))
+        body=_read_source_playlist(playlist)
+        summary=_summarize_source_playlist(body)
         if summary["kind"]=="master":
             # A master playlist has no timeshift window. Inspect one variant
             # only when its destination is still on the authorized Tablo host.
-            lines=_read_source_playlist(playlist).splitlines()
+            lines=body.splitlines()
             variant=next((lines[i+1].strip() for i,line in enumerate(lines[:-1])
                           if line.strip().startswith("#EXT-X-STREAM-INF:")
                           and lines[i+1].strip() and not lines[i+1].startswith("#")),None)
