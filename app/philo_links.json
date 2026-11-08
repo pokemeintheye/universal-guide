@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "notes": "All channel identifiers from exact titled Philo public player pages; iphone-tested entries are device verified, public-listed are to test. No guessed IDs; cannot guarantee app autoplay or subscription.",
   "channels": [
     {
@@ -299,6 +299,12 @@
       "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzA",
       "verification": "public-listed",
       "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzk1NzA"
+    },
+    {
+      "name": "MTV",
+      "id": "Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MDY",
+      "verification": "public-listed",
+      "source": "https://www.philo.com/player/channel/Q2hhbm5lbDo2MDg1NDg4OTk2NDg0Mzg2MDY"
     },
     {
       "name": "MTV Classic",
