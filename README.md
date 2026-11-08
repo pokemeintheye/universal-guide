@@ -114,3 +114,6 @@ Browsers with native HLS can use it directly. Other browsers (including Chrome) 
 **Security:** This experimental container has no user authentication. It must remain accessible only on a trusted LAN, not exposed to the public internet. Session URLs allow playback until they expire. No Plex files need to be mounted.
 
 Tablo and Philo playback are **not implemented** by this milestone. Only select Plex-matched programs to test.
+
+## Reopening the same Plex title (player lifecycle fix)
+The Plex player now explicitly requests termination of its server-side transcoding session when closed, rather than deleting only the guide-side session. The browser also destroys the HLS instance and replaces its video element with a fresh one before another playback, preventing stale MediaSource state from being reused. A 25-second startup message helps diagnose a silent stall. Test the sequence **episode A → close → episode A again → close → episode B → episode A**. If the same title still stalls, note the browser error or Unraid Docker logs. This fix has not yet been validated against a live Plex server.
