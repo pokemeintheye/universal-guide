@@ -409,13 +409,22 @@ async function explainTabloFailure(message,generation){
  const sid=tabloSession;
  if(!sid){playerMessage(message);return}
  try{
-  const status=await req("/api/tablo/live/"+encodeURIComponent(sid)+"/status");
+  const status=await req("/api/tablo/live/"+encodeURIComponent(sid)+"/status?probe=true");
   if(generation!==playerGeneration)return;
   let detail=message+" | FFmpeg "+(status.transcoder_running?"running":"exited ("+status.ffmpeg_exit_code+")")+
    " | manifest "+(status.manifest_ready?"ready":"missing")+
    " | segments "+status.segment_count+
    " | elapsed "+status.seconds_since_start+"s";
   if(status.ffmpeg_error)detail+=" | FFmpeg: "+status.ffmpeg_error;
+  if(status.segment_probe){
+   const p=status.segment_probe;
+   detail+=" | segment check: "+p.status;
+   if(p.streams)detail+=" ["+p.streams.map(v=>v.codec_type+":"+v.codec_name+
+      (v.width?" "+v.width+"x"+v.height:"")).join(", ")+"]";
+   if(p.message)detail+=" ("+p.message+")";
+  }
+  if(status.playlist_valid!==undefined)detail+=" | HLS valid header: "+status.playlist_valid+
+    " | segment references: "+status.playlist_segment_refs;
   playerMessage(detail);
  }catch(e){
   if(generation===playerGeneration)playerMessage(message+" | Tablo status: "+e.message);
@@ -465,27 +474,35 @@ async function launchTabloLive(){
   video.addEventListener("error",()=>{if(generation===playerGeneration)
     explainTabloFailure("Live Tablo media failed (browser error "+(video.error?.code||"?")+
       ")",generation)},{once:true});
-  if(video.canPlayType("application/vnd.apple.mpegurl")){
+  // Chrome/Edge use MediaSource via hls.js even if canPlayType reports
+  // tentative support for HLS. Native HLS remains the Safari fallback.
+  const preferHlsJs=Boolean(window.Hls&&Hls.isSupported());
+  playerMessage("Tablo live stream prepared. Player: "+(preferHlsJs?"HLS.js":"native HLS"));
+  if(preferHlsJs){
+   playerHls=new Hls({enableWorker:true,liveSyncDurationCount:3,
+      manifestLoadingTimeOut:22000,levelLoadingTimeOut:22000,
+      manifestLoadingMaxRetry:5,levelLoadingMaxRetry:5,
+      fragLoadingMaxRetry:5});
+   playerHls.on(Hls.Events.ERROR,(_,data)=>{
+    if(generation!==playerGeneration)return;
+    const extra=[data.type,data.details,data.error?.message,
+       data.response?.code?"HTTP "+data.response.code:null].filter(Boolean).join(" / ");
+    if(data.fatal)explainTabloFailure("Tablo HLS fatal error: "+extra.slice(0,260),generation);
+   });
+   playerHls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>
+     playerMessage("Press Play in the video controls.")));
+   playerHls.on(Hls.Events.FRAG_BUFFERED,()=>{if(generation===playerGeneration&&video.paused){
+     video.play().catch(()=>{});
+   }});
+   playerHls.attachMedia(video);
+   playerHls.loadSource(url);
+  }else if(video.canPlayType("application/vnd.apple.mpegurl")){
    video.src=url;
    video.addEventListener("loadedmetadata",()=>video.play().catch(()=>
      playerMessage("Press Play in the video controls.")),{once:true});
    video.load();
-  }else if(window.Hls&&Hls.isSupported()){
-   playerHls=new Hls({enableWorker:true,liveSyncDurationCount:3,
-      manifestLoadingTimeOut:22000,levelLoadingTimeOut:22000,
-      manifestLoadingMaxRetry:5,levelLoadingMaxRetry:5});
-   playerHls.on(Hls.Events.ERROR,(_,data)=>{
-    if(generation!==playerGeneration)return;
-    if(data.fatal)explainTabloFailure("Tablo HLS error: "+data.details+
-       (data.response?.code?" · HTTP "+data.response.code:"")+
-       (data.error?.message?" · "+data.error.message.slice(0,120):""),generation);
-   });
-   playerHls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>
-     playerMessage("Press Play in the video controls.")));
-   playerHls.attachMedia(video);
-   playerHls.loadSource(url);
   }else{
-   playerMessage("This browser has no HLS player available.");
+   explainTabloFailure("No compatible HLS playback engine is available in this browser.",generation);
   }
  }catch(e){
   alert("Tablo live playback unavailable: "+e.message);
