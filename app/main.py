@@ -193,7 +193,7 @@ def sync_philo():
             if stop<now.isoformat() or start>(now+timedelta(days=8)).isoformat():continue
             value=lambda key:(p.findtext(key) or "").strip()
             date=value("date")
-            year=int(date[:4]) if re.match(r"^\\d{4}",date) else 0
+            year=int(date[:4]) if re.match(r"^\d{4}",date) else 0
             entries.append((ch,channel_names[ch],start,stop,value("title"),value("sub-title"),year,value("desc")[:600]))
         if not entries:raise RuntimeError("No matching Philo lineup schedules found in EPG; preserving existing guide")
         with db() as c:
