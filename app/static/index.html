@@ -51,7 +51,10 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
-<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div>
+<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="plexhandoff" hidden style="margin-top:14px">
+<p class="note">Playback integration test: this link opens the exact Plex library item in Plex Web. You must still press Play there; direct play and join-in-progress are the next milestone.</p>
+<a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
+<p class="note" id="plexlinkerror"></p></div>
 <p class="note">Program information only. Playback remains in Plex, Tablo or Philo.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -79,6 +82,23 @@ function openDetails(program){
  $("detailplex").hidden=!e.plex;
  $("detailplex").textContent=e.plex?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title:"";
  $("detailplex").className=e.plex?"chip green":"";
+ const panel=$("plexhandoff");
+ panel.hidden=true;
+ $("plexlinkerror").textContent="";
+ if(e.plex?.rating_key){
+   const key=String(e.plex.rating_key);
+   req("/api/playback/plex/"+encodeURIComponent(key)).then(info=>{
+     // Ignore stale requests if the user already selected another program.
+     if($("detailsmodal").hidden || $("detailtitle").textContent!==(e.title||"Untitled"))return;
+     $("plexopen").href=info.web_url;
+     panel.hidden=false;
+   }).catch(err=>{
+     panel.hidden=false;
+     $("plexopen").hidden=true;
+     $("plexlinkerror").textContent="Plex handoff unavailable: "+err.message;
+   });
+   $("plexopen").hidden=false;
+ }
  $("detailsmodal").hidden=false;
  $("closedetails").focus();
 }
