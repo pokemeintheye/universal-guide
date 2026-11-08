@@ -51,7 +51,7 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
 
     def test_large_public_channel_catalog_has_no_wrong_reuse(self):
         channels=channel_catalog()
-        self.assertGreaterEqual(len(channels),73)
+        self.assertGreaterEqual(len(channels),75)
         self.assertEqual(len(channels),len({c["name"] for c in channels}))
         self.assertEqual(len(channels),len({c["url"] for c in channels}))
         for name in ("Animal Planet","Lifetime","Nick Jr.","MeTV","MeTV Toons",
@@ -101,10 +101,9 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
             links=links_for(channel,title)
             self.assertIn("show",links)
             self.assertEqual(links["show"]["verification"],"public-listed")
-            if channel=="Comedy Central":self.assertNotIn("channel",links)
-            else:self.assertIn("channel",links)
+            self.assertIn("channel",links)
         self.assertNotIn("show",links_for("Catchy Comedy","Unknown Show"))
-        self.assertNotIn("channel",links_for("Comedy Central","South Park"))
+        self.assertIn("channel",links_for("Comedy Central","South Park"))
 
     def test_exact_kitchen_episode(self):
         links=links_for("Food Network","The Kitchen","World on a Plate",41,1)
