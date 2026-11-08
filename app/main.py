@@ -442,6 +442,31 @@ def refresh_tablo():
     try:return sync_tablo()
     except Exception as e:raise HTTPException(502,detail=str(e))
 
+@app.get("/api/playback/plex/{rating_key}")
+def plex_handoff(rating_key:int):
+    """Safe, token-free Plex Web handoff for testing exact-library navigation.
+    This does NOT start video playback or seek to a position.
+    """
+    if rating_key<=0:raise HTTPException(400,"Invalid Plex rating key")
+    with db() as c:
+        item=c.execute("SELECT id,kind,title FROM media WHERE id IN (?,?)",("movie:"+str(rating_key),"episode:"+str(rating_key))).fetchone()
+    if not item:raise HTTPException(404,"This rating key is not in the indexed Plex catalog")
+    try:
+        identity=plex_xml("/identity")
+        machine_id=identity.get("machineIdentifier")
+        if not machine_id:
+            machine_id=plex_xml("/").get("machineIdentifier")
+        if not machine_id or not re.fullmatch(r"[A-Za-z0-9-]{8,100}",machine_id):
+            raise RuntimeError("Plex did not provide a valid server identifier")
+    except Exception as e:
+        raise HTTPException(502,"Cannot determine Plex server identity: "+str(e)[:120])
+    from urllib.parse import quote
+    details_key=quote("/library/metadata/"+str(rating_key),safe="")
+    web_url="https://app.plex.tv/desktop/#!/server/"+machine_id+"/details?key="+details_key
+    return {"title":item["title"],"kind":item["kind"],"web_url":web_url,
+            "capability":"open_details_only",
+            "note":"Opens the exact Plex library item details; automatic playback and join-in-progress are not yet implemented."}
+
 @app.get("/api/search")
 def search(q:str=Query("",max_length=200)):
     if len(q.strip())<2:return []
