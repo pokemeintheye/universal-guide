@@ -6,12 +6,26 @@
 *{box-sizing:border-box}body{margin:0}header{background:#192237;padding:20px 28px;border-bottom:1px solid #34405b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}h1{margin:0;font-size:24px}h2{font-size:17px}
 small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}button,input{font:inherit}button{border:1px solid #4c5c7c;background:#243657;color:white;padding:10px 14px;border-radius:9px;cursor:pointer}button:hover{background:#314b78}input{background:#151f30;border:1px solid #465674;border-radius:8px;color:white;padding:11px;width:100%;max-width:420px}
 .panel{border:1px solid #34425c;border-radius:14px;background:#172236;padding:16px;margin:0 0 22px}.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.chip{border-radius:30px;background:#2e415e;color:#dce7fa;padding:5px 10px;font-size:12px}.green{background:#1b5c46;color:#b8ffe0}#message{min-height:24px;color:#b6cfef;margin:12px 0}.gridwrap{overflow-x:auto}table{border-collapse:separate;border-spacing:4px;width:100%;min-width:700px}th{text-align:left;color:#a9bad5;font-size:12px}td{background:#202e47;vertical-align:top;min-width:180px;padding:10px;border-radius:7px}td.channel{background:#121c2e;position:sticky;left:0;min-width:135px;font-weight:700}td strong{display:block;font-size:14px;margin:4px 0}td span{display:block;font-size:12px;color:#a9bad5}.result{padding:9px;border-bottom:1px solid #33425a}.empty,.note{color:#bdcce1;line-height:1.6}.note{font-size:13px}
+
+/* Timeline EPG: half-hour columns, each spanning 180px */
+.timeline{overflow:auto;border:1px solid #33425c;border-radius:10px;max-height:65vh}
+.epg{min-width:1100px;width:max-content}
+.epg-time,.epg-row{display:flex;min-height:70px;border-bottom:1px solid #2b3b55}
+.epg-time{min-height:44px;position:sticky;top:0;z-index:4;background:#1b2940}
+.epg-station{width:150px;min-width:150px;padding:13px 10px;background:#172235;border-right:1px solid #33425c;position:sticky;left:0;z-index:2;font-weight:700;font-size:13px}
+.epg-time .epg-station{z-index:5;background:#1b2940}
+.epg-tracks{position:relative;width:2880px;min-width:2880px;background:repeating-linear-gradient(to right,transparent 0,transparent 179px,#33425c 179px,#33425c 180px)}
+.epg-slot{width:180px;min-width:180px;padding:13px 9px;font-size:12px;color:#bdcee7;border-right:1px solid #33425c}
+.epg-program{position:absolute;top:4px;bottom:4px;background:#263a5a;border:1px solid #425a7c;border-radius:6px;padding:7px 9px;overflow:hidden;font-size:12px;white-space:nowrap;text-overflow:ellipsis;cursor:default}
+.epg-program:hover{background:#354c70}.epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.epg-program.owned{background:#194b43;border-color:#39896d}
+.epg-program em{font-style:normal;font-size:10px;color:#aef6d7}
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
 <section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">Guide entries: —</span></div><div id="message"></div><p class="note">Reads only Plex metadata via its API. Does not mount or stream media files. Restrict access to your trusted LAN; this prototype does not include authentication.</p></section>
 <section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button></div><p class="note">The live guide requires an XMLTV file. Philo and Tablo are not connected yet; their streams and DVR recordings remain independent.</p><div class="gridwrap" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
+<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button></div><p class="note">The live guide requires an XMLTV file. Philo and Tablo are not connected yet; their streams and DVR recordings remain independent.</p><div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
 </main><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -20,6 +34,31 @@ async function status(){try{const s=await req("/api/status");$("plexcount").text
 async function act(kind){const b=$(kind);b.disabled=true;$("message").textContent="Working…";try{const v=await req("/api/sync/"+(kind==="sync"?"plex":"guide"),{method:"POST"});$("message").textContent=JSON.stringify(v);await status();await guide(false)}catch(e){$("message").textContent="Error: "+e.message}finally{b.disabled=false}}
 $("sync").onclick=()=>act("sync");$("epg").onclick=()=>act("epg");
 let debounce;$("search").oninput=()=>{clearTimeout(debounce);debounce=setTimeout(async()=>{const q=$("search").value.trim();if(q.length<2){$("results").textContent="Enter two or more characters.";return}try{const r=await req("/api/search?q="+encodeURIComponent(q));$("results").innerHTML=r.length?r.map(x=>'<div class="result"><b>'+esc(x.show_title||x.title)+'</b> '+(x.kind==="episode"?"— "+esc(x.title)+" (S"+x.season+" E"+x.episode+")":"("+x.year+")")+' <span class="chip green">In Plex</span></div>').join(""):"No matches."}catch(e){$("results").textContent=e.message}},250)};
-async function guide(only){try{const g=await req("/api/guide?hours=8&plex_only="+Boolean(only));if(!g.channels.length){$("guide").textContent="No "+(only?"Plex-matching ":"")+"current guide entries. Add guide.xml to appdata to populate the grid.";return}let html="<table><thead><tr><th>Channel</th><th>Upcoming programs</th></tr></thead><tbody>";for(const ch of g.channels){html+='<tr><td class="channel">'+esc(ch.label)+'</td><td>'+ch.programs.map(p=>'<div class="result"><span>'+new Date(p.start).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+'–'+new Date(p.stop).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+'</span><strong>'+esc(p.title)+'</strong>'+(p.subtitle?'<span>'+esc(p.subtitle)+'</span>':"")+(p.plex?'<span class="chip green">✓ In Plex</span>':"")+'</div>').join("")+"</td></tr>"}html+="</tbody></table>";$("guide").innerHTML=html}catch(e){$("guide").textContent=e.message}}
+async function guide(only){
+try{
+const data=await req("/api/guide?hours=9&plex_only="+Boolean(only));
+if(!data.channels.length){$("guide").textContent="No "+(only?"Plex-matching ":"")+"current guide entries. Add a valid XMLTV guide.xml to appdata to populate the timeline.";return}
+const hour=30*60*1000;
+const start=Math.floor(Date.now()/hour)*hour;
+const end=start+8*60*60*1000;
+let header='<div class="epg-time"><div class="epg-station">Channel</div><div style="display:flex">';
+for(let t=start;t<end;t+=hour)header+='<div class="epg-slot">'+new Date(t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+'</div>';
+header+='</div></div>';
+let rows='';
+for(const ch of data.channels){
+let programs='';
+for(const p of ch.programs){
+const a=Math.max(start,Date.parse(p.start)),b=Math.min(end,Date.parse(p.stop));
+if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
+const left=((a-start)/(end-start))*100;
+const width=((b-a)/(end-start))*100;
+const tip=esc(p.title+(p.subtitle?' — '+p.subtitle:''));
+programs+='<div class="epg-program'+(p.plex?' owned':'')+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+tip+'"><strong>'+esc(p.title)+'</strong>'+(p.plex?'<em>✓ In Plex</em>':'')+'</div>';
+}
+rows+='<div class="epg-row"><div class="epg-station">'+esc(ch.label)+'</div><div class="epg-tracks">'+programs+'</div></div>';
+}
+$("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
+}catch(e){$("guide").textContent=e.message}
+}
 $("all").onclick=()=>guide(false);$("inplex").onclick=()=>guide(true);status();guide(false);
 </script></body></html>
