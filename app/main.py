@@ -455,6 +455,39 @@ def plex_series_candidates(guide_title,catalog):
             and series_title_matches(guide_title,m["show_title"])]
 
 
+def match_broadcast_segments(series,subtitle,index):
+    """Match two/three explicitly named TV segments to separate Plex episodes.
+
+    Broadcasters often air several short cartoons in one half-hour EPG slot,
+    while Plex inventories each independently. Never invent a sequential
+    episode or match against another series; each segment title must uniquely
+    identify a Plex episode in the named series.
+    """
+    raw=str(subtitle or "").strip()
+    # Only clearly separated segment names; avoid splitting ordinary titles
+    # containing slashes without spaces.
+    if not re.search(r"\\s(?:/|;|&|\\+)\\s",raw):
+        return None
+    names=[p.strip() for p in re.split(r"\\s+(?:/|;|&|\\+)\\s+",raw)]
+    if not 2<=len(names)<=3 or any(len(n)<3 for n in names):
+        return None
+    parts=[]
+    for name in names:
+        matches=index["title"].get((series,norm(name)),[])
+        if len(matches)!=1:
+            # Partial, misleading matches do not look like a full broadcast.
+            return None
+        item=matches[0]
+        key=item["id"].split(":",1)[1]
+        if any(p["rating_key"]==key for p in parts):
+            return None
+        parts.append({"kind":"episode","title":item["title"],"show":item["show_title"],
+                      "rating_key":key})
+    return {"kind":"episode","title":" / ".join(p["title"] for p in parts),
+            "show":parts[0]["show"],"rating_key":parts[0]["rating_key"],
+            "parts":parts}
+
+
 def match(p,index):
     """Only match Plex movies with movies, and exact episodes with episodes."""
     title=norm(p["title"])
@@ -486,6 +519,8 @@ def match(p,index):
             m=by_title[0]
             return {"kind":"episode","title":m["title"],"show":m["show_title"],
                     "rating_key":m["id"].split(":",1)[1]}
+        multi=match_broadcast_segments(title,p.get("subtitle"),index)
+        if multi:return multi
     return None
 
 @app.get("/static/manifest.webmanifest")
@@ -592,7 +627,9 @@ def match_diagnostics(q:str=Query(...,min_length=2,max_length=100)):
                     "season":p.get("season"),"episode":p.get("episode"),
                     "kind":p.get("program_kind"),"plex_series_episode_count":len(episodes),
                     "matched":bool(match_result),
-                    "matched_title":match_result["title"] if match_result else None})
+                    "matched_title":match_result["title"] if match_result else None,
+                    "matched_parts":[part["title"] for part in match_result.get("parts",[])]
+                                    if match_result else []})
     # Show actual Plex series labels for troubleshooting naming variants,
     # without returning media paths, tokens or personally identifying data.
     related={}
