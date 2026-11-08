@@ -466,7 +466,7 @@ def match_broadcast_segments(series,subtitle,index):
     raw=str(subtitle or "").strip()
     # Only clearly separated segment names; avoid splitting ordinary titles
     # containing slashes without spaces.
-    separator=r"(?:\\s+[/&+]\\s+|;\\s+)"
+    separator=r"(?:\s+[/&+]\s+|;\s+)"
     if not re.search(separator,raw):
         return None
     names=[p.strip() for p in re.split(separator,raw)]
