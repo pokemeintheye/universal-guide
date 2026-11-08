@@ -222,38 +222,6 @@ def live_status(sid:str,probe:bool=False):
         return _health(item,probe=probe)
 
 
-@router.get("/{sid}/{file_name}")
-def live_segment(sid:str,file_name:str):
-    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
-        raise HTTPException(404,"Invalid session")
-    if file_name!="index.m3u8" and not re.fullmatch(r"seg_\d{5,10}\.ts",file_name):
-        raise HTTPException(404,"Invalid media filename")
-    _cleanup()
-    with LOCK:
-        item=ACTIVE.get(sid)
-        if not item:raise HTTPException(404,"Tablo stream expired")
-        item["last"]=time.monotonic()
-        directory=item["directory"]
-    path=directory/file_name
-    if file_name=="index.m3u8" and not path.exists():
-        for _ in range(32):
-            if path.exists():break
-            with LOCK:
-                process=item["process"]
-                if process.poll() is not None:break
-            time.sleep(.5)
-    if not path.is_file():
-        info=_health(item)
-        if info["ffmpeg_exit_code"] is not None:
-            raise HTTPException(502,"Tablo FFmpeg stopped (exit "+
-                str(info["ffmpeg_exit_code"])+"): "+(info["ffmpeg_error"] or
-                "no error text produced"))
-        raise HTTPException(503,"Tablo transcoder is still preparing the HLS stream")
-    return FileResponse(path,media_type=("application/vnd.apple.mpegurl" if
-       file_name.endswith(".m3u8") else "video/mp2t"),
-       headers={"Cache-Control":"no-store"})
-
-
 # Diagnostic reads metadata from the Tablo's own HLS playlist, not video segments.
 # Keep remote URLs and playback tokens entirely server-side.
 def _summarize_source_playlist(body):
@@ -376,6 +344,38 @@ def source_diagnostics(sid:str):
     return {"session_id":sid,"source":"tablo_origin","playlist":summary,
             "observation":current,"previous_observation":comparison,
             "limitations":"Playlist metadata only. This does not establish whether historical segments can be requested or decoded."}
+
+
+@router.get("/{sid}/{file_name}")
+def live_segment(sid:str,file_name:str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    if file_name!="index.m3u8" and not re.fullmatch(r"seg_\d{5,10}\.ts",file_name):
+        raise HTTPException(404,"Invalid media filename")
+    _cleanup()
+    with LOCK:
+        item=ACTIVE.get(sid)
+        if not item:raise HTTPException(404,"Tablo stream expired")
+        item["last"]=time.monotonic()
+        directory=item["directory"]
+    path=directory/file_name
+    if file_name=="index.m3u8" and not path.exists():
+        for _ in range(32):
+            if path.exists():break
+            with LOCK:
+                process=item["process"]
+                if process.poll() is not None:break
+            time.sleep(.5)
+    if not path.is_file():
+        info=_health(item)
+        if info["ffmpeg_exit_code"] is not None:
+            raise HTTPException(502,"Tablo FFmpeg stopped (exit "+
+                str(info["ffmpeg_exit_code"])+"): "+(info["ffmpeg_error"] or
+                "no error text produced"))
+        raise HTTPException(503,"Tablo transcoder is still preparing the HLS stream")
+    return FileResponse(path,media_type=("application/vnd.apple.mpegurl" if
+       file_name.endswith(".m3u8") else "video/mp2t"),
+       headers={"Cache-Control":"no-store"})
 
 
 @router.delete("/{sid}")
