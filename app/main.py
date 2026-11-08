@@ -42,7 +42,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_media_norm ON media(normalized);
         CREATE TABLE IF NOT EXISTS listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);
         CREATE INDEX IF NOT EXISTS idx_guide_time ON listings(start,stop);
-        CREATE TABLE IF NOT EXISTS tablo_listings(id TEXT PRIMARY KEY,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT,season INT,episode INT);\n        CREATE INDEX IF NOT EXISTS idx_tablo_time ON tablo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS philo_listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);\n        CREATE INDEX IF NOT EXISTS idx_philo_time ON philo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS channel_prefs(source TEXT,channel_id TEXT,favorite INTEGER NOT NULL DEFAULT 0,hidden INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(source,channel_id));\n        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);""")
+        CREATE TABLE IF NOT EXISTS tablo_listings(id TEXT PRIMARY KEY,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT,season INT,episode INT);\n        CREATE INDEX IF NOT EXISTS idx_tablo_time ON tablo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS philo_listings(id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id TEXT,channel_label TEXT,start TEXT,stop TEXT,title TEXT,subtitle TEXT,year INT,description TEXT);\n        CREATE INDEX IF NOT EXISTS idx_philo_time ON philo_listings(start,stop);\n        CREATE TABLE IF NOT EXISTS channel_prefs(source TEXT,channel_id TEXT,favorite INTEGER NOT NULL DEFAULT 0,hidden INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(source,channel_id));\n        CREATE TABLE IF NOT EXISTS tablo_channels(channel_id TEXT PRIMARY KEY,number TEXT,network TEXT,callsign TEXT);\n        CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);""")
         # Existing installations retain their databases; add classification safely.
         for table in ("listings","tablo_listings","philo_listings"):
             cols={x["name"] for x in c.execute("PRAGMA table_info("+table+")")}
@@ -309,7 +309,29 @@ def sync_tablo():
                 row=f.result()
                 if row:rows.append(row)
         if not rows:raise RuntimeError("No usable airing details returned; preserving previous schedule")
+        # Pull channel metadata separately from the same read-only Tablo API.
+        # The seven channels are inexpensive to query and provide network labels.
+        channel_info=[]
+        try:
+            channel_paths=tablo_get("/guide/channels")
+            if isinstance(channel_paths,list):
+                for channel_path in channel_paths:
+                    if not isinstance(channel_path,str) or not channel_path.startswith("/guide/channels/"):continue
+                    try:
+                        channel_data=(tablo_get(channel_path).get("channel") or {})
+                        major=channel_data.get("major")
+                        minor=channel_data.get("minor")
+                        number=f"{major}.{minor}" if major is not None and minor is not None else ""
+                        network=channel_data.get("network") or ""
+                        call=channel_data.get("call_sign") or ""
+                        channel_info.append((channel_path,number,str(network),str(call)))
+                    except (requests.RequestException,ValueError,TypeError):
+                        continue
+        except (requests.RequestException,ValueError,TypeError):
+            pass
         with db() as c:
+            if channel_info:
+                c.executemany("INSERT OR REPLACE INTO tablo_channels(channel_id,number,network,callsign) VALUES (?,?,?,?)",channel_info)
             c.execute("DELETE FROM tablo_listings")
             c.executemany("INSERT OR REPLACE INTO tablo_listings(id,channel_id,channel_label,start,stop,title,subtitle,year,description,season,episode,program_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",rows)
             putmeta(c,"last_tablo_sync",datetime.now(timezone.utc).isoformat())
@@ -418,13 +440,25 @@ def search(q:str=Query("",max_length=200)):
         return [dict(v) for v in c.execute("SELECT kind,title,show_title,year,season,episode FROM media WHERE title LIKE ? OR show_title LIKE ? LIMIT 40",(f"%{q}%",f"%{q}%")).fetchall()]
 
 @app.get("/api/guide")
-def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool=False,source:str="all",include_hidden:bool=False):
-    now=datetime.now(timezone.utc);until=now+timedelta(hours=hours)
+def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool=False,source:str="all",include_hidden:bool=False,start:str|None=None):
+    now=datetime.now(timezone.utc)
+    if start:
+        try:
+            now=datetime.fromisoformat(start.replace("Z","+00:00"))
+            if now.tzinfo is None:raise ValueError("Timezone required")
+            now=now.astimezone(timezone.utc)
+        except (ValueError,TypeError):
+            raise HTTPException(400,"start must be an ISO timestamp with timezone")
+        current=datetime.now(timezone.utc)
+        if now<current-timedelta(days=3) or now>current+timedelta(days=8):
+            raise HTTPException(400,"start is outside the supported guide window")
+    until=now+timedelta(hours=hours)
     with db() as c:
         listings=c.execute("SELECT * FROM listings WHERE start < ? AND stop > ? ORDER BY channel_label,start",(until.isoformat(),now.isoformat())).fetchall()
         tablo=c.execute("SELECT * FROM tablo_listings WHERE start < ? AND stop > ? ORDER BY channel_label,start",(until.isoformat(),now.isoformat())).fetchall()
         philo=c.execute("SELECT * FROM philo_listings WHERE start < ? AND stop > ? ORDER BY channel_label,start",(until.isoformat(),now.isoformat())).fetchall()
         prefs={(x["source"],x["channel_id"]):x for x in c.execute("SELECT * FROM channel_prefs")}
+        tablo_info={x["channel_id"]:dict(x) for x in c.execute("SELECT * FROM tablo_channels")}
         catalog=c.execute("SELECT * FROM media").fetchall()
     channels={}
     for collection,source_name in ((listings,"xmltv"),(tablo,"tablo"),(philo,"philo")):
@@ -439,8 +473,13 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         entry["plex"]=match(entry,catalog)
         if plex_only and not entry["plex"]:continue
         ch=entry["source"]+":"+entry["channel_id"]
-        channels.setdefault(ch,{"id":ch,"label":entry["channel_label"],"source":source_name,"favorite":entry["favorite"],"programs":[]})["programs"].append(entry)
-    return {"generated_at":now.isoformat(),"channels":list(channels.values())}
+        channel=channels.setdefault(ch,{"id":ch,"label":entry["channel_label"],"source":source_name,"favorite":entry["favorite"],"programs":[]})
+        if source_name=="tablo":
+            info=tablo_info.get(entry["channel_id"],{})
+            channel["number"]=info.get("number") or entry["channel_label"]
+            channel["network"]=info.get("network") or info.get("callsign") or ""
+        channel["programs"].append(entry)
+    return {"generated_at":datetime.now(timezone.utc).isoformat(),"window_start":now.isoformat(),"window_end":until.isoformat(),"channels":list(channels.values())}
 
 @app.on_event("startup")
 def start_background_refresh():
