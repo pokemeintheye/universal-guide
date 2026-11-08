@@ -35,6 +35,17 @@ def catalog():
         return {}
 
 
+def channel_catalog():
+    """Known channel destinations only; no subscription/EPG availability implied."""
+    result=[]
+    for item in catalog().get("channels",[]):
+        url=_url(item.get("id"),"channel")
+        if not url or not item.get("name"):continue
+        result.append({"name":item["name"],"url":url,
+                       "verification":item.get("verification","public-listed")})
+    return result
+
+
 def links_for(channel_label,title,subtitle=None,season=None,episode=None):
     """Return only explicit, verified links for the correct guide record."""
     data=catalog()
