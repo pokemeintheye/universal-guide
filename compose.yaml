@@ -12,6 +12,7 @@ services:
       GUIDE_XMLTV: /data/guide.xml
       TABLO_URL: "${TABLO_URL:-}"
       TABLO_REFRESH_HOURS: "6"
+      PHILO_REFRESH_HOURS: "24"
     volumes:
       - /mnt/user/appdata/universal-guide:/data
     security_opt:

@@ -59,3 +59,9 @@ The GitHub Actions workflow rebuilds GHCR `latest` whenever code is committed to
 Set `TABLO_URL` as an Unraid environment variable to the local address of your network Tablo, e.g. `http://192.168.1.50:8885`. Click **Refresh Tablo** in the web interface (or allow the background scan approximately every six hours). The integration makes read-only GET requests to `/guide/airings` and the returned individual program records. It uses broadcast start times, durations, channels, and episode metadata. Existing Plex and XMLTV metadata stays independent.
 
 To avoid overloading Tablo the import uses no more than six concurrent requests, caps the guide at 4,000 program references, and reports truncation. The importer may require changes for different Tablo firmware. There is no video/recording access. Do not expose this application to the public internet.
+
+## Philo-like network listings (free, metadata only)
+
+The backend fetches EPGTalk's compressed US national XMLTV feed automatically every 24 hours (or click **Refresh Philo EPG**). Matching is based on the published Philo Essential channel names and conservative aliases. Only clearly matched channels are imported; channels missing from the feed won't appear. This feed is not provided by Philo, and the listings do not prove a particular channel is included in your individual plan. No Philo credentials, video playback, or recordings are accessed. The download uses a fixed trusted HTTPS URL with size limits.
+
+Use **Manage channels** to mark channels as favorites or hide them. Settings persist in SQLite in /data. **Favorites** filters the guide. Programs imported from Tablo and manual XMLTV remain independent. Future improvements include official lineup selection for add-on tiers and channel matching overrides.
