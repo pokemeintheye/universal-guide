@@ -49,6 +49,22 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
             self.assertEqual(link["verification"],"public-listed")
             self.assertFalse(link["autoplay"])
 
+    def test_large_public_channel_catalog_has_no_wrong_reuse(self):
+        channels=channel_catalog()
+        self.assertGreaterEqual(len(channels),36)
+        self.assertEqual(len(channels),len({c["name"] for c in channels}))
+        self.assertEqual(len(channels),len({c["url"] for c in channels}))
+        for name in ("A&E","Animal Planet","Hallmark Channel","Lifetime",
+                     "Nickelodeon","Nick Jr.","MeTV","MeTV Toons","MTV2",
+                     "Science Channel","Travel Channel","Paramount Network"):
+            link=links_for(name,"A completely unrelated show").get("channel")
+            self.assertIsNotNone(link,name)
+            self.assertEqual(link["verification"],"public-listed")
+            self.assertTrue(link["url"].startswith(
+                "https://www.philo.com/player/channel/"))
+        self.assertNotIn("channel",links_for("The Wrong Channel","The Office"))
+        self.assertNotIn("channel",links_for("Hallmark","An unknown show"))
+
     def test_publicly_discovered_show_links(self):
         for show in ("The Kitchen","House Hunters"):
             link=links_for("HGTV",show).get("show")
