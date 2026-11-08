@@ -64,21 +64,21 @@ seg_501.ts
         self.assertNotIn("SECRET",str(r))
 
     def test_historical_manifest_is_bounded_and_uses_native_segments(self):
-        body="#EXTM3U\\n"+ "".join(
-            "#EXTINF:1.000,\\nseg_"+str(i)+".ts\\n" for i in range(220))
+        body="#EXTM3U\n"+ "".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(220))
         manifest,meta=tablo_live._historic_clip_manifest(
             "http://192.168.1.9:8885",
             "http://192.168.1.9/stream/abc/index.m3u8",body,120,75)
-        self.assertTrue(manifest.startswith("#EXTM3U\\n"))
-        self.assertTrue(manifest.endswith("#EXT-X-ENDLIST\\n"))
+        self.assertTrue(manifest.startswith("#EXTM3U\n"))
+        self.assertTrue(manifest.endswith("#EXT-X-ENDLIST\n"))
         self.assertEqual(meta["segment_count"],75)
         self.assertIn("/stream/abc/seg_100.ts",manifest)
         self.assertNotIn("/stream/abc/seg_0.ts",manifest)
         self.assertLess(meta["clip_duration_seconds"],100)
 
     def test_historical_manifest_refuses_insufficient_history(self):
-        body="#EXTM3U\\n"+ "".join(
-            "#EXTINF:1,\\nseg_"+str(i)+".ts\\n" for i in range(25))
+        body="#EXTM3U\n"+ "".join(
+            "#EXTINF:1,\nseg_"+str(i)+".ts\n" for i in range(25))
         with self.assertRaises(HTTPException) as ctx:
             tablo_live._historic_clip_manifest(
                 "http://192.168.1.9:8885",
