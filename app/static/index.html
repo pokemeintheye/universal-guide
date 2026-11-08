@@ -20,13 +20,38 @@ small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}bu
 .epg-program:hover{background:#354c70}.epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .epg-program.owned{background:#194b43;border-color:#39896d}
 .epg-program em{font-style:normal;font-size:10px;color:#aef6d7}
-input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:pointer} .result label{display:inline-flex;align-items:center;gap:6px;font-size:13px}</style></head>
+input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:pointer} .result label{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.epg-station .net{font-size:15px;font-weight:750;color:#edf4ff;line-height:1.4}
+.epg-station .num{font-size:12px;color:#a9c0de;font-weight:550;margin-top:3px}
+.epg-program{cursor:pointer;text-align:left;font-family:inherit;color:inherit}
+.epg-program:focus-visible{outline:3px solid #78b3ff;outline-offset:1px}
+.nowline{position:absolute;z-index:1;top:0;bottom:0;width:2px;background:#ee6d63;pointer-events:none}
+.guide-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.guide-controls .date{font-size:13px;color:#bdd1ea;min-width:155px}
+.dialog-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:20;display:flex;align-items:center;justify-content:center;padding:20px}
+.dialog-card{background:#17253d;border:1px solid #536886;border-radius:15px;padding:25px;width:min(100%,560px);max-height:85vh;overflow:auto;box-shadow:0 18px 60px #0009}
+.dialog-card h2{font-size:23px;margin:8px 0}
+.dialog-card .meta{color:#b5c8e1;font-size:13px}
+.dialog-card p{line-height:1.6}
+.dialog-card .close{float:right}
+</style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
 <section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads only Plex metadata via its API. Does not mount or stream media files. Restrict access to your trusted LAN; this prototype does not include authentication.</p></section>
 <section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Playback remains in the original apps.</p><div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
-</main><script>
+<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Playback remains in the original apps.</p><div class="guide-controls" id="guidecontrols">
+<button id="earlier" type="button">← Earlier</button>
+<button id="now" type="button">Now</button>
+<button id="later" type="button">Later →</button>
+<span class="date" id="viewtime"></span>
+<button id="tablofilter" type="button">Local</button>
+<button id="philofilter" type="button">Philo</button>
+</div><div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
+</main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
+<button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
+<div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
+<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div>
+<p class="note">Program information only. Playback remains in Plex, Tablo or Philo.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function req(url,opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
@@ -34,38 +59,83 @@ async function status(){try{const s=await req("/api/status");$("plexcount").text
 async function act(kind){const b=$(kind);b.disabled=true;$("message").textContent="Working…";try{const v=await req("/api/sync/"+(kind==="sync"?"plex":kind==="tablo"?"tablo":kind==="philo"?"philo":"guide"),{method:"POST"});$("message").textContent=JSON.stringify(v);await status();await guide(false)}catch(e){$("message").textContent="Error: "+e.message}finally{b.disabled=false}}
 $("sync").onclick=()=>act("sync");$("epg").onclick=()=>act("epg");$("tablo").onclick=()=>act("tablo");$("philo").onclick=()=>act("philo");
 let debounce;$("search").oninput=()=>{clearTimeout(debounce);debounce=setTimeout(async()=>{const q=$("search").value.trim();if(q.length<2){$("results").textContent="Enter two or more characters.";return}try{const r=await req("/api/search?q="+encodeURIComponent(q));$("results").innerHTML=r.length?r.map(x=>'<div class="result"><b>'+esc(x.show_title||x.title)+'</b> '+(x.kind==="episode"?"— "+esc(x.title)+" (S"+x.season+" E"+x.episode+")":"("+x.year+")")+' <span class="chip green">In Plex</span></div>').join(""):"No matches."}catch(e){$("results").textContent=e.message}},250)};
-let view={plex:false,favorites:false,source:"all"};
+let view={plex:false,favorites:false,source:"all",anchor:null};
+let shownPrograms=[];
+let lastGuideToken=0;
+const halfHour=30*60*1000;
+function currentAnchor(){return Math.floor(Date.now()/halfHour)*halfHour}
+function guideAnchor(){return view.anchor??currentAnchor()}
+function setGuideAnchor(t){view.anchor=t;guide(view.plex)}
+function openDetails(program){
+ const {channel:p,entry:e}=program;
+ $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
+ $("detailtitle").textContent=e.title||"Untitled";
+ const fmt={weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"};
+ $("detailtime").textContent=new Date(e.start).toLocaleString([],fmt)+" – "+new Date(e.stop).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+ const episode=(e.season!=null&&e.episode!=null)?"Season "+e.season+", Episode "+e.episode:"";
+ $("detailepisode").textContent=[episode,e.subtitle,e.year||""].filter(Boolean).join(" · ");
+ $("detaildesc").textContent=e.description||"No program description provided by this guide source.";
+ $("detailplex").textContent=e.plex?"✓ Available in Plex: "+(e.plex.show?e.plex.show+" — ":"")+e.plex.title:"Not confirmed in Plex library";
+ $("detailplex").className=e.plex?"chip green":"chip";
+ $("detailsmodal").hidden=false;
+ $("closedetails").focus();
+}
+$("closedetails").onclick=()=>$("detailsmodal").hidden=true;
+$("detailsmodal").onclick=e=>{if(e.target===$("detailsmodal"))$("detailsmodal").hidden=true};
+document.addEventListener("keydown",e=>{if(e.key==="Escape")$("detailsmodal").hidden=true});
 async function guide(only){
-view.plex=Boolean(only);
-try{
-const data=await req("/api/guide?hours=9&plex_only="+view.plex+"&favorites_only="+view.favorites+"&source="+view.source);
-if(!data.channels.length){$("guide").textContent="No "+(only?"Plex-matching ":"")+"current guide entries. Configure TABLO_URL for local stations or add guide.xml for other schedules.";return}
-const hour=30*60*1000;
-const start=Math.floor(Date.now()/hour)*hour;
-const end=start+8*60*60*1000;
-let header='<div class="epg-time"><div class="epg-station">Channel</div><div style="display:flex">';
-for(let t=start;t<end;t+=hour)header+='<div class="epg-slot">'+new Date(t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+'</div>';
-header+='</div></div>';
-let rows='';
-for(const ch of data.channels){
-let programs='';
-for(const p of ch.programs){
-const a=Math.max(start,Date.parse(p.start)),b=Math.min(end,Date.parse(p.stop));
-if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
-const left=((a-start)/(end-start))*100;
-const width=((b-a)/(end-start))*100;
-const tip=esc(p.title+(p.subtitle?' — '+p.subtitle:''));
-programs+='<div class="epg-program'+(p.plex?' owned':'')+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+tip+'"><strong>'+esc(p.title)+'</strong>'+(p.plex?'<em>✓ In Plex</em>':'')+'</div>';
+ view.plex=Boolean(only);
+ const token=++lastGuideToken;
+ $("guidecontrols").hidden=false;
+ const start=guideAnchor(),end=start+8*60*60*1000;
+ $("viewtime").textContent=new Date(start).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+ try{
+  const url="/api/guide?hours=8&start="+encodeURIComponent(new Date(start).toISOString())+"&plex_only="+view.plex+"&favorites_only="+view.favorites+"&source="+view.source;
+  const data=await req(url);
+  if(token!==lastGuideToken)return;
+  if(!data.channels.length){$("guide").textContent="No programs found in this time range. Try Now, Earlier, or Later.";return}
+  const channels=data.channels.slice().sort((a,b)=>{
+    if(a.source!==b.source)return a.source==="tablo"?-1:b.source==="tablo"?1:a.source.localeCompare(b.source);
+    if(a.source==="tablo"){
+      const na=Number(a.number||a.label),nb=Number(b.number||b.label);
+      if(na!==nb)return na-nb;
+    }
+    return a.label.localeCompare(b.label,undefined,{numeric:true});
+  });
+  let header='<div class="epg-time"><div class="epg-station">Channel</div><div style="display:flex">';
+  for(let t=start;t<end;t+=halfHour)header+='<div class="epg-slot">'+new Date(t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+'</div>';
+  header+='</div></div>';
+  shownPrograms=[];
+  let rows='';
+  for(const ch of channels){
+   let blocks='';
+   for(const p of ch.programs){
+    const a=Math.max(start,Date.parse(p.start)),b=Math.min(end,Date.parse(p.stop));
+    if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
+    const left=(a-start)/(end-start)*100,width=(b-a)/(end-start)*100;
+    const index=shownPrograms.push({channel:ch,entry:p})-1;
+    blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+'" data-program="'+index+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+esc(p.title)+'"><strong>'+esc(p.title)+'</strong>'+(p.plex?'<em>✓ In Plex</em>':'')+'</button>';
+   }
+   const label=ch.source==="tablo"
+     ?'<div class="net">'+esc(ch.network||ch.label)+'</div><div class="num">'+esc(ch.number||ch.label)+'</div>'
+     :'<div class="net">'+esc(ch.label)+'</div>';
+   const now=Date.now();
+   const nowLine=now>=start&&now<end?'<div class="nowline" style="left:'+((now-start)/(end-start)*100)+'%"></div>':'';
+   rows+='<div class="epg-row"><div class="epg-station">'+label+'</div><div class="epg-tracks">'+nowLine+blocks+'</div></div>';
+  }
+  $("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
+  $("guide").querySelectorAll("[data-program]").forEach(el=>el.onclick=()=>openDetails(shownPrograms[Number(el.dataset.program)]));
+ }catch(e){if(token===lastGuideToken)$("guide").textContent=e.message}
 }
-rows+='<div class="epg-row"><div class="epg-station">'+esc(ch.label)+'</div><div class="epg-tracks">'+programs+'</div></div>';
-}
-$("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
-}catch(e){$("guide").textContent=e.message}
-}
-$("all").onclick=()=>{view={plex:false,favorites:false,source:"all"};guide(false)};
+$("earlier").onclick=()=>setGuideAnchor(guideAnchor()-2*60*60*1000);
+$("later").onclick=()=>setGuideAnchor(guideAnchor()+2*60*60*1000);
+$("now").onclick=()=>{view.anchor=null;guide(view.plex)};
+$("tablofilter").onclick=()=>{view.source=view.source==="tablo"?"all":"tablo";guide(view.plex)};
+$("philofilter").onclick=()=>{view.source=view.source==="philo"?"all":"philo";guide(view.plex)};
+$("all").onclick=()=>{view={plex:false,favorites:false,source:"all",anchor:null};guide(false)};
 $("inplex").onclick=()=>{view.favorites=false;guide(true)};
 $("favorites").onclick=()=>{view.favorites=!view.favorites;guide(view.plex)};
-$("manage").onclick=manageChannels;
+$("manage").onclick=()=>{$("guidecontrols").hidden=true;manageChannels()};
 async function manageChannels(){
  try{
  const list=await req("/api/channels");
