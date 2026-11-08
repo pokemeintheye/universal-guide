@@ -78,3 +78,10 @@ The repository includes `templates/universal-guide.xml` and `assets/icon.png`. E
 - **WebUI:** `http://[IP]:[PORT:8787]/`
 
 Then Apply. Keep your existing environment variables, mappings, and credentials. Alternatively, install from the provided XML template for a fresh deployment.
+
+## Guide navigation and program information
+The browser guide provides **Earlier** and **Later** navigation (two-hour steps), **Now**, a live-time indicator, separate **Local** and **Philo** filters, and clickable program tiles. Clicking a program shows its scheduled time, description, episode information if supplied, and Plex availability. No app is launched or media is accessed.
+
+Legacy Tablo channels show the network (e.g. **CBS**) above the broadcast channel number (e.g. **2.1**). The app reads these names directly from Tablo's `/guide/channels` metadata during a **Refresh Tablo**; after upgrading, run that refresh once to populate the network labels. If the station has no network field, the guide falls back to its callsign or number.
+
+These features are experimental and depend on guide data completeness. More precise artwork/episode metadata would require an additional metadata provider.
