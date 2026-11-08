@@ -373,8 +373,29 @@ def sync_tablo():
     finally:
         tablo_lock.release()
 
+def series_title_matches(guide_title,plex_title):
+    """Only use unambiguous identifiers for known US title variants."""
+    guide=norm(guide_title)
+    stored=norm(plex_title)
+    if guide==stored:
+        return True
+    # Comedy Central broadcasts the US series. Never match the UK series
+    # merely because both are called The Office.
+    if guide=="the office" and stored in (
+        "the office us","the office u s","the office 2005",
+        "the office us 2005","the office u s 2005"
+    ):
+        return True
+    return False
+
+
+def plex_series_candidates(guide_title,catalog):
+    return [m for m in catalog if m["kind"]=="episode"
+            and series_title_matches(guide_title,m["show_title"])]
+
+
 def match(p,catalog):
-    """Match only equivalent media types; never equate a TV series with a movie."""
+    """Only match Plex movies with movies, and exact episodes with episodes."""
     title=norm(p["title"])
     if not title:return None
     kind=p.get("program_kind","unknown")
@@ -383,26 +404,30 @@ def match(p,catalog):
         candidates=[m for m in catalog if m["kind"]=="movie" and m["normalized"]==title]
         if year:
             candidates=[m for m in candidates if m["year"] and abs(m["year"]-year)<=1]
-        # Missing release year plus multiple remakes = ambiguous.
         if len(candidates)==1:
             m=candidates[0]
             return {"kind":"movie","title":m["title"],"rating_key":m["id"].split(":",1)[1]}
         return None
     if kind in ("other","movie"):
         return None
-    # A series title alone is not proof we own the specific broadcast episode.
-    episodes=[m for m in catalog if m["kind"]=="episode" and m["normalized"]==title]
+    episodes=plex_series_candidates(p["title"],catalog)
     season=p.get("season")
     number=p.get("episode")
+    subtitle=norm(p.get("subtitle"))
+    # Matching subtitle AND episode numbering is ideal. Different guide/Plex
+    # episode numbering conventions sometimes diverge (two-part episodes).
+    # If they disagree, a UNIQUE exact subtitle within the correct series
+    # is safer than choosing a different episode based on numbers alone.
     if season is not None and number is not None:
-        episodes=[m for m in episodes if m["season"]==season and m["episode"]==number]
-    else:
-        subtitle=norm(p.get("subtitle"))
-        if not subtitle:return None
-        episodes=[m for m in episodes if norm(m["title"])==subtitle]
-    if len(episodes)==1:
-        m=episodes[0]
-        return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
+        by_number=[m for m in episodes if m["season"]==season and m["episode"]==number]
+        if len(by_number)==1 and (not subtitle or norm(by_number[0]["title"])==subtitle):
+            m=by_number[0]
+            return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
+    if subtitle:
+        by_title=[m for m in episodes if norm(m["title"])==subtitle]
+        if len(by_title)==1:
+            m=by_title[0]
+            return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
     return None
 
 @app.get("/")
@@ -497,14 +522,23 @@ def match_diagnostics(q:str=Query(...,min_length=2,max_length=100)):
             for item in found:
                 p=dict(item)
                 match_result=match(p,catalog)
-                episodes=[m for m in catalog if m["kind"]=="episode" and m["normalized"]==norm(p["title"])]
+                episodes=plex_series_candidates(p["title"],catalog)
                 entries.append({"source":source,"channel":p["channel_label"],
                     "start":p["start"],"title":p["title"],"subtitle":p.get("subtitle"),
                     "season":p.get("season"),"episode":p.get("episode"),
                     "kind":p.get("program_kind"),"plex_series_episode_count":len(episodes),
                     "matched":bool(match_result),
                     "matched_title":match_result["title"] if match_result else None})
-    return {"query":q,"programs":entries[:50]}
+    # Show actual Plex series labels for troubleshooting naming variants,
+    # without returning media paths, tokens or personally identifying data.
+    related={}
+    for item in catalog:
+        if item["kind"]!="episode":continue
+        show=item["show_title"] or ""
+        if norm(q) in norm(show) or (norm(q)=="the office" and norm(show).startswith("the office")):
+            related[show]=related.get(show,0)+1
+    return {"query":q,"plex_similar_series":[{"title":k,"episode_count":v}
+            for k,v in sorted(related.items())[:20]],"programs":entries[:50]}
 
 @app.get("/api/search")
 def search(q:str=Query("",max_length=200)):
