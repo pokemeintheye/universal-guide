@@ -5,6 +5,7 @@ Channel and episode matches stay separate so a program never opens the wrong sho
 """
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 
 CATALOG=Path(__file__).with_name("philo_links.json")
@@ -25,6 +26,7 @@ def _url(identifier,kind):
     return None
 
 
+@lru_cache(maxsize=1)
 def catalog():
     try:
         data=json.loads(CATALOG.read_text(encoding="utf-8"))
@@ -44,24 +46,30 @@ def links_for(channel_label,title,subtitle=None,season=None,episode=None):
             url=_url(item.get("id"),"channel")
             if url:
                 found["channel"]={"url":url,"label":"Open "+item["name"]+" in Philo",
-                                  "autoplay":False,"level":"channel"}
+                                  "autoplay":False,"level":"channel",
+                                  "verification":item.get("verification","public-listed")}
             break
     for item in data.get("shows",[]):
         if show!=normalize(item.get("name")):continue
         url=_url(item.get("id"),"show")
         if url:
             found["show"]={"url":url,"label":"Open "+item["name"]+" in Philo",
-                           "autoplay":False,"level":"series"}
+                           "autoplay":False,"level":"series",
+                           "verification":item.get("verification","public-listed")}
         for ep in item.get("episodes",[]):
             expected_title=normalize(ep.get("subtitle"))
             if not expected_title or normalize(subtitle)!=expected_title:
                 continue
-            # An explicit season/episode contradicting the catalog must never match.
-            if season is not None and str(season)!=str(ep.get("season")):continue
-            if episode is not None and str(episode)!=str(ep.get("episode")):continue
+            # Exact episode deep links demand all three matching fields.
+            # Subtitles like "Pilot" recur across seasons and some EPG sources
+            # omit episode numbers; never guess in either case.
+            if season is None or episode is None:continue
+            if str(season)!=str(ep.get("season")):continue
+            if str(episode)!=str(ep.get("episode")):continue
             code=ep.get("id")
             if url and isinstance(code,str) and re.fullmatch(r"[A-Za-z0-9_-]{8,100}",code):
                 found["episode"]={"url":url+"?episode="+code,
-                     "label":"Open this episode in Philo","autoplay":False,"level":"episode"}
+                     "label":"Open this episode in Philo","autoplay":False,"level":"episode",
+                     "verification":ep.get("verification",item.get("verification","public-listed"))}
         break
     return found
