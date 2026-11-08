@@ -49,7 +49,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <main class="container">
 <section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads Plex metadata and now relays requested Plex playback streams. No media folders are mounted. Keep this experimental server on your trusted LAN; it does not include authentication.</p></section>
 <section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback is being tested; Tablo and Philo playback integrations remain pending.</p><div class="guide-controls" id="guidecontrols">
+<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback works; live Tablo tuner playback is experimental; Philo playback remains pending.</p><div class="guide-controls" id="guidecontrols">
 <button id="earlier" type="button">← Earlier</button>
 <button id="now" type="button">Now</button>
 <button id="later" type="button">Later →</button>
@@ -68,7 +68,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
-<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="plexhandoff" hidden style="margin-top:14px">
+<div class="meta" id="detailepisode"></div><p id="detaildesc"></p><div id="detailplex"></div><div id="tabloliveactions" hidden class="player-actions"><button id="watchtablo" type="button">▶ Watch Live on Tablo</button><span class="note">Live local channel · uses a Tablo tuner</span></div><div id="plexhandoff" hidden style="margin-top:14px">
 <div class="player-actions" id="playbackchoices" hidden>
 <button id="playbegin" type="button">▶ Start from Beginning</button>
 <button id="playjoin" type="button" hidden>◷ Join in Progress</button>
@@ -76,7 +76,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 <p class="note">Plex browser playback is experimental. The Plex Web button remains available as a fallback.</p>
 <a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
 <p class="note" id="plexlinkerror"></p></div>
-<p class="note">For programs available in Plex, choose a playback mode. Direct playback for Tablo and Philo is not yet implemented.</p></div></div><script>
+<p class="note">For Plex matches choose a playback mode. Live Tablo is experimental and may need tuner authorization; Philo playback is not yet implemented.</p></div></div><script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function req(url,opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
@@ -99,6 +99,7 @@ function setGuideAnchor(t){
 }
 function openDetails(program){
  selectedProgram=program;
+ $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
  const {channel:p,entry:e}=program;
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
@@ -262,6 +263,7 @@ status();guide(false);
 <script>
 let playerHls=null;
 let playerSession=null;
+let tabloSession=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -303,6 +305,11 @@ async function closePlexPlayer(){
  document.getElementById("playerbackdrop").hidden=true;
  const sid=playerSession;
  playerSession=null;
+ const oldTablo=tabloSession;tabloSession=null;
+ if(oldTablo){
+  try{await fetch("/api/tablo/live/"+encodeURIComponent(oldTablo),{method:"DELETE"})}
+  catch(err){console.warn("Tablo session cleanup:",err)}
+ }
  if(sid){
   // Explicitly stop the corresponding Plex transcoder before starting again.
   try{await fetch("/api/player/"+encodeURIComponent(sid),{
@@ -397,6 +404,60 @@ async function launchPlex(mode){
   beginning.disabled=false;join.disabled=false;
  }
 }
+async function launchTabloLive(){
+ if(selectedProgram?.channel?.source!=="tablo")return;
+ const channel=selectedProgram.channel;
+ const button=document.getElementById("watchtablo");
+ button.disabled=true;
+ try{
+  await closePlexPlayer();
+  const generation=++playerGeneration;
+  const info=await req("/api/tablo/live/start?channel_id="+encodeURIComponent(channel.id.slice("tablo:".length)),{
+   method:"POST",cache:"no-store"
+  });
+  if(generation!==playerGeneration){
+   fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),{method:"DELETE"}).catch(()=>{});
+   return;
+  }
+  tabloSession=info.session_id;
+  document.getElementById("detailsmodal").hidden=true;
+  document.getElementById("playertitle").textContent="Live Tablo · "+(channel.network||channel.label);
+  document.getElementById("playerbackdrop").hidden=false;
+  playerMessage("Starting Tablo tuner and transcoder. This may take 15–30 seconds…");
+  const video=document.getElementById("plexvideo");
+  const url=info.playlist_url;
+  video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
+  video.addEventListener("error",()=>{if(generation===playerGeneration)
+    playerMessage("Live Tablo media failed (browser error "+(video.error?.code||"?")+
+      "). Check Tablo tuner status and Unraid Docker logs.")},{once:true});
+  if(video.canPlayType("application/vnd.apple.mpegurl")){
+   video.src=url;
+   video.addEventListener("loadedmetadata",()=>video.play().catch(()=>
+     playerMessage("Press Play in the video controls.")),{once:true});
+   video.load();
+  }else if(window.Hls&&Hls.isSupported()){
+   playerHls=new Hls({enableWorker:true,liveSyncDurationCount:3,
+      manifestLoadingTimeOut:22000,levelLoadingTimeOut:22000,
+      manifestLoadingMaxRetry:5,levelLoadingMaxRetry:5});
+   playerHls.on(Hls.Events.ERROR,(_,data)=>{
+    if(generation!==playerGeneration)return;
+    if(data.fatal)playerMessage("Tablo HLS error: "+data.details+
+       (data.response?.code?" · HTTP "+data.response.code:"")+
+       ". If the stream did not start, close and retry.");
+   });
+   playerHls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>
+     playerMessage("Press Play in the video controls.")));
+   playerHls.attachMedia(video);
+   playerHls.loadSource(url);
+  }else{
+   playerMessage("This browser has no HLS player available.");
+  }
+ }catch(e){
+  alert("Tablo live playback unavailable: "+e.message);
+  playerMessage("Tablo live playback unavailable: "+e.message);
+ }finally{button.disabled=false}
+}
+document.getElementById("watchtablo").onclick=launchTabloLive;
 document.getElementById("playbegin").onclick=()=>launchPlex("beginning");
 document.getElementById("playjoin").onclick=()=>launchPlex("join");
 </script></body></html>
