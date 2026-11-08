@@ -266,6 +266,24 @@ let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
 function playerMessage(msg){document.getElementById("playerstatus").textContent=msg}
+let hlsLastError=null;
+async function explainPlayerFailure(fallback,generation){
+ if(generation!==playerGeneration)return;
+ let detail=fallback;
+ if(hlsLastError)detail+=" | HLS: "+hlsLastError;
+ if(playerSession){
+  try{
+   const r=await req("/api/player/"+encodeURIComponent(playerSession)+"/diagnostics");
+   if(generation!==playerGeneration)return;
+   detail+=" | Plex requests: "+r.requests+" (playlists "+r.playlists+
+     ", segments "+r.segments+")";
+   if(r.decision_http!==null)detail+=" | decision HTTP "+r.decision_http;
+   if(r.last_http!==null)detail+=" | last HTTP "+r.last_http;
+   if(r.last_error)detail+=" | "+r.last_error;
+  }catch(e){detail+=" | diagnostics unavailable: "+e.message}
+ }
+ playerMessage(detail);
+}
 function clearPlayerWatchdog(){
  if(playerWatchdog){clearTimeout(playerWatchdog);playerWatchdog=null}
 }
@@ -273,6 +291,7 @@ async function closePlexPlayer(){
  // Fully detach the old browser media element/MediaSource so Chrome cannot
  // reuse stale HLS buffers and handlers when the SAME episode is reopened.
  ++playerGeneration;
+ hlsLastError=null;
  clearPlayerWatchdog();
  const video=document.getElementById("plexvideo");
  video.pause();
@@ -335,8 +354,8 @@ async function launchPlex(mode){
   video.addEventListener("error",()=>{
     if(generation===playerGeneration){
       clearPlayerWatchdog();
-      playerMessage("Browser media error "+(video.error?.code||"unknown")+
-       ". Close and try again, or use Open this title in Plex.");
+      explainPlayerFailure("Browser media error "+(video.error?.code||"unknown")+
+       " ("+(video.error?.message||"source could not be decoded or loaded")+")",generation);
     }
   },{once:true});
   playerWatchdog=setTimeout(()=>{
@@ -356,8 +375,11 @@ async function launchPlex(mode){
       if(generation!==playerGeneration)return;
       if(data.fatal){
         clearPlayerWatchdog();
-        playerMessage("Playback error: "+data.details+
-         ". Close the player and retry or use Plex Web.");
+        const status=data.response?.code||data.response?.status||"";
+        hlsLastError=data.type+" / "+data.details+
+          (status?" / upstream HTTP "+status:"")+
+          (data.error?.message?" / "+data.error.message.slice(0,160):"");
+        explainPlayerFailure("HLS playback failed",generation);
       }
     });
     playerHls.on(Hls.Events.MANIFEST_PARSED,ready);
