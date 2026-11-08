@@ -134,3 +134,8 @@ The guide now shows **Watch Live on Tablo** for an airing that is currently live
 **Test procedure:** Update the container; select a *currently airing* local Tablo program; click **Watch Live on Tablo**. If it fails, provide the exact popup error. If it starts, verify picture, audio, and closing/reopening the same channel. Don't use an airing later in the guide to try to tune early.
 
 **Note:** On some devices, the returned HLS is already browser-playable; this first proof-of-concept deliberately uses FFmpeg to support the MPEG-2/AC3 variant. No Apple TV native client or Philo tuning has been implemented.
+
+## Tablo browser error 4 diagnostics
+The live player now waits until FFmpeg has written a valid HLS manifest and at least one segment before handing playback to Chrome. The server retains failed transcoder sessions temporarily and offers an authenticated-LAN-only status route `/api/tablo/live/<session-id>/status` with process running/exited state, manifest readiness, segment count and a short, sanitized FFmpeg error. FFmpeg stderr is temporarily saved under `/tmp/universal-guide-live`, automatically deleted when the live session closes or expires. Do not publish Universal Guide to the Internet; the prototype still has no authentication.
+
+**Next test:** After updating, select a currently-airing Tablo channel and click **Watch Live on Tablo**. If it fails, share the complete message at the bottom of the player or the popup. In particular `transcoder exited`, `manifest missing`, `segments 0` and the FFmpeg error should reveal whether the issue is the tuner stream, decoder or browser.
