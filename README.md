@@ -232,3 +232,29 @@ On Apple TV, the platform's app switcher (double-press the TV/Control Center rem
 Direct `/player/channel/` identifiers for **Comedy Central** and **Catchy Comedy** have not been verified from Philo's public indexed channel pages. Do not derive these IDs from numeric sequences, reuse other channel IDs or substitute marketing `/go/` links. Both remain visible in `philo_handoff_coverage.not_mapped`. As a useful interim step, the guide offers **show-level** links for Comedy Central's **South Park** and Catchy Comedy's **Cheers**, **Taxi**, **Full House**, and **Hot in Cleveland**, only when the guide program title exactly matches. These open the relevant show page, **not** the live channel and may require pressing Play. They are marked `public-listed` until tested on iPhone.
 
 To complete live channel linking, obtain a real URL by opening each channel's page in an authenticated Philo session and copying its player channel address (when the Philo UI/browser provides a shareable/copyable URL). Verify that URL on the user's iPhone before marking it `iphone-tested`. Avoid requesting the user's Philo credentials or token.
+
+## Legacy Tablo native-buffer diagnostic (beta investigation)
+
+The live Tablo player has a temporary **Inspect Tablo buffer (diagnostic)** button.
+After starting a local live Tablo channel, tap it once, keep the player open
+for 2–3 minutes, and tap it again. It calls
+`GET /api/tablo/live/{session_id}/source-diagnostics` and shows a summary
+of the **original Tablo HLS media playlist**, not Universal Guide's FFmpeg output.
+The read-only probe downloads only bounded playlist text, **not video segments**.
+It does not expose upstream playlist URLs or tokens.
+
+Inspect `playlist.window_seconds`, `playlist.media_sequence`,
+`playlist.segment_count`, and
+`previous_observation.media_sequence_advanced`.
+An increasing sequence with a small stable window suggests a sliding live
+playlist; a growing window suggests accessible history, but neither proves
+older segments are still retrievable. If the URL exposes only a short live
+window, the next step is to investigate the Tablo's separate seek/timeshift
+endpoints or variant playlists before implementing a second buffer.
+A missing or inaccessible source playlist produces an error but does not
+change live playback or recording behavior.
+
+**Security:** The app still has no authentication. Keep its web port restricted
+to the trusted local network; the diagnostic endpoint is not suitable for
+internet exposure. Do not share raw upstream Tablo stream URLs or session tokens.
+
