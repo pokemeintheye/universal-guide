@@ -1,0 +1,11 @@
+{
+  "name": "Universal TV Guide",
+  "short_name": "Universal Guide",
+  "description": "Local Plex, Tablo and verified Philo handoffs",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0e1320",
+  "theme_color": "#192237",
+  "orientation": "any"
+}
