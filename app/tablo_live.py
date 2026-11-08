@@ -58,10 +58,18 @@ def _allowed_url(origin,url):
     candidate=urljoin(origin+"/",url)
     base=urlparse(origin)
     target=urlparse(candidate)
+    # Legacy Tablo uses :8885 for the JSON API but often returns its HLS
+    # playlist on port 80 (e.g. /stream/pl.m3u8). Some firmware uses :8888.
+    # Do not expand this into an unrestricted host/port proxy.
+    allowed_ports={base.port or 80,80,8885,8888}
+    stream_path=target.path.startswith("/stream/") and target.path.endswith(".m3u8")
     if (target.scheme!="http" or target.hostname!=base.hostname
             or target.username or target.password or target.fragment
-            or target.port not in (base.port,8885,8886,8887,8888,None)):
-        raise HTTPException(502,"Tablo supplied a playlist URL outside its local device")
+            or target.port not in allowed_ports or not stream_path):
+        # Only scheme/host/port/path (no credentials, query or stream tokens).
+        raise HTTPException(502,"Tablo supplied an unexpected playlist destination: "+
+            str(target.scheme)+"://"+str(target.hostname)+":"+
+            str(target.port or 80)+str(target.path[:90]))
     return candidate
 
 @router.post("/start")
