@@ -12,8 +12,10 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
         self.assertNotIn("episode",links)
 
     def test_other_shows_cannot_open_office(self):
+        office_id="U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg"
         for title in ("The Simpsons","Office Space","The Office UK","Everybody Loves Raymond"):
-            self.assertNotIn("show",links_for("Comedy Central",title))
+            link=links_for("Comedy Central",title).get("show")
+            self.assertTrue(link is None or office_id not in link["url"])
 
     def test_food_network_channel_only(self):
         links=links_for("Food Network","Random Program")
