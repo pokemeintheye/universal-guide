@@ -457,6 +457,11 @@ def match(p,index):
                     "rating_key":m["id"].split(":",1)[1]}
     return None
 
+@app.get("/static/manifest.webmanifest")
+def iphone_manifest():
+    return FileResponse(Path(__file__).parent/"static"/"manifest.webmanifest",
+                        media_type="application/manifest+json")
+
 @app.get("/")
 def home():
     return FileResponse(Path(__file__).parent/"static"/"index.html")
