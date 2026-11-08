@@ -164,3 +164,17 @@ Connect your iPhone to the LAN where Unraid is reachable. Open the Universal Gui
 ### Verify after update
 
 Open a current *The Office* Philo listing: expect **Open Show in Philo** only, unless an independently verified channel match exists. Open a Food Network listing: expect **Open Live Channel in Philo**, which shows its channel page and may require selecting the current program to play. Open *Everybody Loves Raymond* pilot listing: expect an episode-specific button if the schedule contains a matching episode subtitle and no conflicting season/episode metadata. Other titles without verified IDs must not display Philo options.
+
+## Philo public page discovery - expanded starter catalog (2026-11-08)
+
+Philo officially publishes `https://www.philo.com/player/channel/<Philo-ID>` and `https://www.philo.com/player/show/<Philo-ID>` links in public search-indexed pages. Rather than guessing internal IDs or using the authenticated Philo video API, we collected and checked public page titles against the following verified-in-public identifiers:
+
+- **Previously iPhone-tested:** Food Network; The Office series; Everybody Loves Raymond series, and Pilot episode.
+- **Publicly listed; still needs iPhone testing:** AMC, HGTV, HISTORY, Discovery Channel, TLC, TV Land; The Kitchen and House Hunters series; The Kitchen S41E1 ("World on a Plate") episode.
+- **Sources:** Public `www.philo.com/player/` pages listed in the `source` field of `app/philo_links.json`. A `public-listed` URL has an identifiable title from Philo's public page but **has not been validated on iPhone**.
+
+A Philo guide listing automatically receives available links when its channel name or series title exactly matches the known catalog entry; exact episode buttons additionally require matching subtitle AND season AND episode. Unknown/ambiguous titles never inherit another title's ID. The curated catalog is loaded once per app process for speed; redeploy after editing.
+
+The UI labels untested entries **Test Link** and explains that the user must confirm the result in the installed Philo app. Even tested links generally require pressing Play inside Philo; no unauthorized DRM media access or automatic live tuning is attempted.
+
+**Next iterations:** Catalog growth is still limited by publicly discoverable ID metadata. There is no verified officially supported Philo search API that turns arbitrary EPG titles into Philo IDs. Public SEO page discovery can be expanded, but it must match exact titles, distinguish look-alike shows/movies, and undergo device testing; we do not fabricate IDs or call an unsupported private authenticated streaming API.
