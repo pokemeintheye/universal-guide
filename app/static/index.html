@@ -263,16 +263,32 @@ status();guide(false);
 let playerHls=null;
 let playerSession=null;
 let selectedProgram=null;
+let playerWatchdog=null;
+let playerGeneration=0;
 function playerMessage(msg){document.getElementById("playerstatus").textContent=msg}
+function clearPlayerWatchdog(){
+ if(playerWatchdog){clearTimeout(playerWatchdog);playerWatchdog=null}
+}
 async function closePlexPlayer(){
+ // Fully detach the old browser media element/MediaSource so Chrome cannot
+ // reuse stale HLS buffers and handlers when the SAME episode is reopened.
+ ++playerGeneration;
+ clearPlayerWatchdog();
  const video=document.getElementById("plexvideo");
  video.pause();
  if(playerHls){playerHls.destroy();playerHls=null}
- video.removeAttribute("src");video.load();
+ video.removeAttribute("src");
+ video.load();
+ const clean=video.cloneNode(false);
+ video.replaceWith(clean);
  document.getElementById("playerbackdrop").hidden=true;
- if(playerSession){
-  const sid=playerSession;playerSession=null;
-  try{await fetch("/api/player/"+encodeURIComponent(sid),{method:"DELETE"})}catch(_){}
+ const sid=playerSession;
+ playerSession=null;
+ if(sid){
+  // Explicitly stop the corresponding Plex transcoder before starting again.
+  try{await fetch("/api/player/"+encodeURIComponent(sid),{
+    method:"DELETE",cache:"no-store"
+  })}catch(err){console.warn("Plex session cleanup:",err)}
  }
 }
 document.getElementById("closeplayer").onclick=closePlexPlayer;
@@ -285,12 +301,20 @@ async function launchPlex(mode){
  const beginning=document.getElementById("playbegin"),join=document.getElementById("playjoin");
  beginning.disabled=true;join.disabled=true;
  try{
+  // Cleanup is complete before the next Plex start request.
+  await closePlexPlayer();
+  const generation=++playerGeneration;
   const payload={rating_key:Number(program.plex.rating_key),mode,
     airing_start:program.start,airing_end:program.stop};
   const info=await req("/api/player/start",{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
+    method:"POST",headers:{"Content-Type":"application/json"},
+    cache:"no-store",body:JSON.stringify(payload)
   });
-  await closePlexPlayer();
+  if(generation!==playerGeneration){
+    const staleId=info.playlist_url.split("/")[3];
+    fetch("/api/player/"+encodeURIComponent(staleId),{method:"DELETE"}).catch(()=>{});
+    return;
+  }
   document.getElementById("detailsmodal").hidden=true;
   const sid=info.playlist_url.split("/")[3];
   playerSession=sid;
@@ -299,26 +323,50 @@ async function launchPlex(mode){
   document.getElementById("playerbackdrop").hidden=false;
   playerMessage("Preparing Plex video stream…");
   const video=document.getElementById("plexvideo");
+  const ready=()=>{
+    if(generation!==playerGeneration)return;
+    clearPlayerWatchdog();
+    playerMessage("");
+    video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
+  };
+  video.addEventListener("playing",()=>{if(generation===playerGeneration){
+    clearPlayerWatchdog();playerMessage("");
+  }},{once:true});
+  video.addEventListener("error",()=>{
+    if(generation===playerGeneration){
+      clearPlayerWatchdog();
+      playerMessage("Browser media error "+(video.error?.code||"unknown")+
+       ". Close and try again, or use Open this title in Plex.");
+    }
+  },{once:true});
+  playerWatchdog=setTimeout(()=>{
+    if(generation!==playerGeneration || video.readyState>=2)return;
+    playerMessage("Plex has not delivered playable video after 25 seconds. "+
+      "Close and try again; if it repeats, check the Unraid container log.");
+  },25000);
+  const source=info.playlist_url+"?attempt="+encodeURIComponent(sid);
   if(video.canPlayType("application/vnd.apple.mpegurl")){
-    video.src=info.playlist_url;
-    video.addEventListener("loadedmetadata",()=>{
-      playerMessage("");
-      video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
-    },{once:true});
+    video.src=source;
+    video.addEventListener("loadedmetadata",ready,{once:true});
+    video.load();
   }else if(window.Hls&&Hls.isSupported()){
-    playerHls=new Hls({enableWorker:true});
+    playerHls=new Hls({enableWorker:true,manifestLoadingTimeOut:15000,
+      levelLoadingTimeOut:15000,fragLoadingTimeOut:20000});
     playerHls.on(Hls.Events.ERROR,(_,data)=>{
-      if(data.fatal)playerMessage("Playback error: "+data.details+
-        ". You can close this player and use the Plex Web link instead.");
+      if(generation!==playerGeneration)return;
+      if(data.fatal){
+        clearPlayerWatchdog();
+        playerMessage("Playback error: "+data.details+
+         ". Close the player and retry or use Plex Web.");
+      }
     });
-    playerHls.on(Hls.Events.MANIFEST_PARSED,()=>{
-      playerMessage("");
-      video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
-    });
-    playerHls.loadSource(info.playlist_url);
+    playerHls.on(Hls.Events.MANIFEST_PARSED,ready);
     playerHls.attachMedia(video);
+    playerHls.loadSource(source);
   }else{
-    playerMessage("HLS playback isn't available in this browser. Check the browser's internet connection for hls.js, or open the title in Plex Web.");
+    clearPlayerWatchdog();
+    playerMessage("HLS playback is not available. Connect to the internet "+
+      "for hls.js or use Plex Web.");
   }
  }catch(e){
   playerMessage("Could not start Plex playback: "+e.message);
