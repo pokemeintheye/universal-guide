@@ -598,6 +598,28 @@ def find_guide(q:str=Query(...,min_length=2,max_length=100),source:str="all",lim
     result.sort(key=lambda x:x["start"])
     return result[:limit]
 
+@app.get("/api/philo/coverage")
+def philo_coverage():
+    """Read-only EPG coverage report for curated Philo channel links."""
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as c:
+        counts={row["channel_label"]:row["count"] for row in c.execute(
+            "SELECT channel_label, COUNT(*) AS count FROM philo_listings WHERE stop > ? GROUP BY channel_label",
+            (now,)).fetchall()}
+        prefs={row["channel_id"]:dict(row) for row in c.execute(
+            "SELECT channel_id, favorite, hidden FROM channel_prefs WHERE source='philo'").fetchall()}
+    result=[]
+    for channel in known_philo_channels():
+        name=channel["name"]
+        pref=prefs.get("philo:"+norm(name),{})
+        result.append({"name":name,"future_epg_programs":counts.get(name,0),
+                       "hidden":bool(pref.get("hidden",0)),
+                       "favorite":bool(pref.get("favorite",0)),
+                       "verification":channel["verification"]})
+    return {"last_philo_sync":metadata("last_philo_sync"),
+            "philo_error":errors["philo"],"channels":result}
+
+
 @app.get("/api/guide")
 def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool=False,source:str="all",include_hidden:bool=False,start:str|None=None):
     now=datetime.now(timezone.utc)
