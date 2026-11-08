@@ -17,7 +17,11 @@ small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}bu
 .epg-tracks{position:relative;width:2880px;min-width:2880px;background:repeating-linear-gradient(to right,transparent 0,transparent 179px,#33425c 179px,#33425c 180px)}
 .epg-slot{width:180px;min-width:180px;padding:13px 9px;font-size:12px;color:#bdcee7;border-right:1px solid #33425c}
 .epg-program{position:absolute;top:4px;bottom:4px;background:#263a5a;border:1px solid #425a7c;border-radius:6px;padding:7px 9px;overflow:hidden;font-size:12px;white-space:nowrap;text-overflow:ellipsis;cursor:default}
-.epg-program:hover{background:#354c70}.epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.epg-program:hover{background:#354c70}
+.epg-no-schedule{position:absolute;inset:4px 0 auto 5px;display:flex;align-items:center;gap:12px;white-space:nowrap;font-size:12px;color:#c3cee0;min-height:55px;padding:6px 10px}
+.epg-no-schedule a{color:#d6e6ff;background:#314969;border:1px solid #6581a3;border-radius:8px;padding:9px 12px;text-decoration:none;font-weight:650}
+.epg-no-schedule a:focus-visible{outline:3px solid #7cbdff}
+.epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .epg-program.owned{background:#194b43;border-color:#39896d}
 .epg-program em{font-style:normal;font-size:10px;color:#aef6d7}
 input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:pointer} .result label{display:inline-flex;align-items:center;gap:6px;font-size:13px}
@@ -227,9 +231,16 @@ async function guide(only){
     const index=shownPrograms.push({channel:ch,entry:p})-1;
     blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+'" data-program="'+index+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+esc(p.title)+'"><strong>'+esc(p.title)+'</strong>'+(p.plex?'<em>✓ In Plex</em>':'')+'</button>';
    }
+   if(ch.schedule_unavailable && ch.source==="philo" && ch.philo_channel_url){
+     const verified=/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(ch.philo_channel_url);
+     blocks=verified?'<div class="epg-no-schedule"><span>Schedule unavailable</span><a href="'+
+        esc(ch.philo_channel_url)+'" rel="noopener">Open channel in Philo'+
+        (ch.philo_verification==="iphone-tested"?"":" · Test Link")+'</a></div>'
+       :'<div class="epg-no-schedule">Schedule unavailable</div>';
+   }
    const label=ch.source==="tablo"
      ?'<div class="net">'+esc(ch.network||ch.label)+'</div><div class="num">'+esc(ch.number||ch.label)+'</div>'
-     :'<div class="net">'+esc(ch.label)+'</div>';
+     :'<div class="net">'+esc(ch.label)+(ch.schedule_unavailable?'<div class="num">No EPG listings</div>':'')+'</div>';
    const now=Date.now();
    const nowLine=now>=start&&now<end?'<div class="nowline" style="left:'+((now-start)/(end-start)*100)+'%"></div>':'';
    rows+='<div class="epg-row"><div class="epg-station">'+label+'</div><div class="epg-tracks">'+nowLine+blocks+'</div></div>';
