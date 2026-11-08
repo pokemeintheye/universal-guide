@@ -81,6 +81,7 @@ function setGuideAnchor(t){
  const now=Date.now(),min=now-3*86400000,max=now+7*86400000;
  if(t<min||t>max){$("viewtime").textContent="No schedule beyond available guide dates";return}
  view.anchor=t;
+ $("viewtime").textContent=new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
  guide(view.plex);
 }
 function openDetails(program){
@@ -170,7 +171,7 @@ $("later").onclick=()=>setGuideAnchor(guideAnchor()+2*60*60*1000);
 $("nextday").onclick=()=>setGuideAnchor(guideAnchor()+24*60*60*1000);
 $("jumpdate").onchange=()=>{
  const value=$("jumpdate").value;
- if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value))return;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;
  const [y,m,d]=value.split("-").map(Number);
  const today=new Date(guideAnchor());
  const chosen=new Date(y,m-1,d,today.getHours(),today.getMinutes(),0,0);
