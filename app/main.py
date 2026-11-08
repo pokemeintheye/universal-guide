@@ -389,19 +389,44 @@ def series_title_matches(guide_title,plex_title):
     return False
 
 
+def build_media_index(catalog):
+    """Build hash indexes once per guide request instead of scanning every Plex
+    episode for every guide program (the previous O(programs * media) delay)."""
+    movies={}
+    episodes_by_number={}
+    episodes_by_title={}
+    series_counts={}
+    for m in catalog:
+        if m["kind"]=="movie":
+            movies.setdefault(m["normalized"],[]).append(m)
+        elif m["kind"]=="episode":
+            show=norm(m["show_title"])
+            series_counts[show]=series_counts.get(show,0)+1
+            keys=[show]
+            if show in ("the office us","the office u s","the office 2005",
+                        "the office us 2005","the office u s 2005"):
+                keys.append("the office")
+            for key in keys:
+                episodes_by_number.setdefault((key,m["season"],m["episode"]),[]).append(m)
+                episodes_by_title.setdefault((key,norm(m["title"])),[]).append(m)
+    return {"movies":movies,"number":episodes_by_number,"title":episodes_by_title,
+            "series_counts":series_counts}
+
+
 def plex_series_candidates(guide_title,catalog):
+    """For diagnostics only; avoid scanning the catalog in guide requests."""
     return [m for m in catalog if m["kind"]=="episode"
             and series_title_matches(guide_title,m["show_title"])]
 
 
-def match(p,catalog):
+def match(p,index):
     """Only match Plex movies with movies, and exact episodes with episodes."""
     title=norm(p["title"])
     if not title:return None
     kind=p.get("program_kind","unknown")
     year=int(p.get("year") or 0)
     if kind=="movie":
-        candidates=[m for m in catalog if m["kind"]=="movie" and m["normalized"]==title]
+        candidates=index["movies"].get(title,[])
         if year:
             candidates=[m for m in candidates if m["year"] and abs(m["year"]-year)<=1]
         if len(candidates)==1:
@@ -410,24 +435,21 @@ def match(p,catalog):
         return None
     if kind in ("other","movie"):
         return None
-    episodes=plex_series_candidates(p["title"],catalog)
     season=p.get("season")
     number=p.get("episode")
     subtitle=norm(p.get("subtitle"))
-    # Matching subtitle AND episode numbering is ideal. Different guide/Plex
-    # episode numbering conventions sometimes diverge (two-part episodes).
-    # If they disagree, a UNIQUE exact subtitle within the correct series
-    # is safer than choosing a different episode based on numbers alone.
     if season is not None and number is not None:
-        by_number=[m for m in episodes if m["season"]==season and m["episode"]==number]
+        by_number=index["number"].get((title,season,number),[])
         if len(by_number)==1 and (not subtitle or norm(by_number[0]["title"])==subtitle):
             m=by_number[0]
-            return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
+            return {"kind":"episode","title":m["title"],"show":m["show_title"],
+                    "rating_key":m["id"].split(":",1)[1]}
     if subtitle:
-        by_title=[m for m in episodes if norm(m["title"])==subtitle]
+        by_title=index["title"].get((title,subtitle),[])
         if len(by_title)==1:
             m=by_title[0]
-            return {"kind":"episode","title":m["title"],"show":m["show_title"],"rating_key":m["id"].split(":",1)[1]}
+            return {"kind":"episode","title":m["title"],"show":m["show_title"],
+                    "rating_key":m["id"].split(":",1)[1]}
     return None
 
 @app.get("/")
@@ -516,12 +538,13 @@ def match_diagnostics(q:str=Query(...,min_length=2,max_length=100)):
     """LAN-only troubleshooting: show guide episode metadata and Plex match status."""
     with db() as c:
         catalog=c.execute("SELECT * FROM media").fetchall()
+        index=build_media_index(catalog)
         entries=[]
         for table,source in (("philo_listings","philo"),("tablo_listings","tablo"),("listings","xmltv")):
             found=c.execute("SELECT * FROM "+table+" WHERE title LIKE ? ORDER BY start DESC LIMIT 20",("%"+q+"%",)).fetchall()
             for item in found:
                 p=dict(item)
-                match_result=match(p,catalog)
+                match_result=match(p,index)
                 episodes=plex_series_candidates(p["title"],catalog)
                 entries.append({"source":source,"channel":p["channel_label"],
                     "start":p["start"],"title":p["title"],"subtitle":p.get("subtitle"),
@@ -546,6 +569,25 @@ def search(q:str=Query("",max_length=200)):
     with db() as c:
         return [dict(v) for v in c.execute("SELECT kind,title,show_title,year,season,episode FROM media WHERE title LIKE ? OR show_title LIKE ? LIMIT 40",(f"%{q}%",f"%{q}%")).fetchall()]
 
+@app.get("/api/guide/find")
+def find_guide(q:str=Query(...,min_length=2,max_length=100),source:str="all",limit:int=Query(40,ge=1,le=100)):
+    """Fast guide title lookup for jumping to a future scheduled program."""
+    if source not in ("all","philo","tablo","xmltv"):
+        raise HTTPException(400,"Unsupported source")
+    result=[]
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as c:
+        for table,kind in (("philo_listings","philo"),("tablo_listings","tablo"),("listings","xmltv")):
+            if source not in ("all",kind):continue
+            rows=c.execute("SELECT channel_id,channel_label,start,stop,title,subtitle FROM "+table+
+                " WHERE stop > ? AND title LIKE ? ORDER BY start LIMIT ?",(now,"%"+q+"%",limit)).fetchall()
+            for row in rows:
+                item=dict(row)
+                item["source"]=kind
+                result.append(item)
+    result.sort(key=lambda x:x["start"])
+    return result[:limit]
+
 @app.get("/api/guide")
 def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool=False,source:str="all",include_hidden:bool=False,start:str|None=None):
     now=datetime.now(timezone.utc)
@@ -567,6 +609,7 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         prefs={(x["source"],x["channel_id"]):x for x in c.execute("SELECT * FROM channel_prefs")}
         tablo_info={x["channel_id"]:dict(x) for x in c.execute("SELECT * FROM tablo_channels")}
         catalog=c.execute("SELECT * FROM media").fetchall()
+    index=build_media_index(catalog)
     channels={}
     for collection,source_name in ((listings,"xmltv"),(tablo,"tablo"),(philo,"philo")):
       if source not in ("all",source_name):continue
@@ -577,7 +620,7 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         entry["favorite"]=bool(pref["favorite"]) if pref else False
         entry["hidden"]=bool(pref["hidden"]) if pref else False
         if (entry["hidden"] and not include_hidden) or (favorites_only and not entry["favorite"]):continue
-        entry["plex"]=match(entry,catalog)
+        entry["plex"]=match(entry,index)
         if plex_only and not entry["plex"]:continue
         ch=entry["source"]+":"+entry["channel_id"]
         channel=channels.setdefault(ch,{"id":ch,"label":entry["channel_label"],"source":source_name,"favorite":entry["favorite"],"programs":[]})
