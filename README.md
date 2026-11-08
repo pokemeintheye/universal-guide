@@ -142,3 +142,6 @@ The live player now waits until FFmpeg has written a valid HLS manifest and at l
 
 ## Tablo decoder diagnostic (Chrome browser error 4)
 The live player now prefers HLS.js / MediaSource on Chrome and Edge, using native HLS only where HLS.js is unavailable (e.g. Safari). If a live stream fails, the player requests `/api/tablo/live/<session-id>/status?probe=true` and reports the live transcode status, HLS playlist validity, segment-reference count and FFprobe-detected video/audio codecs from an existing locally generated HLS segment. It never sends Tablo stream URLs or tokens to the browser. Live playback is still being validated against a physical legacy Tablo.
+
+## iPhone Philo Universal Link handoff (first verified test)
+An iPhone with the Philo app installed and signed in successfully opened the **The Office** program page using `https://www.philo.com/player/show/U2hvdzo2MDg1NDg4OTk2NDg0MzkyODg`. Universal Guide now offers **Watch on Philo** for that exact Philo guide series as a conservative test, alongside Plex options when it matches. The link targets the show page, **not a particular episode or live Comedy Central stream**. The public `/go/comedycentral` URL remained in Safari and is not used. Other series must have their provider-specific link verified before a handoff button is enabled.
