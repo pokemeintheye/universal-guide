@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 router=APIRouter(prefix="/api/tablo/live")
-USER_AGENT="UniversalGuide/0.2 (Local TV)"
+USER_AGENT="Tablo-FAST/1.7.0 (Mobile; iPhone; iOS 18.4)"
 STORE=Path("/tmp/universal-guide-live")
 MAX_SESSIONS=2
 IDLE_SECONDS=85
