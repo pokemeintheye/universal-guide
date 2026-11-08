@@ -1,6 +1,6 @@
 # Universal TV Guide
 
-Metadata-only TV guide prototype for Plex, local OTA listings and Philo channel schedules.
+Unified TV guide prototype for Plex, local OTA listings and Philo schedules, now including experimental Plex HLS playback.
 
 **Status:** Initial Plex metadata indexing and optional XMLTV guide import. No native Apple TV app, or verified app deep links yet. This is an experimental prototype.
 
@@ -27,7 +27,7 @@ mkdir -p /mnt/user/appdata/universal-guide
 chown 10001:10001 /mnt/user/appdata/universal-guide
 ```
 
-The app reads Plex API metadata, never mounts media directories, and does not stream videos. It saves Plex titles and episode metadata in SQLite.
+The app reads Plex API metadata without mounting media directories. When playback is requested, it proxies a Plex HLS transcode playlist and stream segments to the browser, keeping the Plex token on the Unraid backend. It saves Plex titles and episode metadata in SQLite.
 
 ## Optional Docker Compose
 
@@ -98,3 +98,19 @@ For an unmatched example, use `http://YOUR-UNRAID-IP:8787/api/match-diagnostics?
 
 ## Fast guide browsing and future program search
 Plex metadata matching now uses in-memory title/episode hash indexes instead of searching the full Plex catalog for every airing, dramatically reducing guide query work. **Earlier/Later** move two hours; **+1 day** and **Jump to date** support further browsing. The **Find upcoming** box searches scheduled program titles (e.g. The Office), with **Go to airing** jumping directly to the matching time. This is guide search, not a guarantee that a third-party provider has that title available for playback. Results depend on the available feed horizon, generally around seven days.
+
+## Experimental direct Plex playback (browser first)
+
+When you select a green **In Plex** program, the program details offer:
+
+- **Start from Beginning**: request a Plex HLS stream starting at time zero.
+- **Join in Progress**: available only during the program's airing. Map the elapsed fraction of the broadcast timeslot to the runtime returned by Plex, approximately removing commercial-break time. This is an estimate, not exact scene synchronization.
+- **Open this title in Plex**: fallback to Plex Web if the experimental player does not work.
+
+The browser player receives only session-specific, opaque local URLs. The Unraid app talks to Plex with its API token and relays playlists, video and audio segments. The browser does not receive the Plex token or a direct Plex URL. This increases Unraid server network traffic and requires the Plex server's transcoder to be working. The test may require a Plex Pass depending on codec and transcoding capabilities.
+
+Browsers with native HLS can use it directly. Other browsers (including Chrome) load **hls.js** from a pinned jsDelivr CDN version; allow the browser to access the CDN for this initial test. The player is **not** a native Apple TV app and is **not yet verified with real Plex streams**. If playback fails, please report the exact error from the player or Docker logs.
+
+**Security:** This experimental container has no user authentication. It must remain accessible only on a trusted LAN, not exposed to the public internet. Session URLs allow playback until they expire. No Plex files need to be mounted.
+
+Tablo and Philo playback are **not implemented** by this milestone. Only select Plex-matched programs to test.
