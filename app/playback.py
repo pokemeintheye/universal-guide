@@ -279,6 +279,16 @@ def start_playback(body: PlaybackRequest):
             "mode": body.mode}
 
 
+@router.get("/{session_id}/diagnostics")
+def stream_diagnostics(session_id: str):
+    """Safe counters only: no Plex URLs, API tokens or media paths."""
+    session=_session(session_id)
+    with _guard:
+        return {key:session.get(key) for key in
+                ("requests","playlists","segments","last_resource","last_http",
+                 "last_error","decision_http","decision_attempted")}
+
+
 @router.get("/{session_id}/{resource_id}")
 def serve_resource(session_id: str, resource_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{15,80}", session_id):
@@ -319,16 +329,6 @@ def serve_resource(session_id: str, resource_id: str):
             response.close()
     return StreamingResponse(data(), media_type=content_type,
                              headers={"Cache-Control": "no-store"})
-
-
-@router.get("/{session_id}/diagnostics")
-def stream_diagnostics(session_id: str):
-    """Safe counters only: no Plex URLs, API tokens or media paths."""
-    session=_session(session_id)
-    with _guard:
-        return {key:session.get(key) for key in
-                ("requests","playlists","segments","last_resource","last_http",
-                 "last_error","decision_http","decision_attempted")}
 
 
 @router.delete("/{session_id}")
