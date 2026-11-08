@@ -1,0 +1,21 @@
+services:
+  universal-guide:
+    image: ghcr.io/pokemeintheye/universal-guide:latest
+    container_name: universal-guide
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      PLEX_URL: "${PLEX_URL}"
+      PLEX_TOKEN: "${PLEX_TOKEN}"
+      REFRESH_MINUTES: "30"
+      GUIDE_XMLTV: /data/guide.xml
+    volumes:
+      - /mnt/user/appdata/universal-guide:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
