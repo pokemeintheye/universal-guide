@@ -294,6 +294,109 @@ def _read_source_playlist(url):
                             type(exc).__name__) from None
 
 
+def _source_media_playlist(origin,playlist):
+    """Resolve one media variant without returning signed URLs to callers."""
+    body=_read_source_playlist(playlist)
+    summary=_summarize_source_playlist(body)
+    if summary["kind"]=="master":
+        lines=body.splitlines()
+        variant=next((lines[i+1].strip() for i,line in enumerate(lines[:-1])
+                      if line.strip().startswith("#EXT-X-STREAM-INF:")
+                      and lines[i+1].strip() and not lines[i+1].startswith("#")),None)
+        if not variant:
+            raise HTTPException(502,"Tablo master playlist contains no media variant")
+        playlist=_allowed_url(origin,urljoin(playlist,variant))
+        body=_read_source_playlist(playlist)
+        summary=_summarize_source_playlist(body)
+        summary["master_variant_selected"]=True
+    if summary["kind"]!="media":
+        raise HTTPException(502,"Tablo did not expose an inspectable media playlist")
+    return playlist,body,summary
+
+
+def _media_segment_urls(origin,playlist,body):
+    """Only resolve segment references that immediately follow EXTINF."""
+    urls=[]
+    expect_uri=False
+    base=urlparse(origin)
+    allowed_ports={base.port or 80,80,8885,8888}
+    for line in body.splitlines():
+        line=line.strip()
+        if line.startswith("#EXTINF:"):
+            expect_uri=True
+        elif expect_uri and line and not line.startswith("#"):
+            candidate=urljoin(playlist,line)
+            target=urlparse(candidate)
+            # Preserve the same strict local origin restriction used for /watch.
+            # Segment paths are not playlist paths and must be .ts media.
+            if (target.scheme!="http" or target.hostname!=base.hostname
+                    or target.port not in allowed_ports
+                    or target.username or target.password or target.fragment
+                    or not target.path.startswith("/stream/")
+                    or not target.path.lower().endswith(".ts")):
+                raise HTTPException(502,"Tablo playlist contains an unexpected segment destination")
+            urls.append(candidate)
+            expect_uri=False
+    return urls
+
+
+def _probe_source_segment(url):
+    """Read <=64 KiB of one segment for existence and MPEG-TS header checks."""
+    try:
+        with requests.get(url,headers={"User-Agent":USER_AGENT,
+                          "Accept":"video/mp2t","Range":"bytes=0-65535"},
+                          timeout=(3,7),allow_redirects=False,stream=True) as response:
+            status=response.status_code
+            if status not in (200,206):
+                return {"http_status":status,"readable":False,"sample_bytes":0}
+            sample=bytearray()
+            for chunk in response.iter_content(chunk_size=8192):
+                sample.extend(chunk[:max(0,65536-len(sample))])
+                if len(sample)>=65536:
+                    break
+            # MPEG-TS uses 188-byte packets with 0x47 sync bytes.
+            sync= len(sample)>=377 and sample[0]==0x47 and sample[188]==0x47
+            return {"http_status":status,"readable":bool(sample),
+                    "sample_bytes":len(sample),"mpeg_ts_sync":sync}
+    except requests.RequestException as exc:
+        # Exception strings can contain upstream token-bearing URLs.
+        return {"readable":False,"error":type(exc).__name__}
+
+
+@router.get("/{sid}/segment-diagnostics")
+def segment_diagnostics(sid:str):
+    """Read small samples of old/middle/recent native Tablo HLS segments."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    _cleanup()
+    with LOCK:
+        item=ACTIVE.get(sid)
+        if not item:
+            raise HTTPException(404,"Tablo stream expired")
+        item["last"]=time.monotonic()
+        origin,playlist=item["origin"],item["source_playlist"]
+    try:
+        media_url,body,summary=_source_media_playlist(origin,playlist)
+        urls=_media_segment_urls(origin,media_url,body)
+    except ValueError:
+        raise HTTPException(502,"Tablo did not return a valid playlist") from None
+    if not urls:
+        raise HTTPException(502,"No Tablo segments were listed in the live playlist")
+    # Oldest, midpoint, newest: max three requests, up to 64 KiB each.
+    selected=(("oldest",0),("middle",len(urls)//2),("newest",len(urls)-1))
+    samples={}
+    for label,index in selected:
+        if index in [entry["segment_index"] for entry in samples.values()]:
+            continue
+        result=_probe_source_segment(urls[index])
+        samples[label]={"segment_index":index,**result}
+    return {"session_id":sid,"source":"tablo_origin",
+            "advertised_segments":len(urls),
+            "advertised_window_seconds":summary["window_seconds"],
+            "samples":samples,
+            "limitations":"A readable sample does not yet prove browser seeking and transcoding will work."}
+
+
 @router.get("/{sid}/source-diagnostics")
 def source_diagnostics(sid:str):
     """Read-only inspection of the Tablo-origin playlist, with no media download."""
