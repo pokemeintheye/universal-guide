@@ -90,3 +90,8 @@ These features are experimental and depend on guide data completeness. More prec
 When a guide program has a confirmed Plex match, its program-details popup includes **Open this title in Plex**. The backend resolves the Plex server's machine identifier through its private API and produces a token-free Plex Web URL for that exact library item. You must already be signed in to Plex in the target browser.
 
 **This is a navigation diagnostic, not finished playback.** It opens Plex's item details, not immediate play, and does not yet support joining a broadcast in progress. In particular, this does not establish whether the Apple TV Plex app can accept the same handoff. The future native tvOS client or a direct Plex playback component must be tested separately before considering the project viable.
+
+## TV-episode matching diagnostics
+The free national EPG feed may contain XMLTV `episode-num` values (`xmltv_ns`, `onscreen`, or `common`). The importer now stores exact season and episode numbers when present. Existing databases receive new nullable columns automatically. Run **Refresh Philo EPG** (and optionally **Reload guide.xml**) after upgrading to populate them. Plex matching remains strict: exact season+episode, or matching episode subtitle; a TV series title alone does not establish ownership of the airing episode.
+
+For an unmatched example, use `http://YOUR-UNRAID-IP:8787/api/match-diagnostics?q=The%20Office` on your local network. It returns the available guide episode identifiers and whether that particular listing matched Plex; it does not return credentials.
