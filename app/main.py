@@ -299,7 +299,7 @@ def sync_philo():
             putmeta(c,"primary_epg_channels",json.dumps(sorted(set(winners)-set(extra))))
             putmeta(c,"supplemental_epg_channels",json.dumps(sorted(extra)))
         errors["philo"]=""
-        return {"programs":len(rows),"matched_channels":len(winners),"duplicate_variants_removed":len(by_feed)-len(winners),"published_philo_channels":len(PHILO_NAMES)}
+        return {"programs":len(rows),"matched_channels":len(winners),"duplicate_variants_removed":max(0,len(by_feed)-(len(winners)-len(extra))),"published_philo_channels":len(PHILO_NAMES)}
     except Exception as e:
         errors["philo"]=str(e)
         raise
