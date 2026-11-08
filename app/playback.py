@@ -43,13 +43,35 @@ def _config():
 
 def _clean_sessions():
     now = time.monotonic()
+    expired = []
     with _guard:
         for key in list(_sessions):
             if now - _sessions[key]["last"] > SESSION_TTL:
+                expired.append(key)
                 del _sessions[key]
         if len(_sessions) > SESSION_LIMIT:
             for key, _ in sorted(_sessions.items(), key=lambda x: x[1]["last"])[:len(_sessions) - SESSION_LIMIT]:
+                expired.append(key)
                 del _sessions[key]
+    for sid in expired:
+        _stop_plex_transcode(sid)
+
+
+def _stop_plex_transcode(sid):
+    """Terminate only the Plex transcode belonging to our opaque session."""
+    _, base, token = _config()
+    try:
+        # Plex uses the session identifier supplied to the HLS transcode.
+        requests.get(
+            base + "/video/:/transcode/universal/stop",
+            params={"session": sid, "X-Plex-Client-Identifier": "universal-guide-" + sid},
+            headers={"X-Plex-Token": token, "X-Plex-Product": "Universal TV Guide",
+                     "X-Plex-Client-Identifier": "universal-guide-" + sid},
+            timeout=(3, 8), allow_redirects=False,
+        )
+    except requests.RequestException:
+        # Closing our browser session remains possible if Plex is unreachable.
+        pass
 
 
 def _session(sid):
@@ -257,6 +279,12 @@ def serve_resource(session_id: str, resource_id: str):
 
 @router.delete("/{session_id}")
 def stop_playback(session_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{15,80}", session_id):
+        raise HTTPException(404, "Invalid session")
     with _guard:
-        _sessions.pop(session_id, None)
-    return {"stopped": True}
+        existed = _sessions.pop(session_id, None)
+    # Don't allow arbitrary requests to terminate other clients' sessions:
+    # only session IDs minted and still held by this application can be stopped.
+    if existed is not None:
+        _stop_plex_transcode(session_id)
+    return {"stopped": existed is not None}
