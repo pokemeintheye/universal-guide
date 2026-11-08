@@ -140,7 +140,8 @@ def tune(channel_id:str):
     with LOCK:
         ACTIVE[sid]={"id":sid,"directory":directory,"process":process,
                      "last":time.monotonic(),"created":time.monotonic(),
-                     "channel":channel_id,"tune_status":r.status_code}
+                     "channel":channel_id,"tune_status":r.status_code,
+                     "origin":origin,"source_playlist":playlist}
     return {"session_id":sid,"playlist_url":"/api/tablo/live/"+sid+"/index.m3u8",
             "note":"Live tuner starting. HLS may need several seconds to buffer."}
 
@@ -251,6 +252,130 @@ def live_segment(sid:str,file_name:str):
     return FileResponse(path,media_type=("application/vnd.apple.mpegurl" if
        file_name.endswith(".m3u8") else "video/mp2t"),
        headers={"Cache-Control":"no-store"})
+
+
+# Diagnostic reads metadata from the Tablo's own HLS playlist, not video segments.
+# Keep remote URLs and playback tokens entirely server-side.
+def _summarize_source_playlist(body):
+    lines=[line.strip() for line in body.splitlines() if line.strip()]
+    if not lines or lines[0]!="#EXTM3U":
+        raise ValueError("Tablo response was not an HLS playlist")
+    def integer_tag(name):
+        marker="#"+name+":"
+        for line in lines:
+            if line.startswith(marker):
+                try:return int(line[len(marker):])
+                except ValueError:return None
+        return None
+    def decimal_tag(name):
+        marker="#"+name+":"
+        for line in lines:
+            if line.startswith(marker):
+                try:return float(line[len(marker):].split(",",1)[0])
+                except ValueError:return None
+        return None
+    variants=sum(1 for line in lines if line.startswith("#EXT-X-STREAM-INF:"))
+    media_segments=sum(1 for line in lines if line.startswith("#EXTINF:"))
+    durations=[decimal_tag_value.split(",",1)[0] for line in lines
+               if line.startswith("#EXTINF:")
+               for decimal_tag_value in [line[len("#EXTINF:"):]]]
+    duration=0.0
+    for value in durations:
+        try:duration+=float(value)
+        except ValueError:pass
+    sequence=integer_tag("EXT-X-MEDIA-SEQUENCE")
+    kind="master" if variants else "media" if media_segments else "unknown"
+    return {
+        "kind":kind,
+        "variant_count":variants,
+        "segment_count":media_segments,
+        "media_sequence":sequence,
+        "last_media_sequence":sequence+media_segments-1
+            if sequence is not None and media_segments else None,
+        "window_seconds":round(duration,1),
+        "target_duration_seconds":integer_tag("EXT-X-TARGETDURATION"),
+        "endlist":("#EXT-X-ENDLIST" in lines),
+        "playlist_type":next((line.split(":",1)[1] for line in lines
+                               if line.startswith("#EXT-X-PLAYLIST-TYPE:")),None),
+        "program_date_time_present":any(line.startswith("#EXT-X-PROGRAM-DATE-TIME:")
+                                         for line in lines),
+        "discontinuity_count":sum(line=="#EXT-X-DISCONTINUITY" for line in lines),
+        "encryption_declared":any(line.startswith("#EXT-X-KEY:") for line in lines),
+    }
+
+
+def _read_source_playlist(url):
+    # Do not follow redirects. The URL was already restricted to the Tablo host
+    # by _allowed_url when the tuner was created.
+    try:
+        with requests.get(url,headers={"User-Agent":USER_AGENT,
+                          "Accept":"application/vnd.apple.mpegurl"},
+                          timeout=(3,8),allow_redirects=False,stream=True) as response:
+            if response.status_code!=200:
+                raise HTTPException(502,"Tablo playlist returned HTTP "+
+                                    str(response.status_code))
+            raw=bytearray()
+            for part in response.iter_content(chunk_size=8192):
+                raw.extend(part)
+                if len(raw)>262144:
+                    raise HTTPException(502,"Tablo playlist exceeded diagnostic size limit")
+            return raw.decode("utf-8",errors="replace")
+    except requests.RequestException as exc:
+        # Never show exception text: it may contain a signed playlist URL.
+        raise HTTPException(502,"Tablo playlist read failed: "+
+                            type(exc).__name__) from None
+
+
+@router.get("/{sid}/source-diagnostics")
+def source_diagnostics(sid:str):
+    """Read-only inspection of the Tablo-origin playlist, with no media download."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    _cleanup()
+    with LOCK:
+        item=ACTIVE.get(sid)
+        if not item:
+            raise HTTPException(404,"Tablo stream expired")
+        item["last"]=time.monotonic()
+        origin=item["origin"]
+        playlist=item["source_playlist"]
+        previous=item.get("source_snapshot")
+    try:
+        summary=_summarize_source_playlist(_read_source_playlist(playlist))
+        if summary["kind"]=="master":
+            # A master playlist has no timeshift window. Inspect one variant
+            # only when its destination is still on the authorized Tablo host.
+            lines=_read_source_playlist(playlist).splitlines()
+            variant=next((lines[i+1].strip() for i,line in enumerate(lines[:-1])
+                          if line.strip().startswith("#EXT-X-STREAM-INF:")
+                          and lines[i+1].strip() and not lines[i+1].startswith("#")),None)
+            if variant:
+                variant_url=_allowed_url(origin,urljoin(playlist,variant))
+                summary=_summarize_source_playlist(_read_source_playlist(variant_url))
+                summary["master_variant_selected"]=True
+        if summary["kind"]!="media":
+            raise HTTPException(502,"Tablo did not expose an inspectable media playlist")
+    except ValueError as exc:
+        raise HTTPException(502,str(exc)) from None
+    current={"observed_at":datetime.now(timezone.utc).isoformat(),
+             "media_sequence":summary["media_sequence"],
+             "segment_count":summary["segment_count"],
+             "window_seconds":summary["window_seconds"]}
+    with LOCK:
+        if ACTIVE.get(sid) is item:
+            item["source_snapshot"]=current
+    comparison=None
+    if previous:
+        a,b=previous.get("media_sequence"),current["media_sequence"]
+        comparison={
+            "previous_observed_at":previous["observed_at"],
+            "media_sequence_advanced":b-a if a is not None and b is not None else None,
+            "previous_window_seconds":previous["window_seconds"]
+        }
+    return {"session_id":sid,"source":"tablo_origin","playlist":summary,
+            "observation":current,"previous_observation":comparison,
+            "limitations":"Playlist metadata only. This does not establish whether historical segments can be requested or decoded."}
+
 
 @router.delete("/{sid}")
 def close_live(sid:str):
