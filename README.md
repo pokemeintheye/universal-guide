@@ -210,3 +210,11 @@ Examples of new mapped channels: A&E, Animal Planet, BET/BET Her, BBC America, C
 The existing `/api/philo/coverage` diagnostics now include `philo_handoff_coverage`: `mapped`, `lineup_total`, and `not_mapped`. The missing list identifies the next batch of public player URLs to research. TV schedules still come from the two independent XMLTV sources; the Philo catalog holds only the independently confirmed *player-page* identifiers. Do not infer player-page IDs from XMLTV station IDs.
 
 After installing the new Docker image, open a show on a newly covered channel such as **A&E** or **Hallmark Channel** and select **Open Live Channel in Philo · Test Link**. Confirm that the installed iPhone app opens the matching channel, even if playback still requires a tap.
+
+## Philo player link coverage: 73 of 76 published Essential channels (Nov 8, 2026)
+
+The curated `app/philo_links.json` catalog now contains **73 distinct Philo channel-player IDs**, each from a public, channel-titled `philo.com/player/channel/` page (not reconstructed from XMLTV IDs or decoded/guessed). The three remaining channels without a proven direct channel-player URL are **Catchy Comedy, Comedy Central, and MTV**. These stay deliberately unmapped; a marketing `/go/` URL is not a proven iPhone Universal Link. The guide's `/api/philo/coverage` endpoint provides this precise `philo_handoff_coverage.not_mapped` list.
+
+The user directly confirmed **A&E**, **Hallmark Channel**, and **Nickelodeon** handoffs in the Philo iPhone app on 2026-11-08; their verification flags are now `iphone-tested`, joining Food Network. The other URLs are marked `public-listed` and displayed as **Test Link** until checked on the iPhone. A link opening a correct channel page does **not** imply automatic playback. The EPG import and Plex/Tablo playback are unchanged.
+
+Further development should verify the newly added links on iPhone, resolve the remaining three IDs from actually titled Philo player pages or known authenticated UI navigation, and keep the app's native Apple TV compatibility testing as a separate project.
