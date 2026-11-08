@@ -1,7 +1,7 @@
 """No external Philo network access: enforce verified handoff-only matching."""
 import unittest
 
-from app.philo_links import links_for
+from app.philo_links import links_for, channel_catalog
 
 
 class VerifiedPhiloHandoffs(unittest.TestCase):
@@ -34,6 +34,13 @@ class VerifiedPhiloHandoffs(unittest.TestCase):
                                         ("Pilot",None,1),("Pilot",1,None)):
             self.assertNotIn("episode",links_for(
                 "TV Land","Everybody Loves Raymond",subtitle,season,episode))
+
+    def test_hgtv_stays_accessible_without_epg(self):
+        channels={item["name"]:item for item in channel_catalog()}
+        self.assertIn("HGTV",channels)
+        self.assertEqual(channels["HGTV"]["verification"],"public-listed")
+        self.assertTrue(channels["HGTV"]["url"].startswith(
+            "https://www.philo.com/player/channel/"))
 
     def test_publicly_discovered_channel_links(self):
         for network in ("AMC","HGTV","HISTORY","Discovery Channel","TLC","TV Land"):
