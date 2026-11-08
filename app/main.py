@@ -285,7 +285,7 @@ def fetch_tablo_airing(path):
         season=episode.get("season_number")
         number=episode.get("number")
         kind="movie" if "/movies/" in path or data.get("movie") else ("series" if "/series/" in path else "other")
-        return (path,channel_path,label,start.isoformat(),stop.isoformat(),title,subtitle,int(year or 0),str(desc)[:600],season,number,kind)
+        return (path,channel_path,label,start.isoformat(),stop.isoformat(),title,subtitle,int(year or 0),str(desc)[:600],season,number,kind,channel.get("network") or "",channel.get("call_sign") or "")
     except (requests.RequestException,ValueError,TypeError,KeyError):
         return None
 
@@ -309,31 +309,40 @@ def sync_tablo():
                 row=f.result()
                 if row:rows.append(row)
         if not rows:raise RuntimeError("No usable airing details returned; preserving previous schedule")
-        # Pull channel metadata separately from the same read-only Tablo API.
-        # The seven channels are inexpensive to query and provide network labels.
-        channel_info=[]
+        # Airing records embed station network names and callsigns.
+        # Prefer them even when separate channel lookups fail.
+        channel_by_id={}
+        for row in rows:
+            channel_id,number,network,callsign=row[1],row[2],row[12],row[13]
+            previous=channel_by_id.get(channel_id)
+            if previous is None or (not previous[2] and network):
+                channel_by_id[channel_id]=(channel_id,number,str(network),str(callsign))
+        # Supplement from the channel endpoint if available.
         try:
             channel_paths=tablo_get("/guide/channels")
             if isinstance(channel_paths,list):
                 for channel_path in channel_paths:
-                    if not isinstance(channel_path,str) or not channel_path.startswith("/guide/channels/"):continue
+                    if not isinstance(channel_path,str) or not channel_path.startswith("/guide/channels/"):
+                        continue
                     try:
-                        channel_data=(tablo_get(channel_path).get("channel") or {})
-                        major=channel_data.get("major")
-                        minor=channel_data.get("minor")
+                        details=(tablo_get(channel_path).get("channel") or {})
+                        major,minor=details.get("major"),details.get("minor")
                         number=f"{major}.{minor}" if major is not None and minor is not None else ""
-                        network=channel_data.get("network") or ""
-                        call=channel_data.get("call_sign") or ""
-                        channel_info.append((channel_path,number,str(network),str(call)))
+                        network=str(details.get("network") or "")
+                        callsign=str(details.get("call_sign") or "")
+                        prev=channel_by_id.get(channel_path)
+                        if prev is None or (not prev[2] and network):
+                            channel_by_id[channel_path]=(channel_path,number,network,callsign)
                     except (requests.RequestException,ValueError,TypeError):
                         continue
         except (requests.RequestException,ValueError,TypeError):
             pass
+        channel_info=list(channel_by_id.values())
         with db() as c:
             if channel_info:
                 c.executemany("INSERT OR REPLACE INTO tablo_channels(channel_id,number,network,callsign) VALUES (?,?,?,?)",channel_info)
             c.execute("DELETE FROM tablo_listings")
-            c.executemany("INSERT OR REPLACE INTO tablo_listings(id,channel_id,channel_label,start,stop,title,subtitle,year,description,season,episode,program_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",rows)
+            c.executemany("INSERT OR REPLACE INTO tablo_listings(id,channel_id,channel_label,start,stop,title,subtitle,year,description,season,episode,program_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",[row[:12] for row in rows])
             putmeta(c,"last_tablo_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"tablo_truncated",int(truncated))
             putmeta(c,"tablo_requested",len(paths))
