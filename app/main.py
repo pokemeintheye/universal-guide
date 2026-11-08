@@ -1,4 +1,5 @@
 import os, re, time, sqlite3, threading, xml.etree.ElementTree as ET
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -216,12 +217,22 @@ def sync_philo():
         # station IDs (time-shifted feeds and duplicate sources) for AMC, etc.
         channel_names={}
         root=ET.fromstring(xml)
+        # Source-level evidence to distinguish missing HGTV data from
+        # unmatched feed channel labels. No schedule is invented.
+        hgtv_candidates={}
         for channel in root.findall("channel"):
             labels=[x.text.strip() for x in channel.findall("display-name") if x.text]
+            feed_id=channel.get("id")
             matches={philo_name(v) for v in labels}
             matches.discard(None)
             if len(matches)==1:
-                channel_names[channel.get("id")]=next(iter(matches))
+                channel_names[feed_id]=next(iter(matches))
+            if any(re.search(r"\\bhgtv\\b|home\\s*(?:&|and|n)\\s*garden",
+                             v,re.I) for v in labels+[str(feed_id or "")]):
+                if len(hgtv_candidates)<25:
+                    hgtv_candidates[feed_id]={"id":str(feed_id or "")[:100],
+                        "labels":labels[:6],"matched_as":channel_names.get(feed_id),
+                        "future_programs_in_source":0}
         now=datetime.now(timezone.utc)
         by_feed={}
         for p in root.findall("programme"):
@@ -229,6 +240,8 @@ def sync_philo():
             if feed_id not in channel_names:continue
             start=xml_date(p.get("start"));stop=xml_date(p.get("stop"))
             if not start or not stop:continue
+            if feed_id in hgtv_candidates and stop>now.isoformat() and start<=(now+timedelta(days=8)).isoformat():
+                hgtv_candidates[feed_id]["future_programs_in_source"]+=1
             if stop<now.isoformat() or start>(now+timedelta(days=8)).isoformat():continue
             value=lambda key:(p.findtext(key) or "").strip()
             date=value("date")
@@ -267,6 +280,7 @@ def sync_philo():
               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",rows)
             putmeta(c,"last_philo_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"philo_channel_count",len(winners))
+            putmeta(c,"hgtv_epg_candidates",json.dumps(list(hgtv_candidates.values())))
         errors["philo"]=""
         return {"programs":len(rows),"matched_channels":len(winners),"duplicate_variants_removed":len(by_feed)-len(winners),"published_philo_channels":len(PHILO_NAMES)}
     except Exception as e:
@@ -616,8 +630,13 @@ def philo_coverage():
                        "hidden":bool(pref.get("hidden",0)),
                        "favorite":bool(pref.get("favorite",0)),
                        "verification":channel["verification"]})
+    try:
+        raw_candidates=json.loads(metadata("hgtv_epg_candidates","[]"))
+    except (ValueError,TypeError):
+        raw_candidates=[]
     return {"last_philo_sync":metadata("last_philo_sync"),
-            "philo_error":errors["philo"],"channels":result}
+            "philo_error":errors["philo"],"hgtv_feed_candidates":raw_candidates,
+            "channels":result}
 
 
 @app.get("/api/guide")
