@@ -661,11 +661,15 @@ def philo_coverage():
         primary_names=json.loads(metadata("primary_epg_channels","[]"))
     except (ValueError,TypeError):
         supplemental_status,supplemental_names,primary_names={},[],[]
+    known_links={c["name"] for c in known_philo_channels()}
     return {"last_philo_sync":metadata("last_philo_sync"),
             "philo_error":errors["philo"],"hgtv_feed_candidates":raw_candidates,
             "hgtv_fallback":fallback_status,
             "supplemental_epg":supplemental_status,
             "epg_sources":{"primary":primary_names,"supplemental":supplemental_names},
+            "philo_handoff_coverage":{"mapped":len(known_links),
+                                     "lineup_total":len(PHILO_NAMES),
+                                     "not_mapped":sorted(set(PHILO_NAMES)-known_links)},
             "channels":result}
 
 
