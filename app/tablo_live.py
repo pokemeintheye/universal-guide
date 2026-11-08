@@ -16,7 +16,8 @@ router=APIRouter(prefix="/api/tablo/live")
 USER_AGENT="Tablo-FAST/1.7.0 (Mobile; iPhone; iOS 18.4)"
 STORE=Path("/tmp/universal-guide-live")
 MAX_SESSIONS=2
-IDLE_SECONDS=85
+IDLE_SECONDS=120
+FAILED_SESSION_SECONDS=240
 ACTIVE={}
 LOCK=threading.RLock()
 
@@ -50,7 +51,8 @@ def _cleanup():
     now=time.monotonic()
     with LOCK:
         expired=[sid for sid,state in ACTIVE.items()
-                 if now-state["last"]>IDLE_SECONDS or state["process"].poll() is not None]
+                 if now-state["last"] > (IDLE_SECONDS if state["process"].poll() is None
+                                        else FAILED_SESSION_SECONDS)]
     for sid in expired:_stop(sid)
 
 def _allowed_url(origin,url):
@@ -83,7 +85,7 @@ def tune(channel_id:str):
     if not found:raise HTTPException(404,"Channel isn't in the indexed Tablo lineup")
     _cleanup()
     with LOCK:
-        if len(ACTIVE)>=MAX_SESSIONS:
+        if sum(1 for state in ACTIVE.values() if state["process"].poll() is None)>=MAX_SESSIONS:
             raise HTTPException(409,"Two Tablo streams are already in use in Universal Guide")
     try:
         r=requests.post(origin+channel_id+"/watch",headers={
@@ -126,10 +128,12 @@ def tune(channel_id:str):
           "-hls_flags","delete_segments+omit_endlist",
           "-hls_segment_filename",str(directory/"seg_%05d.ts"),
           str(directory/"index.m3u8")]
+    log_path=directory/"ffmpeg.log"
     try:
-        process=subprocess.Popen(args,stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                                 close_fds=True)
+        with log_path.open("wb") as log:
+            process=subprocess.Popen(args,stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL,stderr=log,
+                                     close_fds=True)
     except OSError as exc:
         shutil.rmtree(directory,ignore_errors=True)
         raise HTTPException(502,"Could not launch ffmpeg: "+type(exc).__name__)
@@ -140,6 +144,36 @@ def tune(channel_id:str):
     return {"session_id":sid,"playlist_url":"/api/tablo/live/"+sid+"/index.m3u8",
             "note":"Live tuner starting. HLS may need several seconds to buffer."}
 
+def _safe_ffmpeg_message(directory):
+    """Expose a short diagnostic without leaking upstream stream tokens."""
+    try:
+        raw=(directory/"ffmpeg.log").read_bytes()[-8000:]
+        message=raw.decode("utf-8",errors="replace")
+        message=re.sub(r"https?://[^\\s\\\]\[<>\"']+","[Tablo stream URL]",message)
+        message=re.sub(r"(?i)(?:token|key|secret|session)[=:]\\s*[^\\s&]+",
+                       "[redacted]",message)
+        meaningful=[line.strip() for line in message.splitlines() if line.strip()]
+        return " | ".join(meaningful[-3:])[-480:]
+    except OSError:
+        return ""
+
+
+def _health(item):
+    directory=item["directory"]
+    playlist=directory/"index.m3u8"
+    returncode=item["process"].poll()
+    try:
+        segments=len(list(directory.glob("seg_*.ts")))
+    except OSError:
+        segments=0
+    return {"transcoder_running":returncode is None,
+            "ffmpeg_exit_code":returncode,
+            "manifest_ready":playlist.is_file(),
+            "segment_count":segments,
+            "seconds_since_start":round(time.monotonic()-item["created"],1),
+            "ffmpeg_error":_safe_ffmpeg_message(directory) if returncode is not None else ""}
+
+
 @router.get("/{sid}/status")
 def live_status(sid:str):
     _cleanup()
@@ -147,9 +181,8 @@ def live_status(sid:str):
         item=ACTIVE.get(sid)
         if not item:raise HTTPException(404,"Tablo stream ended or was unavailable")
         item["last"]=time.monotonic()
-        return {"transcoder_running":item["process"].poll() is None,
-                "manifest_ready":(item["directory"]/"index.m3u8").exists(),
-                "seconds_since_start":round(time.monotonic()-item["created"],1)}
+        return _health(item)
+
 
 @router.get("/{sid}/{file_name}")
 def live_segment(sid:str,file_name:str):
@@ -172,7 +205,12 @@ def live_segment(sid:str,file_name:str):
                 if process.poll() is not None:break
             time.sleep(.5)
     if not path.is_file():
-        raise HTTPException(503,"Tablo stream is buffering or transcoding failed")
+        info=_health(item)
+        if info["ffmpeg_exit_code"] is not None:
+            raise HTTPException(502,"Tablo FFmpeg stopped (exit "+
+                str(info["ffmpeg_exit_code"])+"): "+(info["ffmpeg_error"] or
+                "no error text produced"))
+        raise HTTPException(503,"Tablo transcoder is still preparing the HLS stream")
     return FileResponse(path,media_type=("application/vnd.apple.mpegurl" if
        file_name.endswith(".m3u8") else "video/mp2t"),
        headers={"Cache-Control":"no-store"})
