@@ -21,6 +21,9 @@ def date_convert(raw):
 class HgtvTests(unittest.TestCase):
     def test_us_east_only(self):
         self.assertEqual(_channel_score(["HGTV USA - Eastern Feed"],"x.us2"),100)
+        self.assertEqual(_channel_score(["Home and Garden Television HD"],"Home.and.Garden.Television.HD.us2"),100)
+        self.assertEqual(_channel_score(["HGTV"],"Home.and.Garden.Television.HD.(Pacific).us2"),0)
+        self.assertEqual(_channel_score(["Home and Garden Television HD (Pacific)"],"x.us2"),0)
         self.assertEqual(_channel_score(["HGTV - Pacific Feed"],"x.us2"),0)
         self.assertEqual(_channel_score(["HGTV Canada"],"x.ca2"),0)
         self.assertEqual(_channel_score(["Food Network"],"x.us2"),0)
