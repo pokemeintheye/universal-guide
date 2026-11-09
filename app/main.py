@@ -765,6 +765,40 @@ def refresh_tablo():
     try:return sync_tablo()
     except Exception as e:raise HTTPException(502,detail=str(e))
 
+@app.get("/api/guide/artwork")
+def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
+                           season:int|None=Query(None,ge=0,le=100),
+                           episode:int|None=Query(None,ge=1,le=999)):
+    """Cached show/episode stills when the selected program has no Plex artwork.
+
+    Only lookup non-sensitive public TV schedule titles. Negative results are
+    cached as well; rate-limit/network failures are not cached.
+    """
+    from app.artwork import find_tvmaze_artwork,normalize_title
+    cache_key=json.dumps([normalize_title(title),season,episode],separators=(",",":"))
+    now=time.time()
+    with db() as connection:
+        row=connection.execute(
+            "SELECT image_url,credit_url,checked_at FROM guide_artwork_cache WHERE cache_key=?",
+            (cache_key,)).fetchone()
+    if row and now-float(row["checked_at"]) < (30*86400 if row["image_url"] else 86400):
+        return {"image_url":row["image_url"],"credit_url":row["credit_url"],
+                "source":"TVmaze" if row["image_url"] else None}
+    try:
+        result=find_tvmaze_artwork(title,season,episode)
+    except (requests.RequestException,ValueError,RuntimeError):
+        # Temporary lookup errors should never interrupt guide navigation.
+        return {"image_url":None,"credit_url":None,"source":None}
+    image_url=result["image_url"] if result else None
+    credit_url=result["credit_url"] if result else None
+    with db() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO guide_artwork_cache(cache_key,image_url,credit_url,checked_at) "
+            "VALUES(?,?,?,?)",(cache_key,image_url,credit_url,now))
+    return {"image_url":image_url,"credit_url":credit_url,
+            "source":"TVmaze" if image_url else None}
+
+
 @app.get("/api/guide/art/{rating_key}")
 def guide_plex_art(rating_key:int):
     """Optional guide artwork for indexed Plex titles only, without browser tokens."""
