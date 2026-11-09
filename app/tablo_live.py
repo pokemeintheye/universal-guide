@@ -184,7 +184,7 @@ def tune(channel_id:str):
           "-f","hls","-hls_time",str(DVR_SEGMENT_SECONDS),
           "-hls_list_size",str(DVR_SEGMENT_COUNT),
           "-hls_delete_threshold","3",
-          "-hls_flags","delete_segments+omit_endlist",
+          "-hls_flags","delete_segments+omit_endlist+program_date_time",
           "-hls_segment_filename",str(directory/"seg_%05d.ts"),
           str(directory/"index.m3u8")]
     log_path=directory/"ffmpeg.log"
