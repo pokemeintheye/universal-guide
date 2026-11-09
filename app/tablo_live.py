@@ -861,6 +861,7 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
             "resume_adjust_seconds":actual_adjust,
             "pause_marker_age_seconds":round(time.monotonic()-marker["captured"],1) if resume_paused else None,
             "source_start_sequence":info["start_sequence"],
+            "source_behind_live_seconds":info["seconds_behind_source_live"],
             "note":"Rolling HLS output starts from selected Tablo historical segment."}
 
 
