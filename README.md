@@ -420,3 +420,22 @@ pause live for roughly **90 seconds**, then resume and verify both picture
 and audio, 10-second rewind, 30-second forward, and Return to Live. Also test
 a **5-second pause** separately. If anything fails, the existing manual
 continuous timeshift and finite-clip playback remain available.
+
+## Long Pause Live resume correction
+
+A live-pause test found that a long pause appeared to jump to live despite
+the UI labeling the resumed session historical. The FFmpeg HLS demuxer
+defaults to `live_start_index=-3`, meaning it begins close to the end of
+the input live playlist even when Universal Guide has selected a much older
+native Tablo segment. Continuous timeshift now explicitly sets
+`-live_start_index 0` before `-i continuous-input.m3u8` so FFmpeg
+begins with the selected historical source segment. This change applies
+only to continuous timeshift children, not standard live TV or finite
+historical clips. The response also includes the selected source media
+sequence for internal diagnostics.
+
+Retest long Pause Live: tune and watch a channel for several minutes,
+pause for 90 seconds during a recognizable program moment, resume, and
+check that the scene is from the paused moment rather than live. The
+resume point intentionally includes about 12 seconds of overlap, and
+exact frame-accurate positioning is not yet implemented.
