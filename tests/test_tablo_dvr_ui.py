@@ -102,8 +102,18 @@ class TabloDvrControlsTests(unittest.TestCase):
 
     def test_lower_left_status_only_shows_live_or_dvr(self):
         self.assertIn('state.textContent=isLive?"LIVE":"DVR";',HTML)
+        self.assertIn("const isLive=tabloDvrLiveIndicator(lag,playing,historical)",HTML)
         self.assertNotIn('" behind disk edge"',HTML)
         self.assertNotIn('"LIVE · buffered"',HTML)
+
+    def test_live_dvr_badge_uses_hysteresis_not_single_edge_threshold(self):
+        self.assertIn("TABLO_LIVE_ENTER_SECONDS=7,TABLO_LIVE_EXIT_SECONDS=15",HTML)
+        self.assertIn("function tabloDvrLiveIndicator(behind,playing,historical)",HTML)
+        self.assertIn("if(behind>=TABLO_LIVE_EXIT_SECONDS)",HTML)
+        self.assertIn("}else if(behind<=TABLO_LIVE_ENTER_SECONDS)",HTML)
+        self.assertIn("if(historical||!playing)",HTML)
+        self.assertIn("tabloLiveIndicator=false;",HTML)
+        self.assertIn("right.textContent=window.hi-current<=TABLO_DVR_EDGE_SECONDS?",HTML)
 
     def test_startup_spinner_hides_technical_buffering_messages(self):
         self.assertIn('id="tabloloading" class="tablo-loading" hidden',HTML)
