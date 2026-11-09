@@ -42,8 +42,8 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .dialog-card .close{float:right}
 
 .player-backdrop[hidden]{display:none!important}
-.player-backdrop{position:fixed;inset:0;z-index:50;background:#05080f;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px}
-.player-backdrop video{width:min(100%,1300px);max-height:82vh;background:#000;border-radius:8px}
+.player-backdrop{position:fixed;inset:0;z-index:50;background:#05080f;display:flex;flex-direction:column;justify-content:flex-start;align-items:center;padding:20px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.player-backdrop video{width:min(100%,1300px);max-height:55dvh;min-height:0;flex-shrink:1;background:#000;border-radius:8px}
 .player-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;width:min(100%,1300px);margin-bottom:12px;flex-wrap:wrap}
 .player-tools strong{font-size:17px}
 #playerstatus{color:#bfd2ee;padding:10px;max-width:1000px;text-align:center}
@@ -73,6 +73,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
  .dialog-card{max-height:88dvh;width:100%;padding:18px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
  .player-backdrop{padding:10px;padding-top:max(10px,env(safe-area-inset-top))}
  .player-tools{width:100%}
+ .player-backdrop video{max-height:42dvh}
  .player-actions{flex-direction:column}
  .player-actions a,.player-actions button{min-height:46px;text-align:center}
  #findshow{min-width:0!important}
@@ -419,7 +420,7 @@ async function manageChannels(){
 status();guide(view.plex);
 </script>
 <div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
-<div class="player-tools"><strong id="playertitle"></strong><button id="closeplayer" type="button">✕ Close player</button></div>
+<div class="player-tools"><strong id="playertitle"></strong><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
@@ -455,6 +456,12 @@ status();guide(view.plex);
 <button id="tabloliveback" type="button" hidden>↩ Return to Live</button>
 <button id="tablopreviewstatus" type="button" hidden>Historical playback diagnostics</button>
 <button id="tablorestartlive" type="button" hidden>Restart Live Tablo</button>
+<div id="tablodiagnosticspanel" hidden style="width:min(100%,900px);margin:8px auto">
+<label for="tablodiagnosticstext">Tablo diagnostics (select and copy text)</label>
+<textarea id="tablodiagnosticstext" readonly spellcheck="false" rows="8" style="display:block;width:100%;max-height:35dvh;font-size:12px;margin:6px 0;user-select:text;-webkit-user-select:text" aria-label="Tablo diagnostics JSON"></textarea>
+<button id="tablocopydiagnostics" type="button">Copy diagnostics</button>
+<span id="tablocopystatus" role="status"></span>
+</div>
 <pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
@@ -469,6 +476,7 @@ let tabloHeartbeat=null;
 let tabloLivePausedAt=null;
 let tabloPauseMarkerPromise=null;
 let tabloLastPauseMarker=null;
+let tabloLastDiagnosticsText="";
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -504,6 +512,8 @@ async function closePlexPlayer(){
  tabloLivePausedAt=null;
  tabloPauseMarkerPromise=null;
  tabloLastPauseMarker=null;
+ document.getElementById("tabloquickdiagnostics").hidden=true;
+ document.getElementById("tablodiagnosticspanel").hidden=true;
  document.getElementById("tablolivepausecontrols").hidden=true;
  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
  const video=document.getElementById("plexvideo");
@@ -698,6 +708,8 @@ async function launchTabloLive(){
      {cache:"no-store"}).catch(()=>{});
   },30000);
   document.getElementById("tablooffsetcontrols").hidden=false;
+  document.getElementById("tabloquickdiagnostics").hidden=false;
+  document.getElementById("tablodiagnosticspanel").hidden=true;
   document.getElementById("tablolivepausecontrols").hidden=false;
   tabloLivePausedAt=null;
   tabloPauseMarkerPromise=null;
@@ -999,7 +1011,7 @@ document.getElementById("tablopreviewstatus").onclick=async function(){
    seekable.push([Number(video.seekable.start(i).toFixed(2)),
                   Number(video.seekable.end(i).toFixed(2))]);
   }
-  output.textContent=JSON.stringify({
+  const diagnostics=JSON.stringify({
    pause_marker:tabloLastPauseMarker,
    paused_for_seconds:tabloLivePausedAt===null?null:Math.round((Date.now()-tabloLivePausedAt)/1000),
    browser_video:{
@@ -1010,8 +1022,35 @@ document.getElementById("tablopreviewstatus").onclick=async function(){
    },
    session_status:status
   },null,2);
- }catch(e){output.textContent="Tablo diagnostic failed: "+e.message}
+  tabloLastDiagnosticsText=diagnostics;
+  output.textContent="Diagnostics ready in copyable text box.";
+  document.getElementById("tablodiagnosticstext").value=diagnostics;
+  document.getElementById("tablodiagnosticspanel").hidden=false;
+ }catch(e){output.textContent="Tablo diagnostic failed: "+e.message;
+  tabloLastDiagnosticsText=output.textContent;
+  document.getElementById("tablodiagnosticstext").value=tabloLastDiagnosticsText;
+  document.getElementById("tablodiagnosticspanel").hidden=false;}
  finally{button.disabled=false}
+};
+document.getElementById("tabloquickdiagnostics").onclick=()=>{
+ document.getElementById("tablopreviewstatus").click();
+};
+document.getElementById("tablocopydiagnostics").onclick=async function(){
+ const area=document.getElementById("tablodiagnosticstext");
+ const note=document.getElementById("tablocopystatus");
+ const value=area.value;
+ if(!value){note.textContent="No diagnostic data yet.";return}
+ try{
+  if(!navigator.clipboard?.writeText)throw Error("Clipboard API unavailable");
+  await navigator.clipboard.writeText(value);
+  note.textContent="Copied. Paste the result into our chat.";
+ }catch(e){
+  area.focus();area.select();
+  let copied=false;
+  try{copied=document.execCommand("copy")}catch(_){}
+  note.textContent=copied?"Copied. Paste into our chat.":
+    "Text selected. Use Copy in the iPhone selection menu.";
+ }
 };
 document.getElementById("tablorestartlive").onclick=async function(){
  if(!selectedProgram?.channel || selectedProgram.channel.source!=="tablo")return;
