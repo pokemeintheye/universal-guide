@@ -903,6 +903,35 @@ async function guide(only){
   persistGuideState();
  }catch(e){if(token===lastGuideToken){$("guide").removeAttribute("aria-busy");$("guide").textContent=e.message}}
 }
+// TV remote / keyboard: move between visible show cells with arrow keys.
+$("guide").addEventListener("keydown",event=>{
+ if(!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key))return;
+ const current=event.target.closest(".epg-program[data-program]");
+ if(!current)return;
+ const programs=Array.from($("guide").querySelectorAll(".epg-program[data-program]"));
+ const here=current.getBoundingClientRect();
+ const center={x:here.left+here.width/2,y:here.top+here.height/2};
+ const direction=event.key;
+ let best=null,bestScore=Infinity;
+ for(const candidate of programs){
+  if(candidate===current)continue;
+  const rect=candidate.getBoundingClientRect();
+  const next={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+  const dx=next.x-center.x,dy=next.y-center.y;
+  if(direction==="ArrowUp"&&dy>=-5||direction==="ArrowDown"&&dy<=5||
+     direction==="ArrowLeft"&&dx>=-5||direction==="ArrowRight"&&dx<=5)
+   continue;
+  const primary=direction==="ArrowUp"||direction==="ArrowDown"?Math.abs(dy):Math.abs(dx);
+  const secondary=direction==="ArrowUp"||direction==="ArrowDown"?Math.abs(dx):Math.abs(dy);
+  // Prefer the next channel for up/down; adjacent timeline show for left/right.
+  const score=primary+secondary*2;
+  if(score<bestScore){best=candidate;bestScore=score}
+ }
+ if(!best)return;
+ event.preventDefault();
+ best.focus({preventScroll:true});
+ best.scrollIntoView({block:"nearest",inline:"nearest",behavior:"instant"});
+});
 $("guide").addEventListener("scroll",()=>persistGuideState(),{passive:true});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")persistGuideState()});
 window.addEventListener("pagehide",persistGuideState);
