@@ -20,6 +20,8 @@ Unified TV guide prototype for Plex, local OTA listings and Philo schedules, now
    - `GUIDE_XMLTV`: `/data/guide.xml`
    - `TABLO_URL`: `http://YOUR-TABLO-IP:8885` (legacy network Tablo)
    - `TABLO_REFRESH_HOURS`: `6`
+   - `TABLO_DVR_MINUTES`: `20` (optional rolling DVR duration)
+   - `TABLO_CACHE_DIR`: `/data/tablo-live-cache` (optional writable HLS cache path)
 7. Ensure `/mnt/user/appdata/universal-guide` exists and is writable by container UID **10001**.
 8. Launch, then browse `http://YOUR-UNRAID-IP:8787`.
 
@@ -581,26 +583,55 @@ missing from the stored Tablo lineup (e.g. OTA 20.1). A channel missing from
 Tablo's own /guide/channels response cannot be tuned through this feature;
 check Tablo's channel scan/lineup in that case.
 
-## Tablo DVR transport (beta)
+## Tablo rolling disk DVR (beta)
 
-The Tablo player now presents a dedicated DVR bar instead of requiring
-manual experiment buttons for everyday viewing. Pause/Resume delegates
-to the existing pause-marker logic, 30-second Rewind from live starts
-a new continuous-timeshift session from Tablo's native buffer, and
-30-second Forward seeks within the rolling historical player cache.
-While in DVR mode the timeline scrubs within the **currently seekable
-browser window**; it does not claim to seek the entire Tablo-owned
-history. A badge displays an **approximate** delay behind source live,
-based on the historical source offset and browser position.
+Normal Tablo viewing now uses one persistent HLS transcoder for each tuned
+channel. The output segments are recorded on Unraid into a **rolling DVR
+cache**; the browser reads and seeks in the same stream during live viewing,
+pause, rewind, fast-forward, timeline scrubbing, and **Jump to Live**.
+No new Tablo tuner or second FFmpeg transcoder is required for routine
+DVR controls. The legacy native-Tablo historical preview/timeshift
+paths remain available in **Advanced playback tools** for testing and
+older content outside the local rolling buffer.
 
-**Jump to Live** reconnects to the original continuously running live
-tuner without opening another tuner. During a paused live stream it
-reloads the current live HLS playlist, intentionally discarding the
-paused position. Technical tools, the historical offset picker,
-diagnostics, and the old controls remain available under
-**Advanced playback tools**. Plex playback remains unchanged.
+### Unraid storage and configuration
 
-To test on iPhone: live pause/resume (short and 90-second pause), rewind
-30s from live, pause/rewind/forward and scrub in DVR, then Jump to Live.
-Observe the timeline growing as the HLS cache buffers. Native HLS and
-hls.js may expose different seekable windows, and live-lag is an estimate.
+- `TABLO_DVR_MINUTES=20` (optional; 2–30 minute range). Target duration
+  of the rolling buffer, not a guaranteed exact DVR interval.
+- `TABLO_CACHE_DIR=/data/tablo-live-cache` (optional). Use a writable
+  container path mapped onto the Unraid appdata volume. **Do not use**
+  Compose's `/tmp`, which has only 16 MiB allocated.
+- The configured output bitrate is about 3.1 Mb/s including audio, or
+  roughly 0.5 GB for a full 20-minute cache per active channel;
+  two concurrent active channels could use about 1 GB total, plus overhead.
+- FFmpeg deletes old HLS segments as the rolling playlist advances.
+  Closing a tuner deletes its session directory. Orphaned session
+  directories from a crashed container are removed on the next tune.
+- The buffer begins filling only when Universal Guide tunes the channel.
+  It is not a permanent recording. For content before that point, use
+  the older native Tablo timeshift under Advanced, subject to Tablo's
+  native retention.
+
+### DVR behavior and limitations
+
+Pause leaves the media playhead in place while FFmpeg keeps recording.
+Rewind 30s, Forward 30s, and the timeline move the playhead inside the
+browser's currently seekable range. Jump to Live seeks to about 3s before
+the **latest available disk HLS edge** and resumes playback in place.
+That does **not** guarantee a 3-second delay from the original OTA
+broadcast: FFmpeg, HLS segment completion, and client buffering add
+latency, and playing too close to the HLS edge can stall.
+
+Pause longer than the configured DVR window may lose the paused position
+once its segment leaves the rolling cache. iOS Safari and hls.js can
+report different seekable windows; test both using a real device.
+Advanced tests and diagnostic buttons are still accessible under
+**Advanced playback tools**. Plex playback code is unchanged.
+
+### Suggested first iPhone test
+
+Watch an OTA channel for a few minutes so the cache fills. Pause for
+90 seconds and resume on the same scene; rewind 30 seconds, forward
+30 seconds, drag the seekbar in both directions, then Jump to Live.
+Check whether any action causes a tuner reset or an extended buffering
+delay. Open **Copy Tablo diagnostics** if anything behaves unexpectedly.
