@@ -461,6 +461,35 @@ def sync_tablo():
     finally:
         tablo_lock.release()
 
+def fill_tablo_schedule_gaps(programs,channel_id,channel_label,start,stop):
+    """Show a tuneable no-EPG block for every uncovered time interval.
+
+    Do not replace legitimate Tablo listings; trim placeholders around them.
+    """
+    if start>=stop:return programs
+    ordered=sorted(programs,key=lambda item:(item["start"],item["stop"]))
+    filled=[]
+    cursor=start
+    for item in ordered:
+        a=max(start,str(item["start"]))
+        b=min(stop,str(item["stop"]))
+        if a>cursor:
+            filled.append({"channel_id":channel_id,"channel_label":channel_label,
+                "start":cursor,"stop":a,"title":"No guide information",
+                "subtitle":"","description":"Program listings are unavailable. Select Watch Live to tune this channel.",
+                "program_kind":"other","season":None,"episode":None,
+                "plex":None,"no_guide_data":True})
+        filled.append(item)
+        if b>cursor:cursor=b
+    if cursor<stop:
+        filled.append({"channel_id":channel_id,"channel_label":channel_label,
+            "start":cursor,"stop":stop,"title":"No guide information",
+            "subtitle":"","description":"Program listings are unavailable. Select Watch Live to tune this channel.",
+            "program_kind":"other","season":None,"episode":None,
+            "plex":None,"no_guide_data":True})
+    return filled
+
+
 def series_title_matches(guide_title,plex_title):
     """Only use unambiguous identifiers for known US title variants."""
     guide=norm(guide_title)
@@ -903,6 +932,26 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         channel["programs"].append(entry)
     for channel in channels.values():
         assign_scheduled_episode_parts(channel["programs"])
+    # Schedule-independent OTA channel rows: a channel is tuneable even when
+    # Tablo provides no guide airings (including entire empty EPG windows).
+    if source in ("all","tablo") and not plex_only:
+        for channel_id,info in tablo_info.items():
+            if not re.fullmatch(r"/guide/channels/[A-Za-z0-9_-]{1,80}",channel_id):
+                continue
+            pref=prefs.get(("tablo",channel_id))
+            favorite=bool(pref["favorite"]) if pref else False
+            hidden=bool(pref["hidden"]) if pref else False
+            if (hidden and not include_hidden) or (favorites_only and not favorite):
+                continue
+            key="tablo:"+channel_id
+            number=info.get("number") or ""
+            label=number or info.get("network") or info.get("callsign") or channel_id.rsplit("/",1)[-1]
+            channel=channels.setdefault(key,{"id":key,"label":label,
+                "source":"tablo","favorite":favorite,"programs":[]})
+            channel["number"]=number or label
+            channel["network"]=info.get("network") or info.get("callsign") or ""
+            channel["programs"]=fill_tablo_schedule_gaps(
+                channel["programs"],channel_id,label,now.isoformat(),until.isoformat())
     # A public Philo channel link does not imply the EPG has listings.
     # Keep known channels discoverable without inventing broadcast schedules.
     if source in ("all","philo") and not plex_only:
