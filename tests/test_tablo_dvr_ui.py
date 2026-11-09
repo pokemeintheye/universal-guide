@@ -96,6 +96,10 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn('function showTabloOverlay()',HTML)
         self.assertIn('overlay.classList.add("controls-hidden")',HTML)
 
+    def test_go_live_does_not_show_redundant_toast(self):
+        self.assertNotIn("Playing near the latest completed DVR segment.",HTML)
+        self.assertIn('playerMessage("");',HTML)
+
     def test_lower_left_status_only_shows_live_or_dvr(self):
         self.assertIn('state.textContent=isLive?"LIVE":"DVR";',HTML)
         self.assertNotIn('" behind disk edge"',HTML)
