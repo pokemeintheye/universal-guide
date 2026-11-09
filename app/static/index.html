@@ -795,6 +795,29 @@ function setTabloLoading(active){
  if(active)playerMessage("");
 }
 let hlsLastError=null;
+async function recoverFailedPlexTrackSwitch(generation){
+ if(generation!==playerGeneration||!playerSession||!plexTrackRecovery)return false;
+ const recovery=plexTrackRecovery;
+ plexTrackRecovery=null; // Never retry a failed transcode in a loop.
+ const sid=playerSession;
+ try{
+  playerMessage("Restoring playback without subtitles…");
+  await req("/api/player/"+encodeURIComponent(sid)+"/tracks",{
+   method:"PUT",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({subtitle_stream_id:0})
+  });
+  if(generation!==playerGeneration||sid!==playerSession)return true;
+  await launchPlex("resume",{position:recovery.position,
+   audio_stream_id:recovery.audio_stream_id,
+   subtitle_stream_id:0});
+  return true;
+ }catch(e){
+  if(generation===playerGeneration)
+   playerMessage("Plex couldn't restore playback: "+e.message+
+    ". Close and reopen the title.");
+  return true;
+ }
+}
 async function explainPlayerFailure(fallback,generation){
  if(generation!==playerGeneration)return;
  let detail=fallback;
@@ -808,6 +831,8 @@ async function explainPlayerFailure(fallback,generation){
    if(r.decision_http!==null)detail+=" | decision HTTP "+r.decision_http;
    if(r.last_http!==null)detail+=" | last HTTP "+r.last_http;
    if(r.last_error)detail+=" | "+r.last_error;
+   if(r.last_http===404&&plexTrackRecovery&&
+      await recoverFailedPlexTrackSwitch(generation))return;
   }catch(e){detail+=" | diagnostics unavailable: "+e.message}
  }
  playerMessage(detail);
@@ -1312,6 +1337,7 @@ async function launchPlex(mode,options=null){
  beginning.disabled=true;join.disabled=true;
  try{
   // Cleanup is complete before the next Plex start request.
+  if(mode!=="resume")plexTrackRecovery=null;
   await closePlexPlayer();
   // closePlexPlayer resets per-session state; restore only explicit
   // selections for a same-item transcode restart.
@@ -1362,6 +1388,7 @@ async function launchPlex(mode,options=null){
     video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
   };
   video.addEventListener("playing",()=>{if(generation===playerGeneration){
+    plexTrackRecovery=null;
     clearPlayerWatchdog();playerMessage("");
   }},{once:true});
   video.addEventListener("error",()=>{
