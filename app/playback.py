@@ -268,6 +268,8 @@ def start_playback(body: PlaybackRequest):
     master = endpoint + "?" + urlencode(params)
     session = {"id": sid, "resources": {"master.m3u8": master},
                "last": time.monotonic(), "rating_key": body.rating_key,
+               "mode":body.mode,"requested_offset_seconds":round(offset,1),
+               "item_duration_seconds":duration,
                "requests": 0, "playlists": 0, "segments": 0,
                "last_resource": None, "last_http": None, "last_error": None,
                "decision_http": None, "decision_attempted": False}
@@ -286,7 +288,11 @@ def stream_diagnostics(session_id: str):
     with _guard:
         return {key:session.get(key) for key in
                 ("requests","playlists","segments","last_resource","last_http",
-                 "last_error","decision_http","decision_attempted")}
+                 "last_error","decision_http","decision_attempted",
+                 "mode","requested_offset_seconds","item_duration_seconds",
+                 "playlist_segment_references","playlist_endlist",
+                 "first_segment_probe","last_segment_probe",
+                 "completed_segments","segment_bytes_total")}
 
 
 @router.get("/{session_id}/{resource_id}")
@@ -313,6 +319,11 @@ def serve_resource(session_id: str, resource_id: str):
             if len(body) > PLAYLIST_LIMIT:
                 raise HTTPException(502, "Plex HLS playlist exceeded maximum size")
             rewritten = _rewrite_playlist(session, url, body)
+            text=rewritten.decode("utf-8",errors="replace")
+            _record(session,
+                    playlist_segment_references=sum(1 for line in text.splitlines()
+                      if line.strip() and not line.startswith("#")),
+                    playlist_endlist="#EXT-X-ENDLIST" in text)
             return Response(content=rewritten, media_type="application/vnd.apple.mpegurl",
                             headers={"Cache-Control": "no-store"})
         finally:
@@ -323,9 +334,34 @@ def serve_resource(session_id: str, resource_id: str):
         content_type = "application/octet-stream"
 
     def data():
+        total=0
+        signature=None
         try:
-            yield from response.iter_content(chunk_size=128 * 1024)
+            for chunk in response.iter_content(chunk_size=128 * 1024):
+                if not chunk:continue
+                total+=len(chunk)
+                if signature is None:
+                    if chunk[0]==0x47:
+                        signature="mpeg_ts_sync"
+                    elif len(chunk)>=8 and chunk[4:8] in (b"ftyp",b"moof",b"styp"):
+                        signature="fragmented_mp4"
+                    elif chunk.startswith(b"#EXTM3U"):
+                        signature="unexpected_hls_playlist"
+                    elif chunk.lstrip().startswith((b"<",b"{",b"[")):
+                        signature="unexpected_text_or_error"
+                    else:
+                        signature="unknown_binary"
+                yield chunk
         finally:
+            with _guard:
+                probe={"bytes":total,"type":signature or "empty",
+                       "content_type":content_type.split(";",1)[0],
+                       "content_length":response.headers.get("Content-Length")}
+                if session.get("first_segment_probe") is None:
+                    session["first_segment_probe"]=probe
+                session["last_segment_probe"]=probe
+                session["completed_segments"]=session.get("completed_segments",0)+1
+                session["segment_bytes_total"]=session.get("segment_bytes_total",0)+total
             response.close()
     return StreamingResponse(data(), media_type=content_type,
                              headers={"Cache-Control": "no-store"})
