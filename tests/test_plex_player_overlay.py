@@ -55,7 +55,7 @@ class PlexPlayerOverlayTests(unittest.TestCase):
         self.assertIn('button.addEventListener("click",()=>{',HTML)
         self.assertIn('button.dataset.value=String(id)',HTML)
         self.assertIn('event.key==="ArrowDown"',HTML)
-        self.assertIn('event.key==="ArrowUp"',HTML)
+        self.assertIn('"ArrowDown","ArrowUp","ArrowLeft","ArrowRight"',HTML)
         self.assertIn('event.key==="Escape"',HTML)
         self.assertIn('thumb.loading="lazy"',HTML)
         self.assertIn('Math.floor(item.start_seconds)',HTML)
