@@ -44,6 +44,20 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn("if(!window)",HTML)
         self.assertIn("slider.disabled=true",HTML)
 
+    def test_live_hls_can_buffer_beyond_ninety_second_pause(self):
+        self.assertIn("maxBufferLength:180",HTML)
+        self.assertIn("maxMaxBufferLength:240",HTML)
+        self.assertIn("maxBufferSize:128*1024*1024",HTML)
+        self.assertIn("liveSyncMode:\"buffered\"",HTML)
+        self.assertIn("liveMaxLatencyDurationCount:Infinity",HTML)
+        self.assertIn("maxLiveSyncPlaybackRate:1",HTML)
+
+    def test_diagnostics_separate_seekable_and_buffered_video(self):
+        self.assertIn("buffered_ranges:tabloDvrBufferRanges(video)",HTML)
+        self.assertIn("dvr_playback:tabloDvrPlaybackTelemetry",HTML)
+        self.assertIn("hls_js_latency:",HTML)
+        self.assertIn('["waiting","stalled","playing"]',HTML)
+
     def test_original_historical_fallback_remains_available(self):
         self.assertIn('id="tablopauseadjust"',HTML)
         self.assertIn('id="tablocontinuous"',HTML)
