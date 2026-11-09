@@ -824,6 +824,9 @@ let plexTotalDuration=0;
 let plexSelectedAudio=null,plexSelectedSubtitle=null,plexTrackMenu=null;
 let plexPreviewDebounce=null;
 let plexTrackRecovery=null;
+// Plex can expire an HLS transcode while a video is paused for several minutes.
+let plexPauseStartedAt=null,plexLastPlaybackPosition=0;
+let plexRecoveryInProgress=false,plexRecoveryAttemptAt=0;
 let tabloSession=null;
 let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
@@ -874,6 +877,49 @@ async function recoverFailedPlexTrackSwitch(generation){
   return true;
  }
 }
+async function refreshExpiredPlexPlayback(generation,reason){
+ if(generation!==playerGeneration||!playerSession||plexRecoveryInProgress)return false;
+ // One automatic retry per 2 minutes avoids endless restart loops on bad files.
+ if(Date.now()-plexRecoveryAttemptAt<120000)return false;
+ plexRecoveryAttemptAt=Date.now();
+ plexRecoveryInProgress=true;
+ const position=Math.max(0,Math.max(plexLastPlaybackPosition,
+   plexPlaybackPosition(document.getElementById("plexvideo"))));
+ const audio=plexSelectedAudio,subtitles=plexSelectedSubtitle;
+ try{
+  playerMessage("Restoring Plex playback…");
+  await launchPlex("resume",{position,audio_stream_id:audio,
+    subtitle_stream_id:subtitles});
+  return true;
+ }catch(error){
+  if(generation===playerGeneration)
+   playerMessage("Plex could not restore playback. Close and reopen the title.");
+  console.warn("Plex stream recovery:",reason,error);
+  return true;
+ }finally{
+  plexRecoveryInProgress=false;
+ }
+}
+function handlePlexPauseResume(video,generation){
+ video.addEventListener("pause",()=>{
+  if(generation===playerGeneration&&video.readyState>=2)
+   plexPauseStartedAt=Date.now();
+ });
+ video.addEventListener("timeupdate",()=>{
+  if(generation===playerGeneration&&Number.isFinite(video.currentTime))
+   plexLastPlaybackPosition=plexPlaybackPosition(video);
+ });
+ video.addEventListener("play",()=>{
+  if(generation!==playerGeneration||!playerSession)return;
+  const pausedAt=plexPauseStartedAt;
+  plexPauseStartedAt=null;
+  if(!pausedAt||Date.now()-pausedAt<90000)return;
+  // The old session may already be gone; don't try to play stale HLS.
+  // Refresh only on a user-initiated resume, not every wait/buffer event.
+  video.pause();
+  refreshExpiredPlexPlayback(generation,"long_pause");
+ });
+}
 async function explainPlayerFailure(fallback,generation){
  if(generation!==playerGeneration)return;
  let detail=fallback;
@@ -887,11 +933,14 @@ async function explainPlayerFailure(fallback,generation){
    if(r.decision_http!==null)detail+=" | decision HTTP "+r.decision_http;
    if(r.last_http!==null)detail+=" | last HTTP "+r.last_http;
    if(r.last_error)detail+=" | "+r.last_error;
-   if(r.last_http===404&&plexTrackRecovery&&
-      await recoverFailedPlexTrackSwitch(generation))return;
+   if(r.last_http===404){
+    if(plexTrackRecovery&&await recoverFailedPlexTrackSwitch(generation))return;
+    if(await refreshExpiredPlexPlayback(generation,"segment_404"))return;
+   }
   }catch(e){detail+=" | diagnostics unavailable: "+e.message}
  }
- playerMessage(detail);
+ playerMessage(tabloDebugEnabled?detail:
+   "Plex stream interrupted. Close and reopen the title if playback does not resume.");
 }
 function tabloOverlayProgramAt(programs,when){
  if(!Number.isFinite(when))return null;
@@ -1336,6 +1385,7 @@ function cleanupPlexOverlay(){
  if(plexOverlayClock){clearInterval(plexOverlayClock);plexOverlayClock=null}
  if(plexPreviewDebounce){clearTimeout(plexPreviewDebounce);plexPreviewDebounce=null}
  plexSeekDragging=false;
+ plexPauseStartedAt=null;
  plexTrackMetadata=null;plexActiveRatingKey=null;plexPlayerBaseOffset=0;
  plexTotalDuration=0;
  plexTrackMenu=null;
@@ -1455,7 +1505,10 @@ async function launchPlex(mode,options=null){
  beginning.disabled=true;join.disabled=true;
  try{
   // Cleanup is complete before the next Plex start request.
-  if(mode!=="resume")plexTrackRecovery=null;
+  if(mode!=="resume"){
+   plexTrackRecovery=null;
+   plexRecoveryAttemptAt=0;
+  }
   await closePlexPlayer();
   // closePlexPlayer resets per-session state; restore only explicit
   // selections for a same-item transcode restart.
@@ -1490,6 +1543,8 @@ async function launchPlex(mode,options=null){
   const sid=info.playlist_url.split("/")[3];
   playerSession=sid;
   plexActiveRatingKey=selectedKey;
+  plexPauseStartedAt=null;
+  plexLastPlaybackPosition=Number(info.offset_seconds)||0;
   plexPlayerBaseOffset=Number(info.offset_seconds)||0;
   plexTotalDuration=Number(info.duration_seconds)||0;
   document.getElementById("plexquickdiagnostics").hidden=(!tabloDebugEnabled);
@@ -1505,6 +1560,7 @@ async function launchPlex(mode,options=null){
     playerMessage("");
     video.play().catch(()=>playerMessage("Press Play in the video controls to begin."));
   };
+  handlePlexPauseResume(video,generation);
   video.addEventListener("playing",()=>{if(generation===playerGeneration){
     plexTrackRecovery=null;
     clearPlayerWatchdog();playerMessage("");
