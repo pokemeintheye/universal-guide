@@ -1143,14 +1143,19 @@ async function configurePlexOverlay(info,generation){
 }
 function plexPreviewAt(seconds){
  const box=document.getElementById("plexthumb");
- if(!plexTrackMetadata?.preview_available||!playerSession)return;
+ if(!playerSession)return;
  box.hidden=false;
  document.getElementById("plexthumbtime").textContent=plexFormatTime(seconds);
  const img=document.getElementById("plexthumbimage");
  if(plexPreviewDebounce)clearTimeout(plexPreviewDebounce);
+ img.hidden=true;
+ if(!plexTrackMetadata?.preview_available)return; // Time-only fallback.
+ const sid=playerSession;
  plexPreviewDebounce=setTimeout(()=>{
-  img.hidden=false;
-  img.src="/api/player/"+encodeURIComponent(playerSession)+
+  if(sid!==playerSession)return;
+  img.onerror=()=>{img.hidden=true};
+  img.onload=()=>{if(sid===playerSession)img.hidden=false};
+  img.src="/api/player/"+encodeURIComponent(sid)+
     "/preview?at="+encodeURIComponent(Math.floor(seconds));
  },180);
 }
