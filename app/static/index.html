@@ -1025,12 +1025,14 @@ async function guide(only){
    rows+='<div class="epg-row"><div class="epg-station">'+label+'</div><div class="epg-tracks">'+nowLine+blocks+'</div></div>';
   }
   $("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
+  guideNavigationTime=null;
   const highlighted=shownPrograms.findIndex(program=>
     sameGuideIdentity(guideIdentity(program),selectedGuideIdentity));
   $("guide").querySelectorAll("[data-program]").forEach(el=>{
     const index=Number(el.dataset.program);
     if(index===highlighted)el.classList.add("return-selected");
     el.onclick=event=>{
+      guideNavigationTime=el.offsetLeft+el.offsetWidth/2;
       showGuidePreview(shownPrograms[index]);
       // Enter/OK should expose the newly selected Watch actions immediately.
       if(event.detail===0){
@@ -1052,6 +1054,7 @@ async function guide(only){
   persistGuideState();
  }catch(e){if(token===lastGuideToken){$("guide").removeAttribute("aria-busy");$("guide").textContent=e.message}}
 }
+let guideNavigationTime=null;
 // EPG remote navigation follows logical rows, never a whole-screen proximity
 // search. Left/Right stays on one channel; Up/Down moves exactly one channel
 // with scheduled programs, choosing the slot overlapping the viewer's time.
@@ -1088,20 +1091,30 @@ $("guide").addEventListener("keydown",event=>{
  const programs=guideProgramButtons(row);
  const here=programs.indexOf(current);
  let target=null;
+ const interval=guideProgramInterval(current);
+ if(!Number.isFinite(guideNavigationTime))
+  guideNavigationTime=(interval.start+interval.end)/2;
  if(event.key==="ArrowRight")target=programs[here+1]||null;
  else if(event.key==="ArrowLeft")target=programs[here-1]||null;
  else{
   const rows=Array.from($("guide").querySelectorAll(".epg-row"));
   const rowIndex=rows.indexOf(row);
-  const adjacent=rows[rowIndex+(event.key==="ArrowDown"?1:-1)];
-  if(adjacent){
-   const nextPrograms=guideProgramButtons(adjacent);
-   const {start,end}=guideProgramInterval(current);
-   const timelineTime=(start+end)/2;
-   target=guideChooseByTime(nextPrograms,timelineTime);
+  const delta=event.key==="ArrowDown"?1:-1;
+  // Only skip an empty channel row when it has no selectable program at all.
+  // Never skip a row that actually contains an available Plex or live show.
+  for(let next=rowIndex+delta;next>=0&&next<rows.length;next+=delta){
+   const nextPrograms=guideProgramButtons(rows[next]);
+   if(nextPrograms.length){
+    target=guideChooseByTime(nextPrograms,guideNavigationTime);
+    break;
+   }
   }
  }
  if(!target)return;
+ if(event.key==="ArrowLeft"||event.key==="ArrowRight"){
+  const next=guideProgramInterval(target);
+  guideNavigationTime=(next.start+next.end)/2;
+ }
  target.focus({preventScroll:true});
  target.scrollIntoView({block:"nearest",inline:"nearest"});
 });
