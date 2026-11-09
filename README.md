@@ -760,3 +760,27 @@ Suggested test: play a 1080p H.264 episode, rewind/forward, seek with preview,
 select a chapter, switch audio/subtitle tracks and confirm the same scene
 resumes, then test a 1080p HEVC title and a 4K HEVC title. Check the Plex
 Dashboard for transcode speed and HDR mapping on 4K titles.
+
+
+### Plex long-pause resilience and remote-focused menus
+
+When Plex playback remains paused for 90 seconds or more, resuming now starts
+a new HLS transcode at the saved absolute playback position while preserving
+the selected audio and subtitle streams. This avoids trying to resume an HLS
+transcode that Plex may have expired while the browser was paused. If the
+old stream encounters an upstream HTTP 404 anyway, Universal Guide makes
+one guarded recovery attempt at the saved position, with a two-minute retry
+cooldown to avoid infinite loops. The existing Tablo DVR is unaffected.
+Playback recovery after a long pause must still be tested on device.
+
+The Plex Chapters, Audio, and Subtitle menus now show large, focusable
+selection rows rather than a small native select menu. Directional keys move
+focus and Enter/OK selects, Back/Escape closes. Chapters display existing
+Plex preview-thumbnail images when available, with lazy loading. The
+timeline preview keeps its compact iPhone size but expands on viewports
+900 px and wider for TV viewing. Actual Apple TV remote interactions still
+need validation in the future native Apple TV application.
+
+If Plex playback cannot recover, ordinary viewing displays a concise
+error; detailed segment and HTTP diagnostics remain available with
+`?debug=1`.
