@@ -661,3 +661,27 @@ recovery to identify whether the browser or disk stream stopped.
 
 These changes are a targeted hypothesis-driven fix, not yet verified
 against the user's real iPhone and legacy Tablo.
+
+
+## Full-screen Tablo DVR player
+
+The normal Tablo interface uses a full-video overlay inspired by the supplied
+Tablo player reference. The current guide program title, OTA network and
+channel number appear at the top; rewind 20s, pause/resume and forward 30s
+are centered on the picture; the live DVR scrubber, elapsed DVR position,
+delay from the disk edge and **Go Live** appear at the bottom.
+
+Tap the video to reveal the overlay. During playback it automatically fades
+after approximately 4.5 seconds; pausing keeps it visible. Tapping a control
+reveals/resets the overlay timer. All DVR actions continue to use the proven
+single rolling HLS stream, without opening a separate live tuner.
+
+The experimental controls and Copy Tablo diagnostics no longer appear in
+normal playback. For troubleshooting, open Universal Guide with `?debug=1`
+in the page URL, tune Tablo, and choose **Advanced playback tools**.
+Diagnostic and native-history fallback endpoints remain in the application.
+Plex continues using its normal HTML5 video controls, restored on return
+from the Tablo player.
+
+Note: source channel logos and a separate CC toggle are not yet integrated.
+The overlay displays the network name as text where a logo would appear.
