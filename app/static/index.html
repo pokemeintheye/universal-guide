@@ -796,8 +796,9 @@ function remoteBack(){
 }
 function remoteFocusNext(direction){
  const current=document.activeElement;
- if(!remoteVisible(current)){
-  remoteGuideFocus();return;
+ if(!current||current===document.body||current===document.documentElement||
+    !remoteVisible(current)){
+  remoteGuideFocus();return true;
  }
  const modal=!$("detailsmodal").hidden?$("detailsmodal"):null;
  const drawer=!$("searchdrawer").hidden?$("searchdrawer"):
@@ -828,6 +829,15 @@ function remoteFocusNext(direction){
  }
  return false;
 }
+// Handle Back before older modal Escape handlers; arrow navigation stays in
+// bubble phase so specialized guide and chapter handlers can take priority.
+document.addEventListener("keydown",event=>{
+ if(!["Backspace","Escape","BrowserBack"].includes(event.key))return;
+ if(event.key==="Backspace"&&remoteTypingTarget(event.target))return;
+ event.preventDefault();
+ event.stopImmediatePropagation();
+ if(!event.repeat)remoteBack();
+},true);
 document.addEventListener("keydown",event=>{
  const key=event.key;
  if(key==="Backspace"||key==="Escape"||key==="BrowserBack"){
