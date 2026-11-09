@@ -441,22 +441,39 @@ status();guide(view.plex);
 <div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
-<div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo playback controls">
+<div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo DVR playback controls">
  <div class="tablo-dvr-top">
-  <div class="tablo-dvr-controls" role="group" aria-label="DVR transport">
-   <button id="tablodvrpause" type="button">⏸ Pause</button>
-   <button id="tablodvrback" type="button">↶ 20s</button>
-   <button id="tablodvrforward" type="button">30s ↷</button>
-   <button id="tablodvrlive" type="button">● Jump to Live</button>
+  <div class="tablo-program">
+   <div id="tablodvrnetwork" class="tablo-network"></div>
+   <div id="tablodvrtitle" class="tablo-show-title">Live TV</div>
+   <div id="tablodvrmeta" class="tablo-show-meta"></div>
   </div>
-  <span id="tablodvrstate" class="tablo-dvr-state live" role="status">LIVE</span>
+  <button id="tablodvrclose" class="tablo-overlay-close" type="button" aria-label="Close Tablo player">✕</button>
  </div>
- <div class="tablo-dvr-timeline">
-  <span id="tablodvrstart">DVR</span>
-  <input id="tablodvrseek" type="range" min="0" max="1000" value="1000" step="1" disabled aria-label="Seek through available Tablo DVR window"/>
-  <span id="tablodvrtime" class="tablo-dvr-time">LIVE</span>
+ <div class="tablo-dvr-controls" role="group" aria-label="Tablo DVR transport">
+   <button id="tablodvrback" class="tablo-transport tablo-transport-skip" type="button" aria-label="Rewind 20 seconds">
+    <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 21a15 15 0 1 1-1 12M12 10v12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="25" y="31" text-anchor="middle" fill="currentColor" font-size="14" font-weight="750">20</text></svg>
+   </button>
+   <button id="tablodvrpause" class="tablo-transport tablo-transport-pause" type="button" aria-label="Pause">⏸</button>
+   <button id="tablodvrforward" class="tablo-transport tablo-transport-skip" type="button" aria-label="Forward 30 seconds">
+    <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 21a15 15 0 1 0 1 12M36 10v12H24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="23" y="31" text-anchor="middle" fill="currentColor" font-size="14" font-weight="750">30</text></svg>
+   </button>
  </div>
- <button id="tabloadvancedtoggle" type="button" class="tablo-advanced-toggle" aria-expanded="false">Advanced playback tools ▾</button>
+ <div class="tablo-dvr-bottom">
+   <div class="tablo-dvr-times">
+    <span id="tablodvrstart">0:00</span>
+    <span id="tablodvrtime" class="tablo-dvr-time">LIVE</span>
+   </div>
+   <div class="tablo-dvr-timeline">
+    <input id="tablodvrseek" type="range" min="0" max="1000" value="1000" step="1" disabled aria-label="Seek through available Tablo DVR window"/>
+   </div>
+   <div class="tablo-dvr-bottomline">
+    <span id="tablodvrstate" class="tablo-dvr-state live" role="status">LIVE</span>
+    <button id="tablodvrlive" class="tablo-go-live" type="button" aria-label="Go Live"><span class="tablo-live-bolt" aria-hidden="true">ϟ</span> Go Live</button>
+    <span class="tablo-dvr-right-spacer"></span>
+   </div>
+ </div>
+ <button id="tabloadvancedtoggle" type="button" class="tablo-advanced-toggle" aria-expanded="false" hidden>Advanced playback tools ▾</button>
 </div>
 <div id="tabloadvanced" hidden>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
