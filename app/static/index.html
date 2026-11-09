@@ -337,26 +337,80 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
  .player-backdrop.plex-mode .plex-option-thumb{width:100px}
 }
 </style></head>
-<body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
-<main class="container">
-<section class="panel"><div class="bar"><h2>Library connection</h2><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div><div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div><div id="message"></div><p class="note">Reads Plex metadata and now relays requested Plex playback streams. No media folders are mounted. Keep this experimental server on your trusted LAN; it does not include authentication.</p></section>
-<section class="panel"><h2>Search your Plex catalog</h2><input id="search" placeholder="Search movie or show…" aria-label="Search Plex catalog"><div id="results" class="empty">Enter a title to search your indexed Plex catalog.</div></section>
-<section class="panel"><div class="bar"><h2>Live guide</h2><button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button></div><p class="note">Tablo provides local schedules. National listings come from the free EPGTalk feed and are matched against published Philo channel names; this does not verify availability in your subscription. Plex browser playback works; live Tablo tuner playback is experimental; Philo show, episode, and channel handoffs are available for verified links; playback may require additional taps in Philo.</p><div class="guide-controls" id="guidecontrols">
-<button id="earlier" type="button">← Earlier</button>
-<button id="now" type="button">Now</button>
-<button id="later" type="button">Later →</button>
-<button id="nextday" type="button">+1 day</button>
-<label class="note" for="jumpdate">Jump to date</label><input id="jumpdate" type="date" style="width:auto;max-width:170px;padding:8px" aria-label="Jump to guide date">
-<span class="date" id="viewtime"></span>
-<button id="tablofilter" type="button">Local</button>
-<button id="philofilter" type="button">Philo</button>
-</div>
-<div class="guide-controls">
-<input id="findshow" placeholder="Find a future show (e.g. The Office)" aria-label="Find a show in the guide" style="min-width:260px;flex:1">
-<button id="findbutton" type="button">Find upcoming</button>
-</div>
-<div id="findresults" class="note" aria-live="polite"></div>
-<div class="timeline" id="guide">No guide entries yet. Add guide.xml to the appdata folder.</div></section>
+<body>
+<main class="container guide-app">
+ <div class="guide-topbar">
+  <div class="guide-navigation">
+   <button id="earlier" type="button" aria-label="Earlier programs">‹</button>
+   <button id="now" type="button" class="guide-today">Today</button>
+   <button id="later" type="button" aria-label="Later programs">›</button>
+   <button id="nextday" type="button" class="compact-date">+1 day</button>
+   <label class="visually-hidden" for="jumpdate">Jump to date</label><input id="jumpdate" type="date" aria-label="Jump to guide date" title="Jump to date"/>
+   <span class="date" id="viewtime"></span>
+  </div>
+  <div class="guide-top-actions">
+   <button id="opensearch" class="guide-icon-button" type="button" title="Find programs" aria-label="Find programs" aria-haspopup="dialog">⌕</button>
+   <button id="openfilters" class="guide-icon-button" type="button" title="Filter guide" aria-label="Filter guide" aria-expanded="false" aria-controls="guidefiltermenu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18l-7 8v6l-4-2v-4L3 5Z"/></svg>
+   </button>
+   <button id="opensettings" class="guide-icon-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">⚙</button>
+  </div>
+  <div id="guidefiltermenu" class="guide-popover" role="menu" aria-label="Guide filters" hidden>
+   <button type="button" data-guide-filter="all" role="menuitemradio">All Channels</button>
+   <button type="button" data-guide-filter="favorites" role="menuitemradio">☆ Favorites</button>
+   <button type="button" data-guide-filter="plex" role="menuitemradio">✓ Available in Plex</button>
+   <div class="guide-menu-heading">Source</div>
+   <button type="button" data-guide-filter="tablo" role="menuitemradio">Local / Tablo</button>
+   <button type="button" data-guide-filter="philo" role="menuitemradio">Philo</button>
+   <button type="button" data-guide-filter="xmltv" role="menuitemradio">Other guide channels</button>
+   <div class="guide-menu-heading">Channels</div>
+   <button type="button" id="filtermanage" role="menuitem">Manage channels</button>
+  </div>
+ </div>
+ <section class="guide-main" aria-label="Live program guide">
+  <div class="timeline" id="guide">Loading TV guide…</div>
+ </section>
+ <section class="guide-detail" id="guidedetail" aria-live="polite">
+  <div class="guide-art" id="guideart" aria-hidden="true"><span>TV</span></div>
+  <div class="guide-detail-content">
+   <h2 id="guidepreviewtitle">Select a program</h2>
+   <div id="guidepreviewepisode" class="guide-preview-episode"></div>
+   <div id="guidepreviewsources" class="guide-source-tags"></div>
+   <p id="guidepreviewdesc">Choose a show or movie in the guide to see playback options.</p>
+   <div class="guide-detail-actions">
+    <button type="button" id="guidewatchplex" class="guide-action-primary" hidden>▶ Watch on Plex</button>
+    <button type="button" id="guidewatchsecondary" hidden>Watch Live</button>
+    <button type="button" id="guidedetails">ⓘ Details</button>
+   </div>
+  </div>
+ </section>
+ <section id="settingsdrawer" class="guide-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsheading">
+  <div class="guide-drawer-heading"><h2 id="settingsheading">Settings</h2><button type="button" id="closesettings" aria-label="Close settings">✕</button></div>
+  <div class="settings-sections">
+   <h3>Library connection</h3>
+   <span class="chip" id="status">Checking…</span>
+   <div class="bar"><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div>
+   <div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div>
+   <div id="message" class="note" aria-live="polite"></div>
+   <p class="note">The guide uses your configured Plex library, legacy Tablo, and Philo schedule feeds. Keep this server on your trusted network.</p>
+   <h3>Channel management</h3><button type="button" id="settingsmanage">Manage favorite and hidden channels</button>
+  </div>
+ </section>
+ <section id="searchdrawer" class="guide-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="searchheading">
+  <div class="guide-drawer-heading"><h2 id="searchheading">Search</h2><button type="button" id="closesearch" aria-label="Close search">✕</button></div>
+  <label for="findshow">Find an upcoming program</label>
+  <div class="bar"><input id="findshow" placeholder="Show or movie title" aria-label="Find a show in the guide"><button id="findbutton" type="button">Find</button></div>
+  <div id="findresults" class="note" aria-live="polite"></div>
+  <details><summary>Search Plex catalog</summary>
+   <input id="search" placeholder="Search your Plex movies and shows" aria-label="Search Plex catalog">
+   <div id="results" class="empty">Enter a title to search your Plex library.</div>
+  </details>
+ </section>
+ <div id="guideshade" class="guide-shade" hidden></div>
+ <div class="guide-legacy-controls" hidden>
+  <button id="all">All programs</button><button id="inplex">Available in Plex</button><button id="favorites">Favorites</button><button id="manage">Manage channels</button>
+  <div id="guidecontrols"><button id="tablofilter">Local</button><button id="philofilter">Philo</button></div>
+ </div>
 </main><div class="dialog-backdrop" id="detailsmodal" hidden role="presentation"><div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="detailtitle">
 <button type="button" class="close" id="closedetails" aria-label="Close program details">✕ Close</button>
 <div class="meta" id="detailstation"></div><h2 id="detailtitle"></h2><div class="meta" id="detailtime"></div>
@@ -373,7 +427,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 </div>
 <div class="player-actions" id="playbackchoices" hidden>
 <button id="playbegin" type="button">▶ Start from Beginning</button>
-<button id="playjoin" type="button" hidden>◷ Join in Progress</button>
+<button id="playjoin" type="button" hidden>▶ Watch From Now</button>
 </div>
 <p class="note">Plex browser playback is experimental. The Plex Web button remains available as a fallback.</p>
 <a id="plexopen" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2b6d55;color:#fff;padding:11px 16px;border-radius:9px;text-decoration:none">Open this title in Plex</a>
