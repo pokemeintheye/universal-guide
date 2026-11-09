@@ -522,6 +522,7 @@ let tabloLivePausedAt=null;
 let tabloPauseMarkerPromise=null;
 let tabloLastPauseMarker=null;
 let tabloLastDiagnosticsText="";
+let tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,last_wait_started:null,last_wait_position:null,events:[]};
 let tabloDvrClock=null,tabloDvrSourceStart=null,tabloDvrDragging=false;
 let selectedProgram=null;
 let playerWatchdog=null;
@@ -545,6 +546,41 @@ async function explainPlayerFailure(fallback,generation){
  }
  playerMessage(detail);
 }
+function tabloDvrBufferRanges(video){
+ const ranges=[];
+ for(let i=0;i<(video.buffered?.length||0);i++)
+  ranges.push([Number(video.buffered.start(i).toFixed(2)),
+               Number(video.buffered.end(i).toFixed(2))]);
+ return ranges;
+}
+function tabloDvrPlaybackEvent(name,video){
+ if(!tabloSession||tabloPreviewSession)return;
+ const now=Date.now(),t=tabloDvrPlaybackTelemetry;
+ if(name==="waiting"||name==="stalled"){
+  if(t.last_wait_started===null){
+   t.waiting_count++;
+   t.last_wait_started=now;
+   t.last_wait_position=Number.isFinite(video.currentTime)?
+     Number(video.currentTime.toFixed(2)):null;
+  }
+ }else if(name==="playing"&&t.last_wait_started!==null){
+  t.total_wait_ms+=now-t.last_wait_started;
+  t.last_wait_started=null;
+ }
+ t.events.push({event:name,at:new Date(now).toISOString(),
+  current_time:Number.isFinite(video.currentTime)?
+    Number(video.currentTime.toFixed(2)):null,
+  seekable_end:video.seekable?.length?
+    Number(video.seekable.end(video.seekable.length-1).toFixed(2)):null,
+  browser_buffered:tabloDvrBufferRanges(video)});
+ if(t.events.length>16)t.events.shift();
+}
+function attachTabloDvrTelemetry(video){
+ for(const name of ["waiting","stalled","playing"])
+  video.addEventListener(name,()=>tabloDvrPlaybackEvent(name,video));
+}
+
+
 function clearPlayerWatchdog(){
  if(playerWatchdog){clearTimeout(playerWatchdog);playerWatchdog=null}
 }
@@ -762,6 +798,8 @@ async function launchTabloLive(){
      {cache:"no-store"}).catch(()=>{});
   },30000);
   document.getElementById("tablooffsetcontrols").hidden=false;
+  tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,
+     last_wait_started:null,last_wait_position:null,events:[]};
   document.getElementById("tablodvr").hidden=false;
   if(tabloDvrClock)clearInterval(tabloDvrClock);
   tabloDvrClock=setInterval(updateTabloDvrUi,800);
@@ -783,6 +821,7 @@ async function launchTabloLive(){
   document.getElementById("playerbackdrop").hidden=false;
   playerMessage("Starting Tablo tuner and transcoder. This may take 15–30 seconds…");
   const video=document.getElementById("plexvideo");
+  attachTabloDvrTelemetry(video);
   const url=info.playlist_url;
   if(!await waitForTabloReady(info.session_id,generation))return;
   video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
@@ -794,7 +833,12 @@ async function launchTabloLive(){
   const preferHlsJs=Boolean(window.Hls&&Hls.isSupported());
   playerMessage("Tablo live stream prepared. Player: "+(preferHlsJs?"HLS.js":"native HLS"));
   if(preferHlsJs){
+   // One disk DVR session: prepare a larger forward MSE cache, with a
+   // bounded memory footprint. Do not chase the live edge after pausing.
    playerHls=new Hls({enableWorker:true,liveSyncDurationCount:3,
+      liveMaxLatencyDurationCount:Infinity,liveSyncMode:"buffered",
+      maxLiveSyncPlaybackRate:1,maxBufferLength:180,maxMaxBufferLength:240,
+      maxBufferSize:128*1024*1024,backBufferLength:120,
       manifestLoadingTimeOut:22000,levelLoadingTimeOut:22000,
       manifestLoadingMaxRetry:5,levelLoadingMaxRetry:5,
       fragLoadingMaxRetry:5});
@@ -1083,8 +1127,14 @@ document.getElementById("tablopreviewstatus").onclick=async function(){
     current_time:Number.isFinite(video.currentTime)?Number(video.currentTime.toFixed(2)):null,
     duration:Number.isFinite(video.duration)?Number(video.duration.toFixed(2)):null,
     ready_state:video.readyState,paused:video.paused,
-    seekable_ranges:seekable
+    seekable_ranges:seekable,
+    buffered_ranges:tabloDvrBufferRanges(video),
+    hls_js_live_sync_position:playerHls&&Number.isFinite(playerHls.liveSyncPosition)?
+       Number(playerHls.liveSyncPosition.toFixed(2)):null,
+    hls_js_latency:playerHls&&Number.isFinite(playerHls.latency)?
+       Number(playerHls.latency.toFixed(2)):null
    },
+   dvr_playback:tabloDvrPlaybackTelemetry,
    session_status:status
   },null,2);
   tabloLastDiagnosticsText=diagnostics;
