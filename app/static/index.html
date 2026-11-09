@@ -427,6 +427,13 @@ status();guide(view.plex);
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
 <div id="tablolivepausecontrols" hidden style="margin:8px 0">
 <button id="tablolivepause" type="button">⏸ Pause Live (beta)</button>
+<label for="tablopauseadjust">Resume position test</label>
+<select id="tablopauseadjust" aria-label="Move resume forward from saved pause position">
+<option value="0">Original marker (0s)</option>
+<option value="30">30 seconds later</option>
+<option value="60">60 seconds later</option>
+<option value="90">90 seconds later</option>
+</select>
 <span class="note">Resume after a longer pause uses Tablo's existing buffer.</span>
 </div>
 <div id="tablooffsetcontrols" hidden style="margin:8px 0">
@@ -856,8 +863,10 @@ document.getElementById("tablolivepause").onclick=async function(){
   }
   playerMessage("Resuming native Tablo segment "+marker.data.source_sequence+
     " (captured "+pausedSeconds+" seconds ago)…");
+  const adjustment=Number(document.getElementById("tablopauseadjust").value);
   const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
-    "/timeshift?resume_paused=true",{method:"POST",cache:"no-store"});
+    "/timeshift?resume_paused=true&resume_adjust_seconds="+
+     encodeURIComponent(adjustment),{method:"POST",cache:"no-store"});
   if(generation!==playerGeneration){
    fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),
      {method:"DELETE"}).catch(()=>{});
@@ -877,7 +886,8 @@ document.getElementById("tablolivepause").onclick=async function(){
   document.getElementById("tablopause").textContent="Pause";
   document.getElementById("tabloseekrange").textContent=
     "Resumed after live pause · continuous timeshift beta";
-  playerMessage("Resumed near paused position via native Tablo history.");
+  playerMessage("Historical resume test: "+info.resume_adjust_seconds+
+    " seconds forward from captured pause marker.");
  }catch(e){
   if(generation===playerGeneration){
    playerMessage("Could not resume from Tablo history: "+e.message+
