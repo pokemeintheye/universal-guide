@@ -424,6 +424,10 @@ status();guide(view.plex);
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
+<div id="tablolivepausecontrols" hidden style="margin:8px 0">
+<button id="tablolivepause" type="button">⏸ Pause Live (beta)</button>
+<span class="note">Resume after a longer pause uses Tablo's existing buffer.</span>
+</div>
 <div id="tablooffsetcontrols" hidden style="margin:8px 0">
 <label for="tablooffset">Historical playback position</label>
 <select id="tablooffset" aria-label="Minutes behind live">
@@ -462,6 +466,7 @@ let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
 let tabloHistoricalClipSeconds=0;
 let tabloHeartbeat=null;
+let tabloLivePausedAt=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -494,6 +499,9 @@ async function closePlexPlayer(){
  hlsLastError=null;
  clearPlayerWatchdog();
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
+ tabloLivePausedAt=null;
+ document.getElementById("tablolivepausecontrols").hidden=true;
+ document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
  const video=document.getElementById("plexvideo");
  video.pause();
  if(playerHls){playerHls.destroy();playerHls=null}
@@ -686,6 +694,9 @@ async function launchTabloLive(){
      {cache:"no-store"}).catch(()=>{});
   },30000);
   document.getElementById("tablooffsetcontrols").hidden=false;
+  document.getElementById("tablolivepausecontrols").hidden=false;
+  tabloLivePausedAt=null;
+  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
   document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablopreviewstatus").hidden=true;
   document.getElementById("tablorestartlive").hidden=true;
@@ -779,6 +790,80 @@ async function deleteTabloPreview(){
  if(old)try{await fetch("/api/tablo/live/"+encodeURIComponent(old),
     {method:"DELETE",cache:"no-store"})}catch(e){console.warn("Preview cleanup:",e)}
 }
+document.getElementById("tablolivepause").onclick=async function(){
+ if(!tabloSession||tabloPreviewSession)return;
+ const button=this;
+ const video=document.getElementById("plexvideo");
+ if(tabloLivePausedAt===null){
+  if(video.readyState<2){
+   playerMessage("Wait for live video to start before pausing.");
+   return;
+  }
+  tabloLivePausedAt=Date.now();
+  video.pause();
+  button.textContent="▶ Resume Live";
+  playerMessage("Live paused. The broadcast is still buffering on Tablo.");
+  return;
+ }
+ button.disabled=true;
+ const generation=playerGeneration;
+ const pausedSeconds=Math.max(0,Math.round((Date.now()-tabloLivePausedAt)/1000));
+ try{
+  if(pausedSeconds<12){
+   await video.play();
+   tabloLivePausedAt=null;
+   button.textContent="⏸ Pause Live (beta)";
+   playerMessage("Live playback resumed.");
+   return;
+  }
+  // The original live output retains only ~28 seconds of HLS. Reopen native
+  // Tablo history for longer pauses, with a small overlap for decode safety.
+  const offset=Math.max(30,Math.min(1800,pausedSeconds+12));
+  playerMessage("Resuming from Tablo buffer, approximately "+
+     Math.round(offset)+" seconds behind live…");
+  const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
+    "/timeshift?seconds_behind_live="+offset,{method:"POST",cache:"no-store"});
+  if(generation!==playerGeneration){
+   fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),
+     {method:"DELETE"}).catch(()=>{});
+   return;
+  }
+  tabloPreviewSession=info.session_id;
+  document.getElementById("tabloliveback").hidden=false;
+  document.getElementById("tablopreviewstatus").hidden=false;
+  if(!await waitForTabloReady(info.session_id,generation))return;
+  await switchTabloExperimentSource(info.playlist_url,generation,"historical");
+  if(generation!==playerGeneration)return;
+  tabloLivePausedAt=null;
+  button.textContent="⏸ Pause Live (beta)";
+  document.getElementById("tablolivepausecontrols").hidden=true;
+  document.getElementById("tabloseekcontrols").hidden=false;
+  document.getElementById("tablopause").textContent="Pause";
+  document.getElementById("tabloseekrange").textContent=
+    "Resumed after live pause · continuous timeshift beta";
+  playerMessage("Resumed near paused position via native Tablo history.");
+ }catch(e){
+  if(generation===playerGeneration){
+   playerMessage("Could not resume from Tablo history: "+e.message+
+     ". Returning to live playback; the paused position might be lost.");
+   try{
+    if(tabloPreviewSession)await deleteTabloPreview();
+    if(generation===playerGeneration)
+     await switchTabloExperimentSource(tabloLivePlaylist,generation,"live");
+   }catch(error){
+    if(generation===playerGeneration){
+     playerMessage("Live recovery failed: "+error.message+
+       ". Use Restart Live Tablo.");
+     document.getElementById("tablorestartlive").hidden=false;
+    }
+   }
+   if(generation===playerGeneration){
+    tabloLivePausedAt=null;
+    button.textContent="⏸ Pause Live (beta)";
+   }
+  }
+ }finally{button.disabled=false}
+};
 document.getElementById("tablocontinuous").onclick=async function(){
  if(!tabloSession)return;
  const button=this;
@@ -806,6 +891,8 @@ document.getElementById("tablocontinuous").onclick=async function(){
   document.getElementById("tablopreviewstatus").hidden=false;
   if(!await waitForTabloReady(info.session_id,generation))return;
   await switchTabloExperimentSource(info.playlist_url,generation,"historical");
+  document.getElementById("tablolivepausecontrols").hidden=true;
+  tabloLivePausedAt=null;
   document.getElementById("tabloseekcontrols").hidden=false;
   document.getElementById("tablopause").textContent="Pause";
   document.getElementById("tabloseekrange").textContent=
@@ -860,6 +947,9 @@ document.getElementById("tabloliveback").onclick=async function(){
   if(!health.transcoder_running)throw Error("Live transcoder stopped");
   await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration,"live");
   await deleteTabloPreview();
+  tabloLivePausedAt=null;
+  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
+  document.getElementById("tablolivepausecontrols").hidden=false;
   document.getElementById("tablopreviewstatus").hidden=true;
   document.getElementById("tabloseekcontrols").hidden=true;
   this.hidden=true;
