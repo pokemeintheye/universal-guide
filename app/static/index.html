@@ -102,162 +102,186 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 #tabloloading[hidden]{display:none!important}
 .player-backdrop .tablo-loading{display:none}
-.player-backdrop.tablo-mode .tablo-loading{position:absolute;inset:0;z-index:8;display:grid;place-items:center;pointer-events:none;background:#00000050}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-loading{position:absolute;inset:0;z-index:8;display:grid;place-items:center;pointer-events:none;background:#00000050}
 .tablo-loading-spinner{display:block;width:54px;height:54px;border-radius:50%;border:5px solid #ffffff48;border-top-color:#fff;animation:tablo-loading-spin .8s linear infinite}
 @keyframes tablo-loading-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.tablo-loading-spinner{animation-duration:2s}}
-.player-backdrop.tablo-mode{padding:0;overflow:hidden;display:block;background:#000}
-.player-backdrop.tablo-mode video{
+.player-backdrop:is(.tablo-mode,.plex-mode){padding:0;overflow:hidden;display:block;background:#000}
+.player-backdrop:is(.tablo-mode,.plex-mode) video{
  position:absolute;inset:0;width:100%;height:100%;max-height:none;max-width:none;
  object-fit:contain;border-radius:0;background:#000;touch-action:manipulation
 }
-.player-backdrop.tablo-mode .player-tools{display:none}
-.player-backdrop.tablo-mode #playerstatus{
+.player-backdrop:is(.tablo-mode,.plex-mode) .player-tools{display:none}
+.player-backdrop:is(.tablo-mode,.plex-mode) #playerstatus{
  position:absolute;left:50%;bottom:calc(125px + env(safe-area-inset-bottom));
  transform:translateX(-50%);z-index:5;width:max-content;max-width:min(85vw,740px);
  border-radius:10px;background:#0b1024db;text-align:center;
  padding:6px 12px;font-size:13px;pointer-events:none
 }
-.player-backdrop.tablo-mode #playerstatus:empty{display:none}
-.player-backdrop.tablo-mode .tablo-dvr[hidden]{display:none!important}
-.player-backdrop.tablo-mode .tablo-dvr{
+.player-backdrop:is(.tablo-mode,.plex-mode) #playerstatus:empty{display:none}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr[hidden]{display:none!important}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr{
  position:absolute;inset:0;z-index:4;margin:0;padding:0;border:0;border-radius:0;
  background:linear-gradient(to bottom,rgba(0,0,0,.72),transparent 35%,transparent 48%,rgba(0,0,0,.78) 100%);
  display:flex;flex-direction:column;justify-content:space-between;
  transition:opacity .22s ease;pointer-events:none
 }
-.player-backdrop.tablo-mode .tablo-dvr.controls-hidden{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr.controls-hidden{
  opacity:0;visibility:hidden;pointer-events:none
 }
-.player-backdrop.tablo-mode .tablo-dvr button,
-.player-backdrop.tablo-mode .tablo-dvr input{pointer-events:auto}
-.player-backdrop.tablo-mode .tablo-dvr-top{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr button,
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr input{pointer-events:auto}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-top{
  position:relative;display:flex;justify-content:center;align-items:flex-start;
  min-height:148px;padding:max(22px,env(safe-area-inset-top)) 72px 12px;
  text-align:center
 }
-.player-backdrop.tablo-mode .tablo-program{max-width:800px;min-width:0}
-.player-backdrop.tablo-mode .tablo-network{font-size:clamp(17px,2.3vw,25px);font-weight:750;letter-spacing:.025em}
-.player-backdrop.tablo-mode .tablo-network:empty{display:none}
-.player-backdrop.tablo-mode .tablo-show-title{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-program{max-width:800px;min-width:0}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-network{font-size:clamp(17px,2.3vw,25px);font-weight:750;letter-spacing:.025em}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-network:empty{display:none}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-show-title{
  font-size:clamp(24px,3vw,38px);font-weight:760;line-height:1.15;
  text-shadow:0 2px 10px #000b;margin:13px 0
 }
-.player-backdrop.tablo-mode .tablo-show-meta{font-size:clamp(13px,1.55vw,19px);color:#edf3fb}
-.player-backdrop.tablo-mode .tablo-overlay-close{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-show-meta{font-size:clamp(13px,1.55vw,19px);color:#edf3fb}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-overlay-close{
  position:absolute;top:max(18px,env(safe-area-inset-top));right:max(18px,env(safe-area-inset-right));
  background:transparent;border:0;border-radius:50%;font-size:30px;font-weight:500;
  height:52px;width:52px;padding:0
 }
-.player-backdrop.tablo-mode .tablo-dvr-controls{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-controls{
  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
  display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:clamp(18px,5vw,75px);
  pointer-events:none
 }
-.player-backdrop.tablo-mode .tablo-transport{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport{
  display:grid;place-items:center;border:0;background:transparent;
  color:#fff;text-shadow:0 2px 9px #000;box-shadow:none;
  transition:transform .15s ease,background .15s ease
 }
-.player-backdrop.tablo-mode .tablo-transport:hover,
-.player-backdrop.tablo-mode .tablo-overlay-close:hover{background:#ffffff20}
-.player-backdrop.tablo-mode .tablo-transport:active{transform:scale(.92)}
-.player-backdrop.tablo-mode .tablo-transport-skip{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport:hover,
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-overlay-close:hover{background:#ffffff20}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport:active{transform:scale(.92)}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport-skip{
  width:clamp(56px,7vw,84px);height:clamp(56px,7vw,84px);border-radius:50%
 }
-.player-backdrop.tablo-mode .tablo-transport-skip svg{width:100%;height:100%}
-.player-backdrop.tablo-mode .tablo-transport-pause{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport-skip svg{width:100%;height:100%}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport-pause{
  width:clamp(76px,10vw,104px);height:clamp(76px,10vw,104px);
  border-radius:50%;font-size:clamp(46px,6vw,72px);font-weight:800;
  line-height:1
 }
-.player-backdrop.tablo-mode .tablo-dvr-bottom{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-bottom{
  padding:24px max(25px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom));
  width:100%;pointer-events:none
 }
-.player-backdrop.tablo-mode .tablo-dvr-times{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-times{
  display:flex;justify-content:space-between;margin-bottom:9px;font-size:17px;
  font-variant-numeric:tabular-nums
 }
-.player-backdrop.tablo-mode .tablo-dvr-time{min-width:0}
-.player-backdrop.tablo-mode .tablo-dvr-timeline{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-time{min-width:0}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-timeline{
  margin:0;display:block;pointer-events:auto
 }
-.player-backdrop.tablo-mode #tablodvrseek{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek){
  display:block;width:100%;height:25px;min-width:0;max-width:none;
  appearance:none;-webkit-appearance:none;border:0;background:transparent;margin:0;
  padding:0;touch-action:pan-y;accent-color:#1eb9ee
 }
-.player-backdrop.tablo-mode #tablodvrseek::-webkit-slider-runnable-track{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek)::-webkit-slider-runnable-track{
  height:8px;background:linear-gradient(to right,#1eb9ee 0%,#1eb9ee var(--dvr-progress,0%),#ffffff64 var(--dvr-progress,0%),#ffffff64 100%);
  border-radius:9px
 }
-.player-backdrop.tablo-mode #tablodvrseek::-moz-range-track{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek)::-moz-range-track{
  height:8px;background:#ffffff64;border-radius:9px
 }
-.player-backdrop.tablo-mode #tablodvrseek::-moz-range-progress{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek)::-moz-range-progress{
  height:8px;background:#1eb9ee;border-radius:9px
 }
-.player-backdrop.tablo-mode #tablodvrseek::-webkit-slider-thumb{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek)::-webkit-slider-thumb{
  appearance:none;-webkit-appearance:none;width:20px;height:20px;border:0;
  border-radius:50%;background:#fff;margin-top:-6px;box-shadow:0 1px 6px #0008
 }
-.player-backdrop.tablo-mode #tablodvrseek::-moz-range-thumb{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(#tablodvrseek,#plexseek)::-moz-range-thumb{
  width:20px;height:20px;border:0;border-radius:50%;background:#fff
 }
-.player-backdrop.tablo-mode .tablo-dvr-bottomline{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-bottomline{
  display:flex;justify-content:space-between;align-items:center;min-height:58px
 }
-.player-backdrop.tablo-mode .tablo-dvr-state{flex:1;font-size:12px;font-weight:600}
-.player-backdrop.tablo-mode .tablo-go-live{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-state{flex:1;font-size:12px;font-weight:600}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-go-live{
  flex:1;width:max-content;white-space:nowrap;font-size:20px;background:transparent;
  border:0;padding:7px 12px;font-weight:500
 }
-.player-backdrop.tablo-mode .tablo-dvr-right-spacer{flex:1}
-.player-backdrop.tablo-mode .tablo-live-bolt{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-right-spacer{flex:1}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-live-bolt{
  display:inline-grid;place-items:center;margin-right:7px;border:2px solid #1bd7ad;
  color:#1bd7ad;border-radius:50%;width:40px;height:40px;font-size:29px;vertical-align:middle
 }
-.player-backdrop.tablo-mode .tablo-advanced-toggle[hidden]{display:none!important}
-.player-backdrop.tablo-mode .tablo-advanced-toggle{
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-advanced-toggle[hidden]{display:none!important}
+.player-backdrop:is(.tablo-mode,.plex-mode) .tablo-advanced-toggle{
  position:absolute;top:max(80px,env(safe-area-inset-top));right:14px;
  background:#0c1833ce;pointer-events:auto
 }
-.player-backdrop.tablo-mode #tabloadvanced:not([hidden]){
+.player-backdrop:is(.tablo-mode,.plex-mode) #tabloadvanced:not([hidden]){
  position:absolute;z-index:7;top:110px;right:12px;width:min(92vw,370px);
  max-height:calc(100dvh - 145px);overflow:auto;padding:14px;
  border-radius:12px;background:#14243cf0;border:1px solid #4f6988
 }
-.player-backdrop.tablo-mode :is(button,input):focus-visible{
+.player-backdrop:is(.tablo-mode,.plex-mode) :is(button,input):focus-visible{
  outline:3px solid #48d6ef;outline-offset:3px
 }
 @media (max-width:650px){
- .player-backdrop.tablo-mode .tablo-dvr-top{
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-top{
    min-height:120px;padding:max(20px,env(safe-area-inset-top)) 55px 8px
  }
- .player-backdrop.tablo-mode .tablo-show-title{font-size:23px;margin:6px 0}
- .player-backdrop.tablo-mode .tablo-network{font-size:16px}
- .player-backdrop.tablo-mode .tablo-show-meta{font-size:12px}
- .player-backdrop.tablo-mode .tablo-overlay-close{
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-show-title{font-size:23px;margin:6px 0}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-network{font-size:16px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-show-meta{font-size:12px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-overlay-close{
    height:42px;width:42px;font-size:24px;right:max(8px,env(safe-area-inset-right))
  }
- .player-backdrop.tablo-mode .tablo-dvr-controls{gap:clamp(8px,2vw,24px)}
- .player-backdrop.tablo-mode .tablo-transport-skip{width:58px;height:58px;min-width:0}
- .player-backdrop.tablo-mode .tablo-transport-pause{width:70px;height:70px;min-width:0;font-size:47px}
- .player-backdrop.tablo-mode .tablo-dvr-bottom{
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-controls{gap:clamp(8px,2vw,24px)}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport-skip{width:58px;height:58px;min-width:0}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport-pause{width:70px;height:70px;min-width:0;font-size:47px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-bottom{
    padding:14px max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom))
  }
- .player-backdrop.tablo-mode .tablo-dvr-times{font-size:13px}
- .player-backdrop.tablo-mode .tablo-go-live{font-size:16px}
- .player-backdrop.tablo-mode .tablo-live-bolt{width:32px;height:32px;font-size:23px}
- .player-backdrop.tablo-mode .tablo-dvr-state{font-size:10px}
- .player-backdrop.tablo-mode #playerstatus{bottom:110px;font-size:11px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-times{font-size:13px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-go-live{font-size:16px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-live-bolt{width:32px;height:32px;font-size:23px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr-state{font-size:10px}
+ .player-backdrop:is(.tablo-mode,.plex-mode) #playerstatus{bottom:110px;font-size:11px}
 }
 @media (prefers-reduced-motion:reduce){
- .player-backdrop.tablo-mode .tablo-dvr,
- .player-backdrop.tablo-mode .tablo-transport{transition:none}
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-dvr,
+ .player-backdrop:is(.tablo-mode,.plex-mode) .tablo-transport{transition:none}
 }
 
+
+/* Plex follows the Tablo overlay layout without altering Tablo behavior. */
+.player-backdrop.plex-mode .tablo-dvr[hidden]{display:none!important}
+.player-backdrop.plex-mode .plex-bottom-options{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;pointer-events:auto;margin-top:8px}
+.player-backdrop.plex-mode .plex-bottom-options button{background:#182c48bd;border:1px solid #8da4c277;border-radius:20px;padding:8px 16px;font-size:14px}
+.player-backdrop.plex-mode .plex-bottom-options button[hidden]{display:none!important}
+.player-backdrop.plex-mode .plex-track-panel[hidden]{display:none!important}
+.player-backdrop.plex-mode .plex-track-panel{
+ position:absolute;right:max(18px,env(safe-area-inset-right));bottom:calc(128px + env(safe-area-inset-bottom));
+ width:min(360px,90vw);padding:17px;background:#101d32f5;border:1px solid #63809d;
+ border-radius:15px;pointer-events:auto;box-shadow:0 12px 40px #0009
+}
+.player-backdrop.plex-mode .plex-track-panel label{font-weight:700;display:block;margin-bottom:12px}
+.player-backdrop.plex-mode .plex-track-panel select{display:block;width:100%;max-width:none;padding:11px;border-radius:7px;background:#182840;color:white}
+.player-backdrop.plex-mode .plex-track-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.player-backdrop.plex-mode .plex-scrub-preview[hidden]{display:none!important}
+.player-backdrop.plex-mode .plex-scrub-preview{
+ position:absolute;left:50%;bottom:calc(142px + env(safe-area-inset-bottom));transform:translateX(-50%);
+ text-align:center;display:grid;justify-items:center;gap:4px;pointer-events:none;
+ background:#071327e8;padding:6px 8px;border-radius:10px;font-size:13px
+}
+.player-backdrop.plex-mode .plex-scrub-preview img{width:160px;height:90px;object-fit:contain;border-radius:5px}
+.player-backdrop.plex-mode .plex-scrub-preview img[hidden]{display:none!important}
+.player-backdrop.plex-mode .tablo-dvr-bottom{pointer-events:none}
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
@@ -607,6 +631,46 @@ status();guide(view.plex);
  <span class="visually-hidden">Loading channel</span>
 </div>
 <div id="playerstatus" role="status"></div>
+<div id="plexoverlay" class="tablo-dvr" hidden aria-label="Plex playback controls">
+ <div class="tablo-dvr-top">
+  <div class="tablo-program">
+   <div class="tablo-network">PLEX</div>
+   <div id="plexoverlaytitle" class="tablo-show-title">Plex library</div>
+   <div id="plexoverlaymeta" class="tablo-show-meta"></div>
+  </div>
+  <button id="plexoverlayclose" class="tablo-overlay-close" type="button" aria-label="Close Plex player">✕</button>
+ </div>
+ <div class="tablo-dvr-controls" role="group" aria-label="Plex playback">
+  <button id="plexback" class="tablo-transport tablo-transport-skip" type="button" aria-label="Rewind 20 seconds">
+   <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 21a15 15 0 1 1-1 12M12 10v12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="25" y="31" text-anchor="middle" fill="currentColor" font-size="14" font-weight="750">20</text></svg>
+  </button>
+  <button id="plexpause" class="tablo-transport tablo-transport-pause" type="button" aria-label="Pause">⏸</button>
+  <button id="plexforward" class="tablo-transport tablo-transport-skip" type="button" aria-label="Forward 30 seconds">
+   <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 21a15 15 0 1 0 1 12M36 10v12H24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="23" y="31" text-anchor="middle" fill="currentColor" font-size="14" font-weight="750">30</text></svg>
+  </button>
+ </div>
+ <div class="tablo-dvr-bottom">
+  <div id="plexthumb" class="plex-scrub-preview" hidden>
+   <img id="plexthumbimage" alt="Plex timeline preview" hidden/>
+   <span id="plexthumbtime"></span>
+  </div>
+  <div class="tablo-dvr-times"><span id="plexelapsed">0:00</span><span id="plexremaining">-0:00</span></div>
+  <div class="tablo-dvr-timeline"><input id="plexseek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek through Plex video"/></div>
+  <div class="plex-bottom-options">
+   <button id="plexchaptersbutton" type="button" hidden>Chapters</button>
+   <button id="plexaudiobutton" type="button" hidden>Language</button>
+   <button id="plexsubtitlesbutton" type="button" hidden>Subtitles</button>
+  </div>
+ </div>
+ <div id="plextrackpanel" class="plex-track-panel" hidden role="group" aria-label="Plex playback options">
+  <label id="plextracklabel" for="plextrackselect">Choose a track</label>
+  <select id="plextrackselect"></select>
+  <div class="plex-track-actions">
+   <button id="plextrackapply" type="button">Apply</button>
+   <button id="plextrackcancel" type="button">Cancel</button>
+  </div>
+ </div>
+</div>
 <div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo DVR playback controls">
  <div class="tablo-dvr-top">
   <div class="tablo-program">
