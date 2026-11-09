@@ -439,6 +439,7 @@ status();guide(view.plex);
 <option value="300">Up to 5 minutes</option>
 </select>
 <button id="tablopreview" type="button">▶ Play from selected time</button>
+<button id="tablocontinuous" type="button">▶ Continuous timeshift (beta)</button>
 <span class="note">Requires the selected amount of native Tablo buffer history.</span>
 </div>
 <div id="tabloseekcontrols" hidden style="margin:8px 0" role="group" aria-label="Historical Tablo playback controls">
@@ -778,6 +779,44 @@ async function deleteTabloPreview(){
  if(old)try{await fetch("/api/tablo/live/"+encodeURIComponent(old),
     {method:"DELETE",cache:"no-store"})}catch(e){console.warn("Preview cleanup:",e)}
 }
+document.getElementById("tablocontinuous").onclick=async function(){
+ if(!tabloSession)return;
+ const button=this;
+ button.disabled=true;
+ const generation=playerGeneration;
+ const offset=Number(document.getElementById("tablooffset").value);
+ try{
+  // Preserve Tablo's original tuner while replacing only the history child.
+  if(tabloPreviewSession){
+   await deleteTabloPreview();
+   if(generation!==playerGeneration)return;
+  }
+  document.getElementById("tabloseekcontrols").hidden=true;
+  playerMessage("Preparing continuous timeshift from "+Math.round(offset/60)+" minutes ago…");
+  const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
+     "/timeshift?seconds_behind_live="+encodeURIComponent(offset),
+     {method:"POST",cache:"no-store"});
+  if(generation!==playerGeneration){
+   fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),
+     {method:"DELETE"}).catch(()=>{});
+   return;
+  }
+  tabloPreviewSession=info.session_id;
+  document.getElementById("tabloliveback").hidden=false;
+  document.getElementById("tablopreviewstatus").hidden=false;
+  if(!await waitForTabloReady(info.session_id,generation))return;
+  await switchTabloExperimentSource(info.playlist_url,generation,"historical");
+  document.getElementById("tabloseekcontrols").hidden=false;
+  document.getElementById("tablopause").textContent="Pause";
+  document.getElementById("tabloseekrange").textContent=
+   "Continuous timeshift beta · 6-minute rolling seek window; Return to Live for current TV";
+  playerMessage("Continuous timeshift started. Use Pause/Resume and seek controls.");
+ }catch(e){
+  playerMessage("Continuous timeshift failed: "+e.message+
+    " · Return to Live or select the tested finite clip.");
+  document.getElementById("tabloliveback").hidden=false;
+ }finally{button.disabled=false}
+};
 document.getElementById("tablopreview").onclick=async function(){
  if(!tabloSession)return;
  const button=this;button.disabled=true;
@@ -849,8 +888,9 @@ document.getElementById("tablorestartlive").onclick=async function(){
  playerMessage("Reinitializing live Tablo tuner…");
  await launchTabloLive();
 };
-// These controls are intentionally limited to the finite historical test
-// clip. They do not yet provide continuous live-DVR timeshifting.
+// Seek within the HLS player’s currently advertised range. In continuous
+// mode this is the rolling transcoded cache; older points require restarting
+// the timeshift from a selected position in the Tablo-owned source history.
 document.getElementById("tablopause").onclick=function(){
  if(!tabloPreviewSession)return;
  const video=document.getElementById("plexvideo");
