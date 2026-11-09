@@ -493,3 +493,26 @@ Compare both hashes during a fresh short pause (no need to wait 90 seconds)
 before altering resume offsets or rewriting FFmpeg. If the URLs differ but
 their samples match, investigate Tablo's native playlist/segment addressing
 before attempting to calibrate Pause Live against source sequences.
+
+## Fix: native Tablo byte-range segments in historical playback
+
+Confirmed from a live Tablo playlist: 2,658 HLS media entries but only
+9 distinct segment URLs; each entry has an `#EXT-X-BYTERANGE` directive.
+Historically, Universal Guide's continuous and bounded preview manifests
+retained the URLs and durations but discarded the byte-range directives.
+That made multiple source sequence numbers resolve to the **same full TS
+file** and made Pause Live resume from the wrong scene.
+
+Both `_continuous_source_manifest` and `_historic_clip_manifest` now
+preserve per-entry byte ranges. When the native playlist uses an implicit
+offset, it is resolved against the preceding range's end and emitted as
+an explicit `length@offset`, so a trimmed manifest can begin in the
+middle of a shared TS file. HLS version 4 is selected for ranged
+playlists; non-ranged playlists keep the old version and behavior.
+A malformed or unresolvable range fails explicitly.
+
+After updating the Unraid image, first test Pause Live using the
+**Original marker (0s)**, with a recognizable scene and a 90-second pause.
+Then check 10s rewind, 30s forward, and Return to Live. Manual
+continuous timeshift and bounded historical preview also use the fixed
+range handling. Plex playback code was not changed.
