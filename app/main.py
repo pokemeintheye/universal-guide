@@ -873,7 +873,7 @@ def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
 
 @app.get("/api/guide/artwork/cached/{filename}")
 def guide_cached_artwork(filename:str):
-    if not re.fullmatch(r"[a-f0-9]{64}\\.(?:jpg|png|webp)",filename):
+    if not re.fullmatch(r"[a-f0-9]{64}\.(?:jpg|png|webp)",filename):
         raise HTTPException(404,"Artwork not found")
     path=ARTWORK_DIR/filename
     if not path.is_file():
