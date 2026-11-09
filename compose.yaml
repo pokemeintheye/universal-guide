@@ -9,6 +9,7 @@ services:
       PLEX_URL: "${PLEX_URL}"
       PLEX_TOKEN: "${PLEX_TOKEN}"
       PLEX_ALLOWED_LABEL: "${PLEX_ALLOWED_LABEL:-}"
+      PLEX_LABEL_MODE: "${PLEX_LABEL_MODE:-allow}"
       REFRESH_MINUTES: "30"
       GUIDE_XMLTV: /data/guide.xml
       TABLO_URL: "${TABLO_URL:-}"
