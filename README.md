@@ -516,3 +516,17 @@ After updating the Unraid image, first test Pause Live using the
 Then check 10s rewind, 30s forward, and Return to Live. Manual
 continuous timeshift and bounded historical preview also use the fixed
 range handling. Plex playback code was not changed.
+
+## Plex matching: optional article and two-part episode order
+
+Episode matching now accepts a single optional initial **The** on either side
+of an episode title, without changing Plex movie matching or series identity.
+Plex episode titles ending in **(1)** and **(2)** (optionally **(3)**) are
+indexed under their shared base title. If consecutive guide listings on the
+same channel have the same series and subtitle, the first two-part listing
+automatically links to Plex Part 1 and the next links to Plex Part 2.
+The matching remains confined to the same actual series and distinct Plex
+episodes. When scheduling is incomplete, nonconsecutive, or ambiguous, both
+parts remain selectable rather than arbitrarily choosing one. A Plex catalog
+sync is not required to activate matching-rule changes with an existing
+indexed catalog; refresh the guide after deploying the updated image.
