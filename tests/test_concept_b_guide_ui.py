@@ -48,6 +48,12 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('artworkImage.onerror=()=>{artworkImage.hidden=true}',HTML)
         self.assertIn('artworkImage.onload=()=>{if(selectedProgram===program)',HTML)
 
+    def test_program_details_remain_in_viewport(self):
+        self.assertIn('.guide-app{height:100dvh;overflow:hidden}',HTML)
+        self.assertIn('.guide-main{flex:1 1 0;min-height:0;overflow:hidden}',HTML)
+        self.assertIn('.guide-detail{flex:0 0 auto;max-height:33dvh;overflow:auto}',HTML)
+        self.assertIn('if(action)action.focus({preventScroll:true});',HTML)
+
     def test_keyboard_remote_arrow_enter_and_back(self):
         self.assertIn('function remoteFocusNext(direction)',HTML)
         self.assertIn('function remoteGuideFocus()',HTML)
@@ -62,7 +68,9 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('closePlexPlayer();remoteGuideFocus()',HTML)
 
     def test_focus_updates_program_strip_without_opening_modal(self):
-        self.assertIn('el.onclick=()=>showGuidePreview(shownPrograms[index])',HTML)
+        self.assertIn('el.onclick=event=>{',HTML)
+        self.assertIn('showGuidePreview(shownPrograms[index]);',HTML)
+        self.assertIn('if(event.detail===0)',HTML)
         self.assertIn('el.addEventListener("focus",()=>showGuidePreview',HTML)
         self.assertIn('classList.toggle("return-selected"',HTML)
         self.assertIn('if(shownPrograms.length)showGuidePreview(',HTML)
