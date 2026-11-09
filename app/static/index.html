@@ -420,7 +420,7 @@ async function manageChannels(){
 status();guide(view.plex);
 </script>
 <div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
-<div class="player-tools"><strong id="playertitle"></strong><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
+<div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
@@ -519,6 +519,7 @@ async function closePlexPlayer(){
  tabloLivePausedAt=null;
  tabloPauseMarkerPromise=null;
  tabloLastPauseMarker=null;
+ document.getElementById("plexquickdiagnostics").hidden=true;
  document.getElementById("tabloquickdiagnostics").hidden=true;
  document.getElementById("tablodiagnosticspanel").hidden=true;
  document.getElementById("tablolivepausecontrols").hidden=true;
@@ -585,6 +586,7 @@ async function launchPlex(mode){
   document.getElementById("detailsmodal").hidden=true;
   const sid=info.playlist_url.split("/")[3];
   playerSession=sid;
+  document.getElementById("plexquickdiagnostics").hidden=false;
   document.getElementById("playertitle").textContent=info.title+
     (info.offset_seconds>0?" · Join at ~"+Math.floor(info.offset_seconds/60)+"m":"");
   document.getElementById("playerbackdrop").hidden=false;
@@ -1041,6 +1043,38 @@ document.getElementById("tablopreviewstatus").onclick=async function(){
   document.getElementById("tablodiagnosticstext").value=tabloLastDiagnosticsText;
   document.getElementById("tablodiagnosticspanel").hidden=false;}
  finally{button.disabled=false}
+};
+document.getElementById("plexquickdiagnostics").onclick=async function(){
+ const button=this;button.disabled=true;
+ const output=document.getElementById("tablobufferresult");
+ output.hidden=false;
+ output.textContent="Collecting Plex diagnostics…";
+ try{
+  const status=playerSession?
+    await req("/api/player/"+encodeURIComponent(playerSession)+"/diagnostics"):
+    {error:"No active Plex playback session"};
+  const video=document.getElementById("plexvideo");
+  const details=JSON.stringify({
+    plex_session:status,
+    browser_video:{
+      current_time:Number.isFinite(video.currentTime)?Number(video.currentTime.toFixed(2)):null,
+      ready_state:video.readyState,paused:video.paused,
+      error_code:video.error?.code||null,
+      error_message:video.error?.message||null,
+      has_hls_js:!!playerHls,
+      supports_native_hls:!!video.canPlayType("application/vnd.apple.mpegurl")
+    },
+    hls_error:hlsLastError||null
+  },null,2);
+  document.getElementById("tablodiagnosticstext").value=details;
+  document.getElementById("tablodiagnosticspanel").hidden=false;
+  output.textContent="Plex diagnostics ready. Select Copy diagnostics.";
+ }catch(e){
+  const message="Plex diagnostics request failed: "+e.message;
+  output.textContent=message;
+  document.getElementById("tablodiagnosticstext").value=message;
+  document.getElementById("tablodiagnosticspanel").hidden=false;
+ }finally{button.disabled=false}
 };
 document.getElementById("tabloquickdiagnostics").onclick=()=>{
  document.getElementById("tablopreviewstatus").click();
