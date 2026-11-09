@@ -44,9 +44,11 @@ class ConceptBGuideUiTests(unittest.TestCase):
 
     def test_selected_plex_program_artwork_is_token_isolated(self):
         self.assertIn('id="guideartimage"',HTML)
-        self.assertIn('artworkImage.src="/api/guide/art/"',HTML)
-        self.assertIn('artworkImage.onerror=()=>{artworkImage.hidden=true}',HTML)
-        self.assertIn('artworkImage.onload=()=>{if(selectedProgram===program)',HTML)
+        self.assertIn('local.src="/api/guide/art/"',HTML)
+        self.assertIn('local.onerror=()=>{if(valid())external()}',HTML)
+        self.assertIn('artworkImage.src=result.image_url',HTML)
+        self.assertIn('id="guideartcredit"',HTML)
+        self.assertIn('requestId===guideArtworkRequestId',HTML)
 
     def test_program_details_remain_in_viewport(self):
         self.assertIn('.guide-app{height:100dvh;overflow:hidden}',HTML)
