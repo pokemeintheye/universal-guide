@@ -585,6 +585,38 @@ def match(p,index):
         if parts:return parts
     return None
 
+def assign_scheduled_episode_parts(programs):
+    """Resolve two-part Plex episodes by adjacent EPG airing order.
+
+    Do not assign a part from a single isolated listing or a repeated airing
+    with an intervening program. The fallback multiple-parts selector remains.
+    """
+    for i in range(len(programs)-1):
+        first,second=programs[i],programs[i+1]
+        a,b=first.get("plex"),second.get("plex")
+        if not a or not b or len(a.get("parts",[]))!=2 or len(b.get("parts",[]))!=2:
+            continue
+        if ([p["rating_key"] for p in a["parts"]]!=
+            [p["rating_key"] for p in b["parts"]]):
+            continue
+        if (norm(first.get("title"))!=norm(second.get("title")) or
+            episode_title_alias(first.get("subtitle"))!=episode_title_alias(second.get("subtitle"))):
+            continue
+        try:
+            end=datetime.fromisoformat(str(first["stop"]).replace("Z","+00:00"))
+            start=datetime.fromisoformat(str(second["start"]).replace("Z","+00:00"))
+            if end.tzinfo is None or start.tzinfo is None:continue
+            gap=(start-end).total_seconds()
+        except (ValueError,TypeError,KeyError):
+            continue
+        # Genuine two-parters generally occupy consecutive scheduled slots.
+        if not 0<=gap<=120:continue
+        # Each source has been sorted by channel then start before grouping.
+        for row,part in ((first,a["parts"][0]),(second,b["parts"][1])):
+            row["plex"]=dict(part)
+            row["plex"]["scheduled_part"]=1 if row is first else 2
+
+
 @app.get("/static/manifest.webmanifest")
 def iphone_manifest():
     return FileResponse(Path(__file__).parent/"static"/"manifest.webmanifest",
@@ -817,6 +849,8 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
             channel["number"]=info.get("number") or entry["channel_label"]
             channel["network"]=info.get("network") or info.get("callsign") or ""
         channel["programs"].append(entry)
+    for channel in channels.values():
+        assign_scheduled_episode_parts(channel["programs"])
     # A public Philo channel link does not imply the EPG has listings.
     # Keep known channels discoverable without inventing broadcast schedules.
     if source in ("all","philo") and not plex_only:
