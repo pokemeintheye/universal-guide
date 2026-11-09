@@ -1256,7 +1256,7 @@ document.getElementById("tablodvrclose").onclick=closePlexPlayer;
 document.addEventListener("keydown",e=>{
  if(e.key==="Escape"&&!document.getElementById("playerbackdrop").hidden)closePlexPlayer();
 });
-async function launchPlex(mode){
+async function launchPlex(mode,options=null){
  if(!selectedProgram?.entry?.plex?.rating_key)return;
  const program=selectedProgram.entry;
  const beginning=document.getElementById("playbegin"),join=document.getElementById("playjoin");
@@ -1267,7 +1267,14 @@ async function launchPlex(mode){
   const generation=++playerGeneration;
   const selected=selectedPlexEpisode(program);
   const split=Array.isArray(program.plex.parts)&&program.plex.parts.length>1;
-  const payload={rating_key:Number(selected.rating_key),mode:split?"beginning":mode,
+  const selectedKey=Number(selected.rating_key);
+  if(mode!=="resume"&&plexActiveRatingKey!==selectedKey){
+   plexSelectedAudio=null;plexSelectedSubtitle=null;
+  }
+  const payload={rating_key:selectedKey,mode:mode==="resume"?"resume":split?"beginning":mode,
+    offset_seconds:mode==="resume"?Math.max(0,Number(options?.position)||0):null,
+    audio_stream_id:mode==="resume"?options?.audio_stream_id??null:null,
+    subtitle_stream_id:mode==="resume"?options?.subtitle_stream_id??null:null,
     airing_start:split?null:program.start,airing_end:split?null:program.stop};
   const info=await req("/api/player/start",{
     method:"POST",headers:{"Content-Type":"application/json"},
@@ -1281,7 +1288,10 @@ async function launchPlex(mode){
   document.getElementById("detailsmodal").hidden=true;
   const sid=info.playlist_url.split("/")[3];
   playerSession=sid;
-  document.getElementById("plexquickdiagnostics").hidden=false;
+  plexActiveRatingKey=selectedKey;
+  plexPlayerBaseOffset=Number(info.offset_seconds)||0;
+  document.getElementById("plexquickdiagnostics").hidden=(!tabloDebugEnabled);
+  configurePlexOverlay(info,generation);
   document.getElementById("playertitle").textContent=info.title+
     (info.offset_seconds>0?" · Join at ~"+Math.floor(info.offset_seconds/60)+"m":"");
   document.getElementById("playerbackdrop").hidden=false;
