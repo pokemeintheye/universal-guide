@@ -466,11 +466,12 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
             remaining-=durations[index]
             index-=1
         start_sequence=base_sequence+index+1
-    first=max(0,start_sequence-base_sequence)
-    if first>=len(urls):
-        raise HTTPException(409,"Timeshift position is no longer in the Tablo buffer")
-    # Keep source input playlist relatively small as time progresses.
-    first=max(first,len(urls)-2400)
+    first=start_sequence-base_sequence
+    if first<0 or first>=len(urls):
+        raise HTTPException(409,"Requested pause position is no longer in the Tablo buffer")
+    # Avoid silently skipping requested history for extremely long playlists.
+    if len(urls)-first>2400:
+        raise HTTPException(409,"Requested timeshift window exceeds the current safety cap")
     chosen=list(zip(urls[first:],durations[first:]))
     output=["#EXTM3U","#EXT-X-VERSION:3",
             "#EXT-X-TARGETDURATION:"+str(max(1,__import__("math").ceil(max(d for _,d in chosen)))),
@@ -481,6 +482,54 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
         "last_sequence":base_sequence+len(urls)-1,
         "available_seconds":round(sum(durations),1),
         "source_segments":len(chosen)}
+
+
+def _pause_source_sequence(body,overlap_seconds=18):
+    """Identify a native Tablo segment near the current playback point.
+
+    This is captured at the instant Pause is pressed, not reconstructed
+    from the duration of the pause. A short overlap covers live-HLS latency.
+    """
+    summary=_summarize_source_playlist(body)
+    base=summary["media_sequence"]
+    durations=[]
+    for line in body.splitlines():
+        if line.startswith("#EXTINF:"):
+            try:durations.append(float(line[8:].split(",",1)[0]))
+            except ValueError:raise HTTPException(502,"Invalid Tablo segment duration")
+    if base is None or not durations or min(durations)<=0:
+        raise HTTPException(502,"Tablo pause point needs a sequenced media playlist")
+    if sum(durations)<overlap_seconds+5:
+        raise HTTPException(409,"Not enough native Tablo history to capture a pause point")
+    age=0.0
+    index=len(durations)-1
+    while index>0 and age<overlap_seconds:
+        age+=durations[index]
+        index-=1
+    return base+index,round(age,1)
+
+
+@router.post("/{sid}/pause-point")
+def capture_pause_point(sid:str):
+    """Remember the Tablo native media sequence when user presses Pause Live."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    _cleanup()
+    with LOCK:
+        parent=ACTIVE.get(sid)
+        if not parent or parent.get("parent") or parent["process"].poll() is not None:
+            raise HTTPException(404,"Original Tablo live session is unavailable")
+        parent["last"]=time.monotonic()
+        origin,source=parent["origin"],parent["source_playlist"]
+    media_url,body,_=_source_media_playlist(origin,source)
+    sequence,overlap=_pause_source_sequence(body)
+    with LOCK:
+        if ACTIVE.get(sid) is not parent:
+            raise HTTPException(409,"Tablo stream closed before pause marker was stored")
+        parent["pause_marker"]={"sequence":sequence,"captured":time.monotonic(),
+                                "media_url":media_url,"overlap":overlap}
+    return {"captured":True,"source_sequence":sequence,
+            "seconds_behind_source_live":overlap}
 
 
 def _follow_tablo_source(sid,stop_event):
@@ -520,7 +569,7 @@ def _follow_tablo_source(sid,stop_event):
 
 
 @router.post("/{sid}/timeshift")
-def continuous_timeshift(sid:str,seconds_behind_live:int=120):
+def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=False):
     """Beta: rolling live HLS output from Tablo's growing native playlist."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
         raise HTTPException(404,"Invalid session")
@@ -535,9 +584,20 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120):
             raise HTTPException(409,"A Tablo history session is already running")
         parent["last"]=time.monotonic()
         origin,source=parent["origin"],parent["source_playlist"]
+        marker=parent.get("pause_marker") if resume_paused else None
+        if resume_paused and not marker:
+            raise HTTPException(409,"No pause position was captured; start a new Pause Live test")
+        if resume_paused and time.monotonic()-marker["captured"]>1800:
+            raise HTTPException(409,"Pause position is older than the supported 30-minute window")
     media_url,body,_=_source_media_playlist(origin,source)
-    manifest,info=_continuous_source_manifest(
-        origin,media_url,body,seconds_behind_live=seconds_behind_live)
+    if resume_paused:
+        if media_url!=marker["media_url"]:
+            raise HTTPException(409,"Tablo media playlist changed after pausing")
+        manifest,info=_continuous_source_manifest(
+            origin,media_url,body,start_sequence=marker["sequence"])
+    else:
+        manifest,info=_continuous_source_manifest(
+            origin,media_url,body,seconds_behind_live=seconds_behind_live)
     child_id=secrets.token_urlsafe(20)
     directory=STORE/child_id
     directory.mkdir(mode=0o700,parents=True,exist_ok=False)
@@ -586,7 +646,9 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120):
     return {"session_id":child_id,
             "playlist_url":"/api/tablo/live/"+child_id+"/index.m3u8",
             "experiment":"continuous_timeshift_beta",
-            "start_seconds_behind_live":seconds_behind_live,
+            "start_seconds_behind_live":seconds_behind_live if not resume_paused else None,
+            "resumed_from_pause_marker":bool(resume_paused),
+            "pause_marker_age_seconds":round(time.monotonic()-marker["captured"],1) if resume_paused else None,
             "source_start_sequence":info["start_sequence"],
             "note":"Rolling HLS output starts from selected Tablo historical segment."}
 
