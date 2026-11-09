@@ -615,7 +615,7 @@ older content outside the local rolling buffer.
 ### DVR behavior and limitations
 
 Pause leaves the media playhead in place while FFmpeg keeps recording.
-Rewind 30s, Forward 30s, and the timeline move the playhead inside the
+Rewind 20s, Forward 30s, and the timeline move the playhead inside the
 browser's currently seekable range. Jump to Live seeks to about 3s before
 the **latest available disk HLS edge** and resumes playback in place.
 That does **not** guarantee a 3-second delay from the original OTA
@@ -631,7 +631,7 @@ Advanced tests and diagnostic buttons are still accessible under
 ### Suggested first iPhone test
 
 Watch an OTA channel for a few minutes so the cache fills. Pause for
-90 seconds and resume on the same scene; rewind 30 seconds, forward
+90 seconds and resume on the same scene; rewind 20 seconds, forward
 30 seconds, drag the seekbar in both directions, then Jump to Live.
 Check whether any action causes a tuner reset or an extended buffering
 delay. Open **Copy Tablo diagnostics** if anything behaves unexpectedly.
