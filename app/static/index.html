@@ -433,6 +433,11 @@ status();guide(view.plex);
 <option value="900">15 minutes behind</option>
 <option value="1200">20 minutes behind</option>
 </select>
+<label for="tablocliplength">Preview length</label>
+<select id="tablocliplength" aria-label="Historical playback duration">
+<option value="75">75 seconds (previous test)</option>
+<option value="300">Up to 5 minutes</option>
+</select>
 <button id="tablopreview" type="button">▶ Play from selected time</button>
 <span class="note">Requires the selected amount of native Tablo buffer history.</span>
 </div>
@@ -455,6 +460,7 @@ let tabloSession=null;
 let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
 let tabloHistoricalClipSeconds=0;
+let tabloHeartbeat=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -486,6 +492,7 @@ async function closePlexPlayer(){
  ++playerGeneration;
  hlsLastError=null;
  clearPlayerWatchdog();
+ if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  const video=document.getElementById("plexvideo");
  video.pause();
  if(playerHls){playerHls.destroy();playerHls=null}
@@ -668,6 +675,15 @@ async function launchTabloLive(){
   }
   tabloSession=info.session_id;
   tabloLivePlaylist=info.playlist_url;
+  // Keep the original tuner session active while a viewer watches/pauses
+  // a historical clip. Safari may suspend timers when fully backgrounded.
+  if(tabloHeartbeat)clearInterval(tabloHeartbeat);
+  tabloHeartbeat=setInterval(()=>{
+   const current=tabloSession;
+   if(!current||generation!==playerGeneration)return;
+   fetch("/api/tablo/live/"+encodeURIComponent(current)+"/status",
+     {cache:"no-store"}).catch(()=>{});
+  },30000);
   document.getElementById("tablooffsetcontrols").hidden=false;
   document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablopreviewstatus").hidden=true;
@@ -767,12 +783,13 @@ document.getElementById("tablopreview").onclick=async function(){
  const button=this;button.disabled=true;
  const generation=playerGeneration;
  const offset=Number(document.getElementById("tablooffset").value);
+ const duration=Number(document.getElementById("tablocliplength").value);
  try{
   if(tabloPreviewSession){await deleteTabloPreview();if(generation!==playerGeneration)return;}
   document.getElementById("tabloseekcontrols").hidden=true;
   playerMessage("Preparing a historical clip from Tablo's own buffer…");
   const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
-     "/preview?seconds_behind_live="+encodeURIComponent(offset),{method:"POST",cache:"no-store"});
+     "/preview?seconds_behind_live="+encodeURIComponent(offset)+"&clip_seconds="+encodeURIComponent(duration),{method:"POST",cache:"no-store"});
   if(generation!==playerGeneration){
    fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),{method:"DELETE"}).catch(()=>{});
    return;
@@ -786,7 +803,7 @@ document.getElementById("tablopreview").onclick=async function(){
   document.getElementById("tabloseekcontrols").hidden=false;
   document.getElementById("tablopause").textContent="Pause";
   document.getElementById("tabloseekrange").textContent=
-    "Experimental clip: "+Math.round(info.clip_duration_seconds)+" seconds; controls seek within this clip";
+    "Native-buffer test · "+Math.round(info.clip_duration_seconds)+" seconds maximum; playback ends at clip boundary";
   playerMessage("Historical test clip prepared · about "+Math.round(info.start_seconds_behind_live)+
      " seconds behind live. Press Play if needed.");
  }catch(e){
