@@ -377,6 +377,27 @@ def _media_segment_urls(origin,playlist,body):
     return urls
 
 
+def _native_segment_layout(origin,media_url,body,sequence=None):
+    """Report repeated segment URLs and byte-range usage without exposing URLs."""
+    urls=_media_segment_urls(origin,media_url,body)
+    base=_summarize_source_playlist(body)["media_sequence"]
+    ranges=sum(line.strip().startswith("#EXT-X-BYTERANGE:") for line in body.splitlines())
+    maps=sum(line.strip().startswith("#EXT-X-MAP:") for line in body.splitlines())
+    distinct=len(set(urls))
+    out={"entries":len(urls),"unique_segment_urls":distinct,
+         "repeated_url_entries":len(urls)-distinct,
+         "byte_range_tags":ranges,"map_tags":maps,
+         "has_byte_ranges":bool(ranges),"has_repeated_urls":distinct<len(urls)}
+    if sequence is not None and base is not None:
+        i=sequence-base
+        if 0<=i<len(urls):
+            matching=[j for j,u in enumerate(urls) if u==urls[i]]
+            out["selected_segment_sequence"]=sequence
+            out["selected_url_occurrences"]=len(matching)
+            out["selected_url_first_sequence"]=base+matching[0]
+            out["selected_url_last_sequence"]=base+matching[-1]
+    return out
+
 def _probe_source_segment(url):
     """Read <=64 KiB of one segment for existence and MPEG-TS header checks."""
     try:
@@ -658,7 +679,8 @@ def capture_pause_point(sid:str):
             "pause_source_pts":source_pts,
             "source_edge_pts":source_edge_pts,
             "native_entry_urls_distinct":native_entry_urls_distinct,
-            "native_segment_samples_match":native_samples_match}
+            "native_segment_samples_match":native_samples_match,
+            "native_segment_layout":_native_segment_layout(origin,media_url,body,sequence)}
 
 
 def _follow_tablo_source(sid,stop_event):
@@ -932,7 +954,9 @@ def source_diagnostics(sid:str):
             "media_sequence_advanced":b-a if a is not None and b is not None else None,
             "previous_window_seconds":previous["window_seconds"]
         }
-    return {"session_id":sid,"source":"tablo_origin","playlist":summary,
+    media_url,media_body,_=_source_media_playlist(origin,playlist)
+    native_layout=_native_segment_layout(origin,media_url,media_body)
+    return {"session_id":sid,"source":"tablo_origin","native_segment_layout":native_layout,"playlist":summary,
             "observation":current,"previous_observation":comparison,
             "limitations":"Playlist metadata only. This does not establish whether historical segments can be requested or decoded."}
 
