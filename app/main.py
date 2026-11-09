@@ -765,39 +765,120 @@ def refresh_tablo():
     try:return sync_tablo()
     except Exception as e:raise HTTPException(502,detail=str(e))
 
+# Show-level artwork is prefetched by the guide-refresh worker and stored
+# persistently under /data. Opening a program never calls TVmaze.
+ARTWORK_DIR=Path("/data/artwork")
+ARTWORK_BATCH=max(1,min(30,int(os.getenv("ARTWORK_BATCH_SIZE","12"))))
+artwork_refresh_lock=threading.Lock()
+
+def artwork_key(title):
+    from app.artwork import normalize_title
+    return json.dumps([normalize_title(title),None,None],separators=(",",":"))
+
+def refresh_show_artwork():
+    """Preload a small, bounded group of unique upcoming TV shows per cycle."""
+    from app.artwork import find_tvmaze_artwork,safe_image_url
+    import hashlib
+    if not artwork_refresh_lock.acquire(blocking=False):
+        return
+    try:
+        now=time.time()
+        deadline=datetime.fromtimestamp(now,timezone.utc).isoformat()
+        until=datetime.fromtimestamp(now+48*3600,timezone.utc).isoformat()
+        # A single show, not every episode, consumes one lookup and one image.
+        with db() as c:
+            titles=c.execute("""
+                SELECT DISTINCT title FROM (
+                    SELECT title,stop,program_kind FROM listings
+                    UNION ALL SELECT title,stop,program_kind FROM tablo_listings
+                    UNION ALL SELECT title,stop,program_kind FROM philo_listings
+                )
+                WHERE stop>? AND stop<? AND title IS NOT NULL AND length(title) BETWEEN 2 AND 120
+                  AND coalesce(program_kind,'unknown') != 'movie'
+                ORDER BY title
+            """,(deadline,until)).fetchall()
+            cached={row["cache_key"]:row for row in c.execute(
+                "SELECT cache_key,image_url,checked_at FROM guide_artwork_cache")}
+        processed=0
+        for item in titles:
+            title=item["title"]
+            key=artwork_key(title)
+            previous=cached.get(key)
+            if previous and now-float(previous["checked_at"]) < (
+                30*86400 if previous["image_url"] else 86400
+            ):
+                # Old URL-only cache entries must be replaced by local files.
+                if not previous["image_url"] or str(previous["image_url"]).startswith("/api/guide/artwork/cached/"):
+                    continue
+            if processed>=ARTWORK_BATCH:
+                break
+            processed+=1
+            image_url=None
+            credit_url=None
+            try:
+                result=find_tvmaze_artwork(title) # Series art only; no episode lookup.
+                if result and safe_image_url(result.get("image_url")):
+                    remote=result["image_url"]
+                    response=requests.get(remote,timeout=(3,8),stream=True,allow_redirects=False)
+                    try:
+                        response.raise_for_status()
+                        kind=response.headers.get("Content-Type","").split(";",1)[0].lower()
+                        if kind in ("image/jpeg","image/png","image/webp"):
+                            body=bytearray()
+                            for chunk in response.iter_content(65536):
+                                body.extend(chunk)
+                                if len(body)>2_000_000:
+                                    raise ValueError("Artwork exceeds size limit")
+                            if body:
+                                name=hashlib.sha256(key.encode("utf-8")).hexdigest()
+                                ext={"image/jpeg":".jpg","image/png":".png","image/webp":".webp"}[kind]
+                                ARTWORK_DIR.mkdir(parents=True,exist_ok=True)
+                                temp=ARTWORK_DIR/(name+ext+".tmp")
+                                temp.write_bytes(body)
+                                temp.replace(ARTWORK_DIR/(name+ext))
+                                image_url="/api/guide/artwork/cached/"+name+ext
+                                credit_url=result.get("credit_url")
+                    finally:
+                        response.close()
+            except (requests.RequestException,ValueError,RuntimeError,OSError):
+                # Network/rate-limit failures get another chance next cycle.
+                continue
+            with db() as c:
+                c.execute("INSERT OR REPLACE INTO guide_artwork_cache "
+                    "(cache_key,image_url,credit_url,checked_at) VALUES (?,?,?,?)",
+                    (key,image_url,credit_url,time.time()))
+            # Space provider requests out to reduce throttling.
+            time.sleep(0.5)
+    finally:
+        artwork_refresh_lock.release()
+
 @app.get("/api/guide/artwork")
 def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
                            season:int|None=Query(None,ge=0,le=100),
                            episode:int|None=Query(None,ge=1,le=999)):
-    """Cached show/episode stills when the selected program has no Plex artwork.
-
-    Only lookup non-sensitive public TV schedule titles. Negative results are
-    cached as well; rate-limit/network failures are not cached.
-    """
-    from app.artwork import find_tvmaze_artwork,normalize_title
-    cache_key=json.dumps([normalize_title(title),season,episode],separators=(",",":"))
-    now=time.time()
-    with db() as connection:
-        row=connection.execute(
-            "SELECT image_url,credit_url,checked_at FROM guide_artwork_cache WHERE cache_key=?",
-            (cache_key,)).fetchone()
-    if row and now-float(row["checked_at"]) < (30*86400 if row["image_url"] else 86400):
-        return {"image_url":row["image_url"],"credit_url":row["credit_url"],
-                "source":"TVmaze" if row["image_url"] else None}
-    try:
-        result=find_tvmaze_artwork(title,season,episode)
-    except (requests.RequestException,ValueError,RuntimeError):
-        # Temporary lookup errors should never interrupt guide navigation.
+    """Read already-prefetched series art; never download on selection."""
+    key=artwork_key(title)
+    with db() as c:
+        row=c.execute("SELECT image_url,credit_url FROM guide_artwork_cache WHERE cache_key=?",
+                      (key,)).fetchone()
+    if not row:
         return {"image_url":None,"credit_url":None,"source":None}
-    image_url=result["image_url"] if result else None
-    credit_url=result["credit_url"] if result else None
-    with db() as connection:
-        connection.execute(
-            "INSERT OR REPLACE INTO guide_artwork_cache(cache_key,image_url,credit_url,checked_at) "
-            "VALUES(?,?,?,?)",(cache_key,image_url,credit_url,now))
-    return {"image_url":image_url,"credit_url":credit_url,
-            "source":"TVmaze" if image_url else None}
+    url=row["image_url"]
+    if url and not str(url).startswith("/api/guide/artwork/cached/"):
+        url=None
+    if url and not (ARTWORK_DIR/url.rsplit("/",1)[-1]).is_file():
+        url=None
+    return {"image_url":url,"credit_url":row["credit_url"] if url else None,
+            "source":"TVmaze" if url else None}
 
+@app.get("/api/guide/artwork/cached/{filename}")
+def guide_cached_artwork(filename:str):
+    if not re.fullmatch(r"[a-f0-9]{64}\\.(?:jpg|png|webp)",filename):
+        raise HTTPException(404,"Artwork not found")
+    path=ARTWORK_DIR/filename
+    if not path.is_file():
+        raise HTTPException(404,"Artwork not found")
+    return FileResponse(path,headers={"Cache-Control":"private, max-age=86400"})
 
 @app.get("/api/guide/art/{rating_key}")
 def guide_plex_art(rating_key:int):
@@ -1066,6 +1147,8 @@ def start_background_refresh():
                 if not last or time.time()-datetime.fromisoformat(last).timestamp()>PHILO_REFRESH:
                     with db() as c:putmeta(c,"last_philo_attempt",datetime.now(timezone.utc).isoformat())
                     sync_philo()
+            except Exception:pass
+            try:refresh_show_artwork()
             except Exception:pass
             time.sleep(60)
     threading.Thread(target=worker,daemon=True).start()
