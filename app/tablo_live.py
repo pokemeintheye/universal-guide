@@ -221,6 +221,7 @@ def _health(item,probe=False):
         result["follow_error"]=item.get("follow_error","")
         result["source_start_sequence"]=item.get("start_sequence")
         result["from_pause_marker"]=item.get("from_pause_marker",False)
+        result["resume_adjust_seconds"]=item.get("resume_adjust_seconds",0)
         result["initial_source_position"]=item.get("initial_source_position",{})
     if probe:
         result["segment_probe"]=_probe_segment(directory)
@@ -498,6 +499,38 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
         "source_segments":len(chosen)}
 
 
+def _advance_source_sequence(body,source_sequence,seconds):
+    """Move a pause marker forward by HLS EXTINF durations, never beyond live."""
+    if not isinstance(seconds,int) or seconds<0 or seconds>120:
+        raise HTTPException(400,"Resume adjustment must be 0 to 120 seconds")
+    if seconds==0:
+        return source_sequence,0.0
+    summary=_summarize_source_playlist(body)
+    first=summary["media_sequence"]
+    if first is None:
+        raise HTTPException(502,"Tablo playlist is missing a media sequence")
+    durations=[]
+    for line in body.splitlines():
+        if line.startswith("#EXTINF:"):
+            try:durations.append(float(line[8:].split(",",1)[0]))
+            except ValueError:raise HTTPException(502,"Invalid Tablo segment duration")
+    if not durations or min(durations)<=0:
+        raise HTTPException(502,"Tablo playlist has invalid segment durations")
+    index=source_sequence-first
+    if index<0 or index>=len(durations):
+        raise HTTPException(409,"Captured pause segment is no longer available")
+    # Require a 10-second safety gap from source live; do not jump to live
+    # merely because the chosen adjustment exceeds available history.
+    latest=max(0,len(durations)-11)
+    elapsed=0.0
+    while index<latest and elapsed<seconds:
+        elapsed+=durations[index]
+        index+=1
+    if elapsed+0.01<seconds:
+        raise HTTPException(409,"Not enough Tablo history has accumulated for this resume adjustment")
+    return first+index,round(elapsed,1)
+
+
 def _pause_source_sequence(body,overlap_seconds=18):
     """Identify a native Tablo segment near the current playback point.
 
@@ -592,7 +625,7 @@ def _follow_tablo_source(sid,stop_event):
 
 
 @router.post("/{sid}/timeshift")
-def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=False):
+def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=False,resume_adjust_seconds:int=0):
     """Beta: rolling live HLS output from Tablo's growing native playlist."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
         raise HTTPException(404,"Invalid session")
@@ -616,9 +649,14 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
     if resume_paused:
         if media_url!=marker["media_url"]:
             raise HTTPException(409,"Tablo media playlist changed after pausing")
+        adjusted_sequence,actual_adjust=_advance_source_sequence(
+            body,marker["sequence"],resume_adjust_seconds)
         manifest,info=_continuous_source_manifest(
-            origin,media_url,body,start_sequence=marker["sequence"])
+            origin,media_url,body,start_sequence=adjusted_sequence)
     else:
+        if resume_adjust_seconds:
+            raise HTTPException(400,"Resume adjustment requires a saved Pause Live marker")
+        actual_adjust=0.0
         manifest,info=_continuous_source_manifest(
             origin,media_url,body,seconds_behind_live=seconds_behind_live)
     child_id=secrets.token_urlsafe(20)
@@ -663,6 +701,7 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
                           "start_sequence":info["start_sequence"],
                           "source_follow":info,"follow_error":"",
                           "from_pause_marker":bool(resume_paused),
+                          "resume_adjust_seconds":actual_adjust,
                           "initial_source_position":info,
                           "follower_stop":stop_event,"mode":"continuous_timeshift"}
     thread=threading.Thread(target=_follow_tablo_source,
@@ -673,6 +712,7 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
             "experiment":"continuous_timeshift_beta",
             "start_seconds_behind_live":seconds_behind_live if not resume_paused else None,
             "resumed_from_pause_marker":bool(resume_paused),
+            "resume_adjust_seconds":actual_adjust,
             "pause_marker_age_seconds":round(time.monotonic()-marker["captured"],1) if resume_paused else None,
             "source_start_sequence":info["start_sequence"],
             "note":"Rolling HLS output starts from selected Tablo historical segment."}
