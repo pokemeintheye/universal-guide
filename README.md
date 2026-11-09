@@ -14,6 +14,7 @@ Unified TV guide prototype for Plex, local OTA listings and Philo schedules, now
 6. Add environment variables:
    - `PLEX_URL`: `http://YOUR-UNRAID-IP:32400` (if Plex uses host networking).
    - `PLEX_TOKEN`: your Plex API token (secret; **never commit it**).
+   - `PLEX_ALLOWED_LABEL`: optional exact Plex sharing label; leave empty to index all Plex media (e.g. `Family Approved`).
    - `REFRESH_MINUTES`: `30`
    - `GUIDE_XMLTV`: `/data/guide.xml`
    - `TABLO_URL`: `http://YOUR-TABLO-IP:8885` (legacy network Tablo)
@@ -530,3 +531,29 @@ episodes. When scheduling is incomplete, nonconsecutive, or ambiguous, both
 parts remain selectable rather than arbitrarily choosing one. A Plex catalog
 sync is not required to activate matching-rule changes with an existing
 indexed catalog; refresh the guide after deploying the updated image.
+
+## Optional Plex label filter for shared viewing
+
+Set `PLEX_ALLOWED_LABEL` in Unraid Docker container settings to the exact
+**Plex Label** used for sharing, for example `Family Approved`.
+This is an **allow-list**: only movies carrying the label and episodes
+of shows carrying the label are indexed, searched, offered as available,
+and eligible for playback. Labels are compared case-insensitively.
+Apply labels to the **show** for TV episodes; this version does not
+independently allow episodes from an otherwise unlabelled show.
+
+Leaving the variable blank preserves existing behavior. When its value
+changes, restarting the container clears the old Plex metadata catalog
+before the new filtered sync. The filtered sync may take longer because
+Plex sometimes omits Label elements from library listing responses;
+in that case we request details for each movie/show.
+
+After updating the image and setting the variable, run **Refresh Plex
+catalog**. Confirm an allowed title appears and an unlabelled title
+does not. Plex label edits take effect after another sync.
+
+**Security:** This is not Plex user authorization. Universal Guide
+currently has no per-user authentication and its backend uses a Plex
+token with access to the configured library. Keep it on a trusted LAN,
+do not expose it to untrusted users or the internet, and maintain
+Plex shared-user permissions separately.
