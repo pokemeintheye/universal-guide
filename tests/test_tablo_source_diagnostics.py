@@ -80,6 +80,22 @@ seg_501.ts
             self.assertEqual(result["segment_duration_seconds"],6.1)
             self.assertEqual(result["streams"][0]["codec_name"],"h264")
 
+    def test_native_segment_layout_detects_reused_urls_and_byte_ranges(self):
+        body=("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:50\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188@0\nsame.ts\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188@188\nsame.ts\n"
+              "#EXTINF:1.000,\nother.ts\n")
+        result=tablo_live._native_segment_layout(
+            "http://192.168.1.9:8885",
+            "http://192.168.1.9/stream/abc/index.m3u8",
+            body,51)
+        self.assertEqual(result["entries"],3)
+        self.assertEqual(result["unique_segment_urls"],2)
+        self.assertEqual(result["byte_range_tags"],2)
+        self.assertEqual(result["selected_url_occurrences"],2)
+        self.assertEqual(result["selected_url_first_sequence"],50)
+        self.assertEqual(result["selected_url_last_sequence"],51)
+
     def test_source_pts_uses_selected_native_sequence(self):
         body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n"+"".join(
             "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(20))
