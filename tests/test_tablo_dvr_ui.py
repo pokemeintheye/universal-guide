@@ -58,6 +58,14 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn("hls_js_latency:",HTML)
         self.assertIn('["waiting","stalled","playing"]',HTML)
 
+    def test_forward_and_jump_live_never_flicker_disabled(self):
+        self.assertIn('forward.disabled=false;',HTML)
+        self.assertIn('live.disabled=false;',HTML)
+        self.assertNotIn('id="tablodvrforward" type="button" disabled',HTML)
+        self.assertNotIn('id="tablodvrlive" type="button" disabled',HTML)
+        self.assertIn('if(video.currentTime>=safeEnd-0.5)return;',HTML)
+        self.assertIn('if(!video.paused&&video.currentTime>=safeEnd-0.5)return;',HTML)
+
     def test_original_historical_fallback_remains_available(self):
         self.assertIn('id="tablopauseadjust"',HTML)
         self.assertIn('id="tablocontinuous"',HTML)
