@@ -708,6 +708,9 @@ let tabloLastPauseMarker=null;
 let tabloLastDiagnosticsText="";
 let tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,last_wait_started:null,last_wait_position:null,events:[]};
 let tabloDvrClock=null,tabloDvrSourceStart=null,tabloDvrDragging=false;
+// Separate enter/exit thresholds prevent the moving HLS edge from making LIVE flicker.
+const TABLO_LIVE_ENTER_SECONDS=7,TABLO_LIVE_EXIT_SECONDS=15;
+let tabloLiveIndicator=false;
 let tabloSchedule=null,tabloScheduleLastFetch=0,tabloScheduleLoading=false;
 let tabloChannelId=null,tabloOverlayFallbackProgram=null;
 let tabloOverlayTimer=null;
@@ -912,6 +915,7 @@ async function closePlexPlayer(){
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  if(tabloDvrClock){clearInterval(tabloDvrClock);tabloDvrClock=null;}
  tabloDvrSourceStart=null;tabloDvrDragging=false;
+ tabloLiveIndicator=false;
  tabloSchedule=null;tabloScheduleLastFetch=0;tabloScheduleLoading=false;
  tabloChannelId=null;tabloOverlayFallbackProgram=null;
  setTabloLoading(false);
@@ -1656,6 +1660,16 @@ function tabloDvrSeekTo(target,video=document.getElementById("plexvideo")){
  try{video.currentTime=Math.max(window.lo,Math.min(safeEnd,target));return true}
  catch(error){playerMessage("DVR seek unavailable: "+error.message);return false}
 }
+function tabloDvrLiveIndicator(behind,playing,historical){
+ if(historical||!playing){tabloLiveIndicator=false;return false}
+ if(!Number.isFinite(behind))return tabloLiveIndicator;
+ if(tabloLiveIndicator){
+  if(behind>=TABLO_LIVE_EXIT_SECONDS)tabloLiveIndicator=false;
+ }else if(behind<=TABLO_LIVE_ENTER_SECONDS){
+  tabloLiveIndicator=true;
+ }
+ return tabloLiveIndicator;
+}
 function updateTabloDvrUi(){
  const bar=document.getElementById("tablodvr");
  if(bar.hidden||!tabloSession)return;
@@ -1679,7 +1693,7 @@ function updateTabloDvrUi(){
  // Keep these controls visually stable as the seekable live edge moves.
  forward.disabled=false;
  live.disabled=false;
- const isLive=!historical&&playing&&lag!==null&&lag<=TABLO_DVR_EDGE_SECONDS+5;
+ const isLive=tabloDvrLiveIndicator(lag,playing,historical);
  state.classList.toggle("live",isLive);
  // The right-hand timeline already shows the delay; avoid duplicating it.
  state.textContent=isLive?"LIVE":"DVR";
@@ -1693,7 +1707,8 @@ function updateTabloDvrUi(){
  const current=Math.max(window.lo,Math.min(window.hi,Number(video.currentTime)||window.lo));
  if(!tabloDvrDragging)slider.value=String(Math.round((current-window.lo)/(window.hi-window.lo)*1000));
  left.textContent=tabloDvrTime(current-window.lo);
- right.textContent=window.hi-current<=TABLO_DVR_EDGE_SECONDS+5?"LIVE":"-"+tabloDvrTime(window.hi-current);
+ // Keep the right-hand counter precise; only the left badge is hysteretic.
+ right.textContent=window.hi-current<=TABLO_DVR_EDGE_SECONDS?"LIVE":"-"+tabloDvrTime(window.hi-current);
  slider.style.setProperty("--dvr-progress",slider.value/10+"%");
 }
 document.getElementById("tabloadvancedtoggle").onclick=function(){
