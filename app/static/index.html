@@ -338,6 +338,21 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 }
 
 /* Concept B: the EPG is the home screen, not an admin dashboard. */
+/* Keep the program detail strip on-screen. Previously min-height alone let
+   the guide grid expand the page and push the selected show below the fold. */
+@media (min-width:651px){
+ .guide-app{height:100dvh;overflow:hidden}
+ .guide-main{flex:1 1 0;min-height:0;overflow:hidden}
+ .guide-main .timeline{height:100%;max-height:100%;min-height:0;overflow:auto}
+ .guide-detail{flex:0 0 auto;max-height:33dvh;overflow:auto}
+}
+@media (max-width:650px){
+ .guide-app{height:100dvh;min-height:0;overflow:hidden}
+ .guide-main{flex:1 1 0;min-height:0;overflow:hidden}
+ .guide-main .timeline{height:100%;max-height:100%;overflow:auto}
+ .guide-detail{flex:0 0 auto;max-height:42dvh;overflow:auto}
+}
+
 :root{background:#090d18;color:#f4f3ff}
 body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090d18 68%)}
 .guide-app{max-width:none;width:100%;min-height:100dvh;padding:clamp(10px,2vw,30px);
@@ -1017,7 +1032,15 @@ async function guide(only){
   $("guide").querySelectorAll("[data-program]").forEach(el=>{
     const index=Number(el.dataset.program);
     if(index===highlighted)el.classList.add("return-selected");
-    el.onclick=()=>showGuidePreview(shownPrograms[index]);
+    el.onclick=event=>{
+      showGuidePreview(shownPrograms[index]);
+      // Enter/OK should expose the newly selected Watch actions immediately.
+      if(event.detail===0){
+       const action=["guidewatchplex","guidewatchsecondary","guidedetails"]
+         .map(id=>$(id)).find(button=>!button.hidden&&!button.disabled);
+       if(action)action.focus({preventScroll:true});
+      }
+    };
     el.addEventListener("focus",()=>showGuidePreview(shownPrograms[index]));
   });
   if(restorePending){
