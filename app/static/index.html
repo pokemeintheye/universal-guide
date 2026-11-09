@@ -425,6 +425,12 @@ status();guide(view.plex);
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
 <button id="tablopreview" type="button" hidden>▶ Test playback 2 min ago</button>
+<div id="tabloseekcontrols" hidden style="margin:8px 0" role="group" aria-label="Historical Tablo playback controls">
+<button id="tablopause" type="button">Pause</button>
+<button id="tabloback10" type="button">↶ 10 sec</button>
+<button id="tablofwd30" type="button">30 sec ↷</button>
+<span id="tabloseekrange" class="note" role="status"></span>
+</div>
 <button id="tabloliveback" type="button" hidden>↩ Return to Live</button>
 <button id="tablopreviewstatus" type="button" hidden>Historical playback diagnostics</button>
 <button id="tablorestartlive" type="button" hidden>Restart Live Tablo</button>
@@ -437,6 +443,7 @@ let playerSession=null;
 let tabloSession=null;
 let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
+let tabloHistoricalClipSeconds=0;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -487,6 +494,7 @@ async function closePlexPlayer(){
  document.getElementById("tablopreview").hidden=true;
  document.getElementById("tabloliveback").hidden=true;
  document.getElementById("tablopreviewstatus").hidden=true;
+ document.getElementById("tabloseekcontrols").hidden=true;
  document.getElementById("tablorestartlive").hidden=true;
  if(oldPreview){try{await fetch("/api/tablo/live/"+encodeURIComponent(oldPreview),{method:"DELETE"})}catch(e){console.warn("Preview cleanup:",e)}}
  if(oldTablo){
@@ -756,10 +764,15 @@ document.getElementById("tablopreview").onclick=async function(){
    return;
   }
   tabloPreviewSession=info.session_id;
+  tabloHistoricalClipSeconds=info.clip_duration_seconds;
   document.getElementById("tabloliveback").hidden=false;
   document.getElementById("tablopreviewstatus").hidden=false;
   if(!await waitForTabloReady(info.session_id,generation))return;
   await switchTabloExperimentSource(info.playlist_url,generation,"historical");
+  document.getElementById("tabloseekcontrols").hidden=false;
+  document.getElementById("tablopause").textContent="Pause";
+  document.getElementById("tabloseekrange").textContent=
+    "Experimental clip: "+Math.round(info.clip_duration_seconds)+" seconds; controls seek within this clip";
   playerMessage("Historical test clip prepared · about "+Math.round(info.start_seconds_behind_live)+
      " seconds behind live. Press Play if needed.");
  }catch(e){
@@ -778,6 +791,7 @@ document.getElementById("tabloliveback").onclick=async function(){
   await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration,"live");
   await deleteTabloPreview();
   document.getElementById("tablopreviewstatus").hidden=true;
+  document.getElementById("tabloseekcontrols").hidden=true;
   this.hidden=true;
   document.getElementById("tablorestartlive").hidden=true;
   playerMessage("Live stream reloaded. Press Play if needed.");
@@ -804,6 +818,34 @@ document.getElementById("tablorestartlive").onclick=async function(){
  playerMessage("Reinitializing live Tablo tuner…");
  await launchTabloLive();
 };
+// These controls are intentionally limited to the finite historical test
+// clip. They do not yet provide continuous live-DVR timeshifting.
+document.getElementById("tablopause").onclick=function(){
+ if(!tabloPreviewSession)return;
+ const video=document.getElementById("plexvideo");
+ if(video.paused){
+  video.play().then(()=>{this.textContent="Pause";}).catch(()=>
+   playerMessage("Tap Play in the video controls to resume."));
+ }else{video.pause();this.textContent="Resume";}
+};
+function seekHistoricalClip(delta){
+ if(!tabloPreviewSession)return;
+ const video=document.getElementById("plexvideo");
+ if(!video.seekable||!video.seekable.length){
+  playerMessage("The historical clip is not yet seekable in this browser.");
+  return;
+ }
+ const min=video.seekable.start(0),max=video.seekable.end(video.seekable.length-1);
+ const current=Number.isFinite(video.currentTime)?video.currentTime:min;
+ const next=Math.max(min,Math.min(max-0.3,current+delta));
+ if(!Number.isFinite(next)||next<min)return;
+ try{
+  video.currentTime=next;
+  playerMessage("Seeking within historical test clip. Use Return to Live for current TV.");
+ }catch(e){playerMessage("Seek not supported by this player: "+e.message)}
+}
+document.getElementById("tabloback10").onclick=()=>seekHistoricalClip(-10);
+document.getElementById("tablofwd30").onclick=()=>seekHistoricalClip(30);
 document.getElementById("tablobuffer").onclick=async function(){
  if(!tabloSession)return;
  const sid=tabloSession,button=this,output=document.getElementById("tablobufferresult");
