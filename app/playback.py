@@ -282,6 +282,7 @@ def _plex_item_metadata(key):
         response=requests.get(
             base+"/library/metadata/"+str(key),
             headers={"X-Plex-Token":token,"Accept":"application/xml"},
+            params={"includeChapters":1,"includeStreams":1},
             timeout=(5,20),allow_redirects=False)
         response.raise_for_status()
         root=ET.fromstring(response.content)
@@ -298,7 +299,7 @@ def _plex_item_metadata(key):
     for node in video.findall(".//Chapter"):
         starts=number(node.get("startTimeOffset") or node.get("startTime"),-1)
         if starts>=0:
-            chapters.append({"title":node.get("title") or "Chapter "+str(len(chapters)+1),
+            chapters.append({"title":node.get("tag") or node.get("title") or "Chapter "+str(len(chapters)+1),
                              "start_seconds":starts/1000})
     streams={"audio":[],"subtitle":[]}
     if part is not None:
@@ -310,10 +311,12 @@ def _plex_item_metadata(key):
             entry={"id":stream_id,
                    "language":node.get("language") or node.get("languageCode") or "Unknown",
                    "codec":node.get("codec") or "",
+                   "forced":node.get("forced")=="1",
                    "title":node.get("title") or node.get("displayTitle") or "",
                    "selected":node.get("selected")=="1"}
             streams[kind].append(entry)
-    return {"kind":video.get("type") or "",
+    return {"part_id":number(part.get("id")) if part is not None else 0,
+            "kind":video.get("type") or "",
             "title":video.get("title") or "",
             "show_title":video.get("grandparentTitle") or "",
             "year":number(video.get("year")),
@@ -331,6 +334,47 @@ def _plex_item_metadata(key):
 def playback_metadata(session_id:str):
     session=_session(session_id)
     return _plex_item_metadata(session["rating_key"])
+
+
+class PlexTrackSelection(BaseModel):
+    audio_stream_id: int | None = None
+    subtitle_stream_id: int | None = None
+
+
+@router.put("/{session_id}/tracks")
+def select_playback_tracks(session_id:str,body:PlexTrackSelection):
+    """Validate and select media-part streams via Plex's documented PUT API.
+
+    Unlike a transcode URL parameter, this changes stream selection for the
+    Plex account associated with the configured token, including other apps.
+    A failed selection is reported before interrupting the current player.
+    """
+    session=_session(session_id)
+    if body.audio_stream_id is None and body.subtitle_stream_id is None:
+        raise HTTPException(400,"No stream selection supplied")
+    metadata=_plex_item_metadata(session["rating_key"])
+    part_id=metadata["part_id"]
+    if part_id<=0:raise HTTPException(404,"Plex media part unavailable")
+    audio=body.audio_stream_id
+    subtitle=body.subtitle_stream_id
+    if audio is not None and audio not in [x["id"] for x in metadata["audio"]]:
+        raise HTTPException(400,"Audio track does not belong to this part")
+    if subtitle is not None and subtitle!=0 and subtitle not in [x["id"] for x in metadata["subtitles"]]:
+        raise HTTPException(400,"Subtitle track does not belong to this part")
+    _,base,token=_config()
+    params={"allParts":0}
+    if audio is not None:params["audioStreamID"]=audio
+    if subtitle is not None:params["subtitleStreamID"]=subtitle
+    try:
+        response=requests.put(base+"/library/parts/"+str(part_id),
+            headers={"X-Plex-Token":token,"Accept":"application/xml"},
+            params=params,timeout=(5,15),allow_redirects=False)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(502,"Plex could not select the requested track: "+type(exc).__name__)
+    finally:
+        if "response" in locals():response.close()
+    return {"ok":True,"audio_stream_id":audio,"subtitle_stream_id":subtitle}
 
 
 @router.get("/{session_id}/preview")
@@ -457,10 +501,19 @@ def start_playback(body: PlaybackRequest):
         "X-Plex-Session-Identifier": sid,
         "X-Plex-Client-Profile-Name": "Chrome",
     }
-    if body.audio_stream_id is not None:
-        params["audioStreamID"]=str(body.audio_stream_id)
-    if body.subtitle_stream_id is not None:
-        params["subtitleStreamID"]=str(body.subtitle_stream_id)
+    # The actual tracks are selected through PUT /library/parts/{id},
+    # not by injecting stream IDs into the transcoder's URL.
+    # Always burn the user's selected subtitles for browser compatibility.
+    if body.subtitle_stream_id==0:
+        params["subtitles"]="none"
+    else:
+        selected_subtitle=body.subtitle_stream_id
+        if selected_subtitle is None:
+            selected_meta=_plex_item_metadata(body.rating_key)
+            selected_subtitle=next((x["id"] for x in selected_meta["subtitles"]
+                                    if x["selected"]),None)
+        params["subtitles"]="burn" if selected_subtitle else "none"
+        if selected_subtitle:params["subtitleSize"]="100"
     master = endpoint + "?" + urlencode(params)
     session = {"id": sid, "resources": {"master.m3u8": master},
                "last": time.monotonic(), "rating_key": body.rating_key,
