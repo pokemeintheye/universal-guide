@@ -762,6 +762,40 @@ def refresh_tablo():
     try:return sync_tablo()
     except Exception as e:raise HTTPException(502,detail=str(e))
 
+@app.get("/api/guide/art/{rating_key}")
+def guide_plex_art(rating_key:int):
+    """Optional guide artwork for indexed Plex titles only, without browser tokens."""
+    if rating_key<=0:raise HTTPException(404,"No Plex artwork")
+    with db() as connection:
+        item=connection.execute("SELECT id FROM media WHERE id IN (?,?)",
+            ("movie:"+str(rating_key),"episode:"+str(rating_key))).fetchone()
+    if not item:raise HTTPException(404,"Not in Plex library index")
+    try:
+        root=plex_xml("/library/metadata/"+str(rating_key))
+        video=root.find("Video")
+        if video is None:raise HTTPException(404,"No Plex image")
+        image_path=video.get("art") or video.get("thumb") or video.get("grandparentThumb")
+        if not image_path or not re.fullmatch(
+            r"/library/metadata/\d+/(?:art|thumb)/\d+",image_path):
+            raise HTTPException(404,"Plex artwork unavailable")
+        image=requests.get(PLEX_URL+image_path,
+            headers={"X-Plex-Token":PLEX_TOKEN,"Accept":"image/jpeg,image/png"},
+            timeout=(5,15),allow_redirects=False)
+        try:
+            image.raise_for_status()
+            content_type=image.headers.get("Content-Type","").split(";",1)[0]
+            if content_type not in ("image/jpeg","image/png") or len(image.content)>2_000_000:
+                raise HTTPException(502,"Invalid artwork response")
+            from fastapi.responses import Response
+            return Response(content=image.content,media_type=content_type,
+                headers={"Cache-Control":"private, max-age=300"})
+        finally:image.close()
+    except requests.RequestException:
+        raise HTTPException(502,"Plex artwork unavailable")
+    except RuntimeError:
+        raise HTTPException(503,"Plex artwork unavailable")
+
+
 @app.get("/api/playback/plex/{rating_key}")
 def plex_handoff(rating_key:int):
     """Safe, token-free Plex Web handoff for testing exact-library navigation.
