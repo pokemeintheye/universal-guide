@@ -695,6 +695,8 @@ let tabloLastPauseMarker=null;
 let tabloLastDiagnosticsText="";
 let tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,last_wait_started:null,last_wait_position:null,events:[]};
 let tabloDvrClock=null,tabloDvrSourceStart=null,tabloDvrDragging=false;
+let tabloOverlayTimer=null;
+const tabloDebugEnabled=new URLSearchParams(location.search).get("debug")==="1";
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -717,6 +719,65 @@ async function explainPlayerFailure(fallback,generation){
  }
  playerMessage(detail);
 }
+function configureTabloOverlay(channel,entry){
+ const panel=document.getElementById("playerbackdrop");
+ panel.classList.add("tablo-mode");
+ panel.setAttribute("aria-label","Tablo DVR player");
+ const station=channel.network||channel.label||"OTA";
+ const channelNumber=channel.number||channel.label||"";
+ const name=entry?.no_guide_data?"Live TV":entry?.title||"Live TV";
+ document.getElementById("tablodvrnetwork").textContent=station;
+ document.getElementById("tablodvrtitle").textContent=name;
+ let duration="";
+ const start=Date.parse(entry?.start),stop=Date.parse(entry?.stop);
+ if(!entry?.no_guide_data&&Number.isFinite(start)&&Number.isFinite(stop)&&stop>start){
+  const minutes=Math.round((stop-start)/60000);
+  duration=minutes>=60&&minutes%60===0?(minutes/60)+" hour"+(minutes===60?"":"s"):minutes+" min";
+ }
+ document.getElementById("tablodvrmeta").textContent=
+   [channelNumber,duration].filter(Boolean).join("   |   ");
+ document.getElementById("tabloadvancedtoggle").hidden=!tabloDebugEnabled;
+ const video=document.getElementById("plexvideo");
+ video.controls=false;
+ video.setAttribute("aria-label","Tablo live DVR playback. Tap to reveal controls.");
+ video.addEventListener("click",showTabloOverlay);
+ showTabloOverlay();
+}
+function clearTabloOverlayTimer(){
+ if(tabloOverlayTimer){clearTimeout(tabloOverlayTimer);tabloOverlayTimer=null}
+}
+function showTabloOverlay(){
+ if(!tabloSession)return;
+ const overlay=document.getElementById("tablodvr");
+ overlay.classList.remove("controls-hidden");
+ clearTabloOverlayTimer();
+ const video=document.getElementById("plexvideo");
+ if(!video.paused&&!tabloDvrDragging){
+  tabloOverlayTimer=setTimeout(()=>{
+   const panel=document.getElementById("tabloadvanced");
+   if(!video.paused&&!tabloDvrDragging&&panel.hidden&&
+      !overlay.contains(document.activeElement)){
+    overlay.classList.add("controls-hidden");
+   }
+  },4500);
+ }
+}
+function attachTabloOverlayVideoEvents(video){
+ video.addEventListener("click",showTabloOverlay);
+ video.addEventListener("pause",showTabloOverlay);
+ video.addEventListener("play",showTabloOverlay);
+ video.addEventListener("playing",showTabloOverlay);
+}
+function teardownTabloOverlay(){
+ clearTabloOverlayTimer();
+ const panel=document.getElementById("playerbackdrop");
+ panel.classList.remove("tablo-mode");
+ panel.setAttribute("aria-label","Plex video player");
+ document.getElementById("tablodvr").classList.remove("controls-hidden");
+ document.getElementById("tabloadvancedtoggle").hidden=true;
+}
+
+
 function tabloDvrBufferRanges(video){
  const ranges=[];
  for(let i=0;i<(video.buffered?.length||0);i++)
@@ -764,6 +825,7 @@ async function closePlexPlayer(){
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  if(tabloDvrClock){clearInterval(tabloDvrClock);tabloDvrClock=null;}
  tabloDvrSourceStart=null;tabloDvrDragging=false;
+ teardownTabloOverlay();
  document.getElementById("tablodvr").hidden=true;
  document.getElementById("tabloadvanced").hidden=true;
  document.getElementById("tabloadvancedtoggle").setAttribute("aria-expanded","false");
@@ -810,6 +872,7 @@ async function closePlexPlayer(){
  }
 }
 document.getElementById("closeplayer").onclick=closePlexPlayer;
+document.getElementById("tablodvrclose").onclick=closePlexPlayer;
 document.addEventListener("keydown",e=>{
  if(e.key==="Escape"&&!document.getElementById("playerbackdrop").hidden)closePlexPlayer();
 });
@@ -972,6 +1035,7 @@ async function launchTabloLive(){
   tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,
      last_wait_started:null,last_wait_position:null,events:[]};
   document.getElementById("tablodvr").hidden=false;
+  configureTabloOverlay(channel,selectedProgram?.entry);
   if(tabloDvrClock)clearInterval(tabloDvrClock);
   tabloDvrClock=setInterval(updateTabloDvrUi,800);
   updateTabloDvrUi();
@@ -993,6 +1057,7 @@ async function launchTabloLive(){
   playerMessage("Starting Tablo tuner and transcoder. This may take 15–30 seconds…");
   const video=document.getElementById("plexvideo");
   attachTabloDvrTelemetry(video);
+  attachTabloOverlayVideoEvents(video);
   const url=info.playlist_url;
   if(!await waitForTabloReady(info.session_id,generation))return;
   video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
@@ -1047,6 +1112,7 @@ async function switchTabloExperimentSource(url,generation,kind){
  old.removeAttribute("src");old.load();
  const video=old.cloneNode(false);
  old.replaceWith(video);
+ if(tabloSession)attachTabloOverlayVideoEvents(video);
  const statusPrefix=kind==="live"?"Live":"Historical";
  const play=()=>{
   if(generation!==playerGeneration)return;
