@@ -446,8 +446,8 @@ status();guide(view.plex);
   <div class="tablo-dvr-controls" role="group" aria-label="DVR transport">
    <button id="tablodvrpause" type="button">⏸ Pause</button>
    <button id="tablodvrback" type="button">↶ 30s</button>
-   <button id="tablodvrforward" type="button" disabled>30s ↷</button>
-   <button id="tablodvrlive" type="button" disabled>● Jump to Live</button>
+   <button id="tablodvrforward" type="button">30s ↷</button>
+   <button id="tablodvrlive" type="button">● Jump to Live</button>
   </div>
   <span id="tablodvrstate" class="tablo-dvr-state live" role="status">LIVE</span>
  </div>
@@ -1299,8 +1299,9 @@ function updateTabloDvrUi(){
  const playing=video.readyState>=2&&!video.paused;
  pause.textContent=playing?"⏸ Pause":"▶ Resume";
  back.disabled=video.readyState<2||!window||video.currentTime<=window.lo+0.4;
- forward.disabled=video.readyState<2||!window||lag<=TABLO_DVR_EDGE_SECONDS+1;
- live.disabled=!historical&&(!window||lag<=TABLO_DVR_EDGE_SECONDS+1)&&!video.paused;
+ // Keep these controls visually stable as the seekable live edge moves.
+ forward.disabled=false;
+ live.disabled=false;
  const isLive=!historical&&playing&&lag!==null&&lag<=TABLO_DVR_EDGE_SECONDS+5;
  state.classList.toggle("live",isLive);
  if(isLive)state.textContent="LIVE · buffered";
@@ -1343,7 +1344,12 @@ document.getElementById("tablodvrback").onclick=function(){
 };
 document.getElementById("tablodvrforward").onclick=function(){
  if(!tabloSession)return;
- tabloDvrSeekTo(document.getElementById("plexvideo").currentTime+30);
+ const video=document.getElementById("plexvideo");
+ const window=tabloDvrWindow(video);
+ if(!window)return;
+ const safeEnd=Math.max(window.lo,window.hi-TABLO_DVR_EDGE_SECONDS);
+ if(video.currentTime>=safeEnd-0.5)return; // Already at disk live edge.
+ tabloDvrSeekTo(video.currentTime+30,video);
  updateTabloDvrUi();
 };
 document.getElementById("tablodvrlive").onclick=async function(){
@@ -1353,7 +1359,9 @@ document.getElementById("tablodvrlive").onclick=async function(){
  if(tabloPreviewSession){document.getElementById("tabloliveback").click();return}
  const video=document.getElementById("plexvideo");
  const window=tabloDvrWindow(video);
- if(!window){playerMessage("Waiting for the next recorded DVR segment.");return}
+ if(!window)return;
+ const safeEnd=Math.max(window.lo,window.hi-TABLO_DVR_EDGE_SECONDS);
+ if(!video.paused&&video.currentTime>=safeEnd-0.5)return;
  if(!tabloDvrSeekTo(window.hi)){
   playerMessage("Unable to seek to latest recorded segment.");return;
  }
