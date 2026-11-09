@@ -442,7 +442,8 @@ def historical_preview(sid:str,seconds_behind_live:int=120):
     input_path.chmod(0o600)
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
           "-protocol_whitelist","file,http,tcp,crypto",
-          "-user_agent",USER_AGENT,"-i",str(input_path),
+          # Input is a local .m3u8 file; FFmpeg rejects -user_agent here.
+          "-i",str(input_path),
           "-map","0:v:0","-map","0:a:0?","-vf","yadif",
           "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
           "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
