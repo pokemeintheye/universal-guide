@@ -96,6 +96,160 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
  .player-actions a,.player-actions button{min-height:46px;text-align:center}
  #findshow{min-width:0!important}
 }
+
+/* Tablo's normal player is video-first; Plex keeps its existing player. */
+.player-backdrop.tablo-mode{padding:0;overflow:hidden;display:block;background:#000}
+.player-backdrop.tablo-mode video{
+ position:absolute;inset:0;width:100%;height:100%;max-height:none;max-width:none;
+ object-fit:contain;border-radius:0;background:#000;touch-action:manipulation
+}
+.player-backdrop.tablo-mode .player-tools{display:none}
+.player-backdrop.tablo-mode #playerstatus{
+ position:absolute;left:50%;bottom:calc(125px + env(safe-area-inset-bottom));
+ transform:translateX(-50%);z-index:5;width:max-content;max-width:min(85vw,740px);
+ border-radius:10px;background:#0b1024db;text-align:center;
+ padding:6px 12px;font-size:13px;pointer-events:none
+}
+.player-backdrop.tablo-mode #playerstatus:empty{display:none}
+.player-backdrop.tablo-mode .tablo-dvr[hidden]{display:none!important}
+.player-backdrop.tablo-mode .tablo-dvr{
+ position:absolute;inset:0;z-index:4;margin:0;padding:0;border:0;border-radius:0;
+ background:linear-gradient(to bottom,rgba(0,0,0,.72),transparent 35%,transparent 48%,rgba(0,0,0,.78) 100%);
+ display:flex;flex-direction:column;justify-content:space-between;
+ transition:opacity .22s ease;pointer-events:none
+}
+.player-backdrop.tablo-mode .tablo-dvr.controls-hidden{
+ opacity:0;visibility:hidden;pointer-events:none
+}
+.player-backdrop.tablo-mode .tablo-dvr button,
+.player-backdrop.tablo-mode .tablo-dvr input{pointer-events:auto}
+.player-backdrop.tablo-mode .tablo-dvr-top{
+ position:relative;display:flex;justify-content:center;align-items:flex-start;
+ min-height:148px;padding:max(22px,env(safe-area-inset-top)) 72px 12px;
+ text-align:center
+}
+.player-backdrop.tablo-mode .tablo-program{max-width:800px;min-width:0}
+.player-backdrop.tablo-mode .tablo-network{font-size:clamp(17px,2.3vw,25px);font-weight:750;letter-spacing:.025em}
+.player-backdrop.tablo-mode .tablo-network:empty{display:none}
+.player-backdrop.tablo-mode .tablo-show-title{
+ font-size:clamp(24px,3vw,38px);font-weight:760;line-height:1.15;
+ text-shadow:0 2px 10px #000b;margin:13px 0
+}
+.player-backdrop.tablo-mode .tablo-show-meta{font-size:clamp(13px,1.55vw,19px);color:#edf3fb}
+.player-backdrop.tablo-mode .tablo-overlay-close{
+ position:absolute;top:max(18px,env(safe-area-inset-top));right:max(18px,env(safe-area-inset-right));
+ background:transparent;border:0;border-radius:50%;font-size:30px;font-weight:500;
+ height:52px;width:52px;padding:0
+}
+.player-backdrop.tablo-mode .tablo-dvr-controls{
+ position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+ display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:clamp(18px,5vw,75px);
+ pointer-events:none
+}
+.player-backdrop.tablo-mode .tablo-transport{
+ display:grid;place-items:center;border:0;background:transparent;
+ color:#fff;text-shadow:0 2px 9px #000;box-shadow:none;
+ transition:transform .15s ease,background .15s ease
+}
+.player-backdrop.tablo-mode .tablo-transport:hover,
+.player-backdrop.tablo-mode .tablo-overlay-close:hover{background:#ffffff20}
+.player-backdrop.tablo-mode .tablo-transport:active{transform:scale(.92)}
+.player-backdrop.tablo-mode .tablo-transport-skip{
+ width:clamp(56px,7vw,84px);height:clamp(56px,7vw,84px);border-radius:50%
+}
+.player-backdrop.tablo-mode .tablo-transport-skip svg{width:100%;height:100%}
+.player-backdrop.tablo-mode .tablo-transport-pause{
+ width:clamp(76px,10vw,104px);height:clamp(76px,10vw,104px);
+ border-radius:50%;font-size:clamp(46px,6vw,72px);font-weight:800;
+ line-height:1
+}
+.player-backdrop.tablo-mode .tablo-dvr-bottom{
+ padding:24px max(25px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom));
+ width:100%;pointer-events:none
+}
+.player-backdrop.tablo-mode .tablo-dvr-times{
+ display:flex;justify-content:space-between;margin-bottom:9px;font-size:17px;
+ font-variant-numeric:tabular-nums
+}
+.player-backdrop.tablo-mode .tablo-dvr-time{min-width:0}
+.player-backdrop.tablo-mode .tablo-dvr-timeline{
+ margin:0;display:block;pointer-events:auto
+}
+.player-backdrop.tablo-mode #tablodvrseek{
+ display:block;width:100%;height:25px;min-width:0;max-width:none;
+ appearance:none;-webkit-appearance:none;border:0;background:transparent;margin:0;
+ padding:0;touch-action:pan-y;accent-color:#1eb9ee
+}
+.player-backdrop.tablo-mode #tablodvrseek::-webkit-slider-runnable-track{
+ height:8px;background:linear-gradient(to right,#1eb9ee 0%,#1eb9ee var(--dvr-progress,0%),#ffffff64 var(--dvr-progress,0%),#ffffff64 100%);
+ border-radius:9px
+}
+.player-backdrop.tablo-mode #tablodvrseek::-moz-range-track{
+ height:8px;background:#ffffff64;border-radius:9px
+}
+.player-backdrop.tablo-mode #tablodvrseek::-moz-range-progress{
+ height:8px;background:#1eb9ee;border-radius:9px
+}
+.player-backdrop.tablo-mode #tablodvrseek::-webkit-slider-thumb{
+ appearance:none;-webkit-appearance:none;width:20px;height:20px;border:0;
+ border-radius:50%;background:#fff;margin-top:-6px;box-shadow:0 1px 6px #0008
+}
+.player-backdrop.tablo-mode #tablodvrseek::-moz-range-thumb{
+ width:20px;height:20px;border:0;border-radius:50%;background:#fff
+}
+.player-backdrop.tablo-mode .tablo-dvr-bottomline{
+ display:flex;justify-content:space-between;align-items:center;min-height:58px
+}
+.player-backdrop.tablo-mode .tablo-dvr-state{flex:1;font-size:12px;font-weight:600}
+.player-backdrop.tablo-mode .tablo-go-live{
+ flex:1;width:max-content;white-space:nowrap;font-size:20px;background:transparent;
+ border:0;padding:7px 12px;font-weight:500
+}
+.player-backdrop.tablo-mode .tablo-dvr-right-spacer{flex:1}
+.player-backdrop.tablo-mode .tablo-live-bolt{
+ display:inline-grid;place-items:center;margin-right:7px;border:2px solid #1bd7ad;
+ color:#1bd7ad;border-radius:50%;width:40px;height:40px;font-size:29px;vertical-align:middle
+}
+.player-backdrop.tablo-mode .tablo-advanced-toggle[hidden]{display:none!important}
+.player-backdrop.tablo-mode .tablo-advanced-toggle{
+ position:absolute;top:max(80px,env(safe-area-inset-top));right:14px;
+ background:#0c1833ce;pointer-events:auto
+}
+.player-backdrop.tablo-mode #tabloadvanced:not([hidden]){
+ position:absolute;z-index:7;top:110px;right:12px;width:min(92vw,370px);
+ max-height:calc(100dvh - 145px);overflow:auto;padding:14px;
+ border-radius:12px;background:#14243cf0;border:1px solid #4f6988
+}
+.player-backdrop.tablo-mode :is(button,input):focus-visible{
+ outline:3px solid #48d6ef;outline-offset:3px
+}
+@media (max-width:650px){
+ .player-backdrop.tablo-mode .tablo-dvr-top{
+   min-height:120px;padding:max(20px,env(safe-area-inset-top)) 55px 8px
+ }
+ .player-backdrop.tablo-mode .tablo-show-title{font-size:23px;margin:6px 0}
+ .player-backdrop.tablo-mode .tablo-network{font-size:16px}
+ .player-backdrop.tablo-mode .tablo-show-meta{font-size:12px}
+ .player-backdrop.tablo-mode .tablo-overlay-close{
+   height:42px;width:42px;font-size:24px;right:max(8px,env(safe-area-inset-right))
+ }
+ .player-backdrop.tablo-mode .tablo-dvr-controls{gap:clamp(8px,2vw,24px)}
+ .player-backdrop.tablo-mode .tablo-transport-skip{width:58px;height:58px;min-width:0}
+ .player-backdrop.tablo-mode .tablo-transport-pause{width:70px;height:70px;min-width:0;font-size:47px}
+ .player-backdrop.tablo-mode .tablo-dvr-bottom{
+   padding:14px max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom))
+ }
+ .player-backdrop.tablo-mode .tablo-dvr-times{font-size:13px}
+ .player-backdrop.tablo-mode .tablo-go-live{font-size:16px}
+ .player-backdrop.tablo-mode .tablo-live-bolt{width:32px;height:32px;font-size:23px}
+ .player-backdrop.tablo-mode .tablo-dvr-state{font-size:10px}
+ .player-backdrop.tablo-mode #playerstatus{bottom:110px;font-size:11px}
+}
+@media (prefers-reduced-motion:reduce){
+ .player-backdrop.tablo-mode .tablo-dvr,
+ .player-backdrop.tablo-mode .tablo-transport{transition:none}
+}
+
 </style></head>
 <body><header><div><h1>Universal TV Guide</h1><small>Metadata-only • Plex + OTA + Philo schedules</small></div><span class="chip" id="status">Checking…</span></header>
 <main class="container">
