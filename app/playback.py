@@ -146,7 +146,7 @@ def _trim_join_playlist(session, payload):
     finite MPEG-TS media playlists, never master or encrypted playlists.
     """
     offset=session.get("requested_offset_seconds",0)
-    if session.get("mode")!="join" or not offset:
+    if session.get("mode") not in ("join","resume") or not offset:
         return payload,None
     text=payload.decode("utf-8")
     lines=text.splitlines()
@@ -444,6 +444,8 @@ def start_playback(body: PlaybackRequest):
         "session": sid,
         "mediaIndex": "0",
         "partIndex": "0",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
         "maxVideoBitrate": "12000",
         "videoResolution": "1920x1080",
         "videoQuality": "100",
