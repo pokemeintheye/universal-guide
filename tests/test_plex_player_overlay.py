@@ -75,7 +75,9 @@ class PlexPlayerOverlayTests(unittest.TestCase):
                             ("movie:142","Test Movie","movie"))
             with patch.object(playback,"_config",
                     return_value=(path,"http://plex","secret")), \
-                 patch.object(playback,"_plex_duration",return_value=7200):
+                 patch.object(playback,"_plex_duration",return_value=7200), \
+                 patch.object(playback,"_plex_item_metadata",
+                              return_value={"subtitles":[]}):
                 details=playback.start_playback(
                     playback.PlaybackRequest(rating_key=142))
             sid=details["playlist_url"].split("/")[3]
@@ -89,6 +91,62 @@ class PlexPlayerOverlayTests(unittest.TestCase):
                 self.assertEqual(params["directPlay"],["0"])
             finally:
                 playback._sessions.pop(sid,None)
+
+    def test_chapter_metadata_requests_chapters_and_uses_tag(self):
+        sample=MOVIE_XML.replace(b'<Chapter title="Opening" startTime="0"/>',
+            b'<Chapter tag="Opening" startTimeOffset="0"/>')
+        response=MagicMock(content=sample)
+        with patch.object(playback,"_config",
+                          return_value=("/tmp/db","http://plex","secret")), \
+             patch.object(playback.requests,"get",return_value=response) as get:
+            metadata=playback._plex_item_metadata(142)
+        self.assertEqual(metadata["chapters"][0]["title"],"Opening")
+        self.assertEqual(metadata["part_id"],4242)
+        self.assertEqual(get.call_args.kwargs["params"]["includeChapters"],1)
+
+    def test_subtitle_burn_requested_and_no_stream_ids_in_transcode_url(self):
+        import sqlite3
+        from tempfile import TemporaryDirectory
+        from urllib.parse import parse_qs,urlparse
+        with TemporaryDirectory() as directory:
+            path=Path(directory)/"plex.db"
+            with sqlite3.connect(path) as connection:
+                connection.execute("CREATE TABLE media(id TEXT,title TEXT,kind TEXT)")
+                connection.execute("INSERT INTO media VALUES(?,?,?)",
+                                   ("movie:142","Test Movie","movie"))
+            metadata={"audio":[{"id":41}],"subtitles":[{"id":51,"selected":True}]}
+            with patch.object(playback,"_config",
+                              return_value=(path,"http://plex","secret")), \
+                 patch.object(playback,"_plex_duration",return_value=7200), \
+                 patch.object(playback,"_plex_item_metadata",return_value=metadata):
+                result=playback.start_playback(playback.PlaybackRequest(
+                    rating_key=142,mode="resume",offset_seconds=30,
+                    subtitle_stream_id=51))
+            sid=result["playlist_url"].split("/")[3]
+            try:
+                params=parse_qs(urlparse(
+                    playback._sessions[sid]["resources"]["master.m3u8"]).query)
+                self.assertEqual(params["subtitles"],["burn"])
+                self.assertNotIn("subtitleStreamID",params)
+                self.assertNotIn("audioStreamID",params)
+            finally:
+                playback._sessions.pop(sid,None)
+
+    def test_track_selection_validates_part_and_uses_plex_put(self):
+        session_id="validOpaquePlexSession123456"
+        metadata={"part_id":4242,
+                  "audio":[{"id":41}],"subtitles":[{"id":51}]}
+        with patch.dict(playback._sessions,{session_id:{
+                "id":session_id,"rating_key":142,"last":__import__("time").monotonic()}},clear=False), \
+             patch.object(playback,"_config",
+                return_value=("/tmp/db","http://plex","secret")), \
+             patch.object(playback,"_plex_item_metadata",return_value=metadata), \
+             patch.object(playback.requests,"put",return_value=MagicMock()) as put:
+            result=playback.select_playback_tracks(session_id,
+                playback.PlexTrackSelection(subtitle_stream_id=51))
+        self.assertTrue(result["ok"])
+        self.assertEqual(put.call_args.kwargs["params"]["subtitleStreamID"],51)
+        self.assertIn("/library/parts/4242",put.call_args.args[0])
 
     def test_metadata_requires_active_session(self):
         with self.assertRaises(HTTPException):
