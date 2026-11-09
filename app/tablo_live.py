@@ -39,6 +39,8 @@ def _stop(sid):
     with LOCK:
         session=ACTIVE.pop(sid,None)
     if not session:return False
+    if session.get("follower_stop"):
+        session["follower_stop"].set()
     process=session["process"]
     try:
         if process.poll() is None:
@@ -204,6 +206,10 @@ def _health(item,probe=False):
             "segment_count":segments,
             "seconds_since_start":round(time.monotonic()-item["created"],1),
             "ffmpeg_error":_safe_ffmpeg_message(directory) if returncode is not None else ""}
+    if item.get("mode")=="continuous_timeshift":
+        result["mode"]="continuous_timeshift"
+        result["source_follow"]=item.get("source_follow",{})
+        result["follow_error"]=item.get("follow_error","")
     if probe:
         result["segment_probe"]=_probe_segment(directory)
         if playlist.is_file():
@@ -427,6 +433,158 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
     return "\n".join(output)+"\n",{"start_seconds_behind_live":round(total-accumulated,1),
                                   "clip_duration_seconds":round(elapsed,1),
                                   "segment_count":len(chosen)}
+
+
+
+def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
+                                seconds_behind_live=120):
+    """Create a live (non-ENDLIST) HLS playlist from Tablo's existing segments.
+
+    Source sequence numbers, unlike playlist indices, remain stable as Tablo
+    grows or eventually prunes its native buffer.
+    """
+    urls=_media_segment_urls(origin,media_url,body)
+    durations=[]
+    for line in body.splitlines():
+        if line.startswith("#EXTINF:"):
+            try:durations.append(float(line[8:].split(",",1)[0]))
+            except ValueError:raise HTTPException(502,"Invalid Tablo segment duration")
+    if not urls or len(durations)!=len(urls) or min(durations)<=0:
+        raise HTTPException(502,"Tablo source playlist has incomplete segment metadata")
+    summary=_summarize_source_playlist(body)
+    base_sequence=summary["media_sequence"]
+    if base_sequence is None:
+        raise HTTPException(502,"Tablo source playlist has no media sequence")
+    if start_sequence is None:
+        if not isinstance(seconds_behind_live,int) or not 30<=seconds_behind_live<=1800:
+            raise HTTPException(400,"Timeshift position must be 30 to 1800 seconds behind live")
+        if sum(durations)<seconds_behind_live+10:
+            raise HTTPException(409,"Not enough native Tablo history for timeshift")
+        remaining=seconds_behind_live
+        index=len(durations)-1
+        while index>0 and remaining>0:
+            remaining-=durations[index]
+            index-=1
+        start_sequence=base_sequence+index+1
+    first=max(0,start_sequence-base_sequence)
+    if first>=len(urls):
+        raise HTTPException(409,"Timeshift position is no longer in the Tablo buffer")
+    # Keep source input playlist relatively small as time progresses.
+    first=max(first,len(urls)-2400)
+    chosen=list(zip(urls[first:],durations[first:]))
+    output=["#EXTM3U","#EXT-X-VERSION:3",
+            "#EXT-X-TARGETDURATION:"+str(max(1,__import__("math").ceil(max(d for _,d in chosen)))),
+            "#EXT-X-MEDIA-SEQUENCE:"+str(base_sequence+first)]
+    for url,d in chosen:
+        output.extend(("#EXTINF:"+format(d,".3f")+",",url))
+    return "\n".join(output)+"\n",{"start_sequence":start_sequence,
+        "last_sequence":base_sequence+len(urls)-1,
+        "available_seconds":round(sum(durations),1),
+        "source_segments":len(chosen)}
+
+
+def _follow_tablo_source(sid,stop_event):
+    """Refresh the file-based live HLS input while FFmpeg follows it.
+
+    FFmpeg reads Tablo media directly. This worker only retrieves small text
+    playlists, not video segments. On errors, retry; do not expose signed URLs.
+    """
+    while not stop_event.wait(2):
+        with LOCK:
+            item=ACTIVE.get(sid)
+            if not item:return
+            origin=item["origin"]
+            source=item["source_playlist"]
+            start_sequence=item["start_sequence"]
+            directory=item["directory"]
+            process=item["process"]
+        if process.poll() is not None:return
+        try:
+            media_url,body,_=_source_media_playlist(origin,source)
+            manifest,info=_continuous_source_manifest(
+                origin,media_url,body,start_sequence=start_sequence)
+            target=directory/"continuous-input.m3u8"
+            if target.read_text()!=manifest:
+                temp=directory/"continuous-input.next"
+                temp.write_text(manifest)
+                temp.replace(target)
+            with LOCK:
+                if ACTIVE.get(sid) is item:
+                    item["source_follow"]=info
+                    item["follow_error"]=""
+        except (HTTPException,ValueError,OSError) as exc:
+            # Never expose the upstream stream URL or token in a message.
+            with LOCK:
+                if ACTIVE.get(sid) is item:
+                    item["follow_error"]=type(exc).__name__
+
+
+@router.post("/{sid}/timeshift")
+def continuous_timeshift(sid:str,seconds_behind_live:int=120):
+    """Beta: rolling live HLS output from Tablo's growing native playlist."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
+        raise HTTPException(404,"Invalid session")
+    _cleanup()
+    with LOCK:
+        parent=ACTIVE.get(sid)
+        if not parent or parent.get("parent"):
+            raise HTTPException(404,"Original Tablo stream has ended")
+        if parent["process"].poll() is not None:
+            raise HTTPException(409,"Original Tablo transcoder has stopped")
+        if any(x.get("parent")==sid for x in ACTIVE.values()):
+            raise HTTPException(409,"A Tablo history session is already running")
+        parent["last"]=time.monotonic()
+        origin,source=parent["origin"],parent["source_playlist"]
+    media_url,body,_=_source_media_playlist(origin,source)
+    manifest,info=_continuous_source_manifest(
+        origin,media_url,body,seconds_behind_live=seconds_behind_live)
+    child_id=secrets.token_urlsafe(20)
+    directory=STORE/child_id
+    directory.mkdir(mode=0o700,parents=True,exist_ok=False)
+    input_path=directory/"continuous-input.m3u8"
+    input_path.write_text(manifest)
+    input_path.chmod(0o600)
+    # -re prevents transcoding far ahead of the viewer. A rolling 90-segment
+    # cache bounds temporary files on Unraid; historical media stays on Tablo.
+    args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+          "-re","-protocol_whitelist","file,http,tcp,crypto",
+          "-i",str(input_path),
+          "-map","0:v:0","-map","0:a:0?","-vf","yadif",
+          "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
+          "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
+          "-c:a","aac","-ac","2","-b:a","128k",
+          "-f","hls","-hls_time","4","-hls_list_size","90",
+          "-hls_flags","delete_segments+omit_endlist",
+          "-hls_segment_filename",str(directory/"seg_%05d.ts"),
+          str(directory/"index.m3u8")]
+    try:
+        with (directory/"ffmpeg.log").open("wb") as log:
+            process=subprocess.Popen(args,stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL,stderr=log,close_fds=True)
+    except OSError as exc:
+        shutil.rmtree(directory,ignore_errors=True)
+        raise HTTPException(502,"Could not launch timeshift transcoder: "+type(exc).__name__)
+    stop_event=threading.Event()
+    now=time.monotonic()
+    with LOCK:
+        if ACTIVE.get(sid) is not parent:
+            process.terminate()
+            shutil.rmtree(directory,ignore_errors=True)
+            raise HTTPException(409,"Original Tablo stream closed")
+        ACTIVE[child_id]={"id":child_id,"directory":directory,"process":process,
+                          "last":now,"created":now,"channel":parent["channel"],
+                          "parent":sid,"origin":origin,"source_playlist":source,
+                          "start_sequence":info["start_sequence"],
+                          "source_follow":info,"follow_error":"",
+                          "follower_stop":stop_event,"mode":"continuous_timeshift"}
+    thread=threading.Thread(target=_follow_tablo_source,
+                            args=(child_id,stop_event),daemon=True)
+    thread.start()
+    return {"session_id":child_id,
+            "playlist_url":"/api/tablo/live/"+child_id+"/index.m3u8",
+            "experiment":"continuous_timeshift_beta",
+            "start_seconds_behind_live":seconds_behind_live,
+            "note":"Rolling HLS output; source history remains on Tablo."}
 
 
 @router.post("/{sid}/preview")
