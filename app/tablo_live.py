@@ -14,12 +14,30 @@ from fastapi.responses import FileResponse
 
 router=APIRouter(prefix="/api/tablo/live")
 USER_AGENT="Tablo-FAST/1.7.0 (Mobile; iPhone; iOS 18.4)"
-STORE=Path("/tmp/universal-guide-live")
+# Keep the rolling DVR on the writable appdata volume, not Compose's 16 MiB /tmp.
+STORE=Path(os.getenv("TABLO_CACHE_DIR","/data/tablo-live-cache"))
+DVR_MINUTES=max(2,min(30,int(os.getenv("TABLO_DVR_MINUTES","20"))))
+DVR_SEGMENT_SECONDS=4
+DVR_SEGMENT_COUNT=(DVR_MINUTES*60)//DVR_SEGMENT_SECONDS
+CACHE_PREPARED=False
 MAX_SESSIONS=2
 IDLE_SECONDS=120
 FAILED_SESSION_SECONDS=240
 ACTIVE={}
 LOCK=threading.RLock()
+
+def _prepare_cache():
+    """Remove abandoned per-session files from an earlier container process."""
+    global CACHE_PREPARED
+    with LOCK:
+        if CACHE_PREPARED:return
+        STORE.mkdir(mode=0o700,parents=True,exist_ok=True)
+        for path in STORE.iterdir():
+            if (path.is_dir() and not path.is_symlink()
+                    and re.fullmatch(r"[A-Za-z0-9_-]{20,80}",path.name)):
+                shutil.rmtree(path,ignore_errors=True)
+        CACHE_PREPARED=True
+
 
 def _settings():
     from app.main import TABLO_URL, DB
@@ -122,6 +140,7 @@ def tune(channel_id:str):
     playlist=_allowed_url(origin,playlist)
     if shutil.which("ffmpeg") is None:
         raise HTTPException(503,"ffmpeg is not installed in the Universal Guide container")
+    _prepare_cache()
     sid=secrets.token_urlsafe(20)
     directory=STORE/sid
     directory.mkdir(mode=0o700,parents=True,exist_ok=False)
@@ -131,7 +150,8 @@ def tune(channel_id:str):
           "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
           "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
           "-c:a","aac","-ac","2","-b:a","128k",
-          "-f","hls","-hls_time","4","-hls_list_size","7",
+          "-f","hls","-hls_time",str(DVR_SEGMENT_SECONDS),
+          "-hls_list_size",str(DVR_SEGMENT_COUNT),
           "-hls_flags","delete_segments+omit_endlist",
           "-hls_segment_filename",str(directory/"seg_%05d.ts"),
           str(directory/"index.m3u8")]
@@ -150,7 +170,8 @@ def tune(channel_id:str):
                      "channel":channel_id,"tune_status":r.status_code,
                      "origin":origin,"source_playlist":playlist}
     return {"session_id":sid,"playlist_url":"/api/tablo/live/"+sid+"/index.m3u8",
-            "note":"Live tuner starting. HLS may need several seconds to buffer."}
+            "dvr_window_target_seconds":DVR_MINUTES*60,
+            "note":"One continuously recording DVR HLS stream; seekable window grows over time."}
 
 def _safe_ffmpeg_message(directory):
     """Expose a short diagnostic without leaking upstream stream tokens."""
@@ -215,6 +236,10 @@ def _health(item,probe=False):
             "segment_count":segments,
             "seconds_since_start":round(time.monotonic()-item["created"],1),
             "ffmpeg_error":_safe_ffmpeg_message(directory) if returncode is not None else ""}
+    if not item.get("parent"):
+        result["mode"]="rolling_dvr"
+        result["dvr_window_target_seconds"]=DVR_MINUTES*60
+        result["dvr_segment_target_seconds"]=DVR_SEGMENT_SECONDS
     if item.get("mode")=="continuous_timeshift":
         result["mode"]="continuous_timeshift"
         result["source_follow"]=item.get("source_follow",{})
