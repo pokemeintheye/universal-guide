@@ -1205,6 +1205,125 @@ document.getElementById("tablosegments").onclick=async function(){
  }catch(e){output.textContent="Segment diagnostic failed: "+e.message}
  finally{button.disabled=false}
 };
+// DVR bar delegates to the already-tested Tablo playback handlers.
+function tabloDvrTime(seconds){
+ const n=Math.max(0,Math.floor(Number(seconds)||0));
+ return Math.floor(n/60)+":"+String(n%60).padStart(2,"0");
+}
+function updateTabloDvrUi(){
+ const bar=document.getElementById("tablodvr");
+ if(bar.hidden||!tabloSession)return;
+ const historical=Boolean(tabloPreviewSession);
+ const video=document.getElementById("plexvideo");
+ const state=document.getElementById("tablodvrstate");
+ const pause=document.getElementById("tablodvrpause");
+ const back=document.getElementById("tablodvrback");
+ const forward=document.getElementById("tablodvrforward");
+ const live=document.getElementById("tablodvrlive");
+ const slider=document.getElementById("tablodvrseek");
+ const left=document.getElementById("tablodvrstart");
+ const right=document.getElementById("tablodvrtime");
+ const playing=video.readyState>=2&&!video.paused;
+ const livePaused=tabloLivePausedAt!==null&&!historical;
+ pause.textContent=playing?"⏸ Pause":"▶ Resume";
+ back.disabled=video.readyState<2;
+ forward.disabled=!historical||video.readyState<2;
+ live.disabled=!historical&&!livePaused;
+ state.classList.toggle("live",!historical&&!livePaused);
+ if(historical){
+  state.textContent="DVR";
+  if(tabloDvrSourceStart&&Number.isFinite(tabloDvrSourceStart.behind)&&
+     Number.isFinite(video.currentTime)){
+   const behind=Math.max(0,tabloDvrSourceStart.behind+
+    (Date.now()-tabloDvrSourceStart.at)/1000-video.currentTime);
+   state.textContent="DVR · ≈"+tabloDvrTime(behind)+" behind live";
+  }
+ }else{
+  const paused=livePaused?Math.round((Date.now()-tabloLivePausedAt)/1000):0;
+  state.textContent=livePaused?"PAUSED · "+tabloDvrTime(paused):"LIVE";
+ }
+ if(!historical||!video.seekable||!video.seekable.length){
+  slider.disabled=true;
+  slider.value="1000";
+  left.textContent=historical?"Buffering DVR…":"Live channel";
+  right.textContent=historical?"--:--":"LIVE";
+  return;
+ }
+ const lo=video.seekable.start(0),hi=video.seekable.end(video.seekable.length-1);
+ if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi-lo<0.5){
+  slider.disabled=true;
+  left.textContent="Buffering DVR…";right.textContent="--:--";return;
+ }
+ slider.disabled=false;
+ const current=Math.max(lo,Math.min(hi,Number(video.currentTime)||lo));
+ if(!tabloDvrDragging)slider.value=String(Math.round((current-lo)/(hi-lo)*1000));
+ left.textContent=tabloDvrTime(hi-lo)+" available";
+ right.textContent="-"+tabloDvrTime(hi-current);
+}
+document.getElementById("tabloadvancedtoggle").onclick=function(){
+ const panel=document.getElementById("tabloadvanced");
+ panel.hidden=!panel.hidden;
+ this.setAttribute("aria-expanded",String(!panel.hidden));
+ this.textContent=panel.hidden?"Advanced playback tools ▾":"Hide advanced tools ▴";
+};
+document.getElementById("tablodvrpause").onclick=function(){
+ if(!tabloSession)return;
+ if(tabloPreviewSession)document.getElementById("tablopause").click();
+ else document.getElementById("tablolivepause").click();
+ updateTabloDvrUi();
+};
+document.getElementById("tablodvrback").onclick=function(){
+ if(!tabloSession)return;
+ if(tabloPreviewSession){
+  seekHistoricalClip(-30);
+ }else{
+  if(tabloLivePausedAt!==null){
+   playerMessage("Resume paused live video before starting a rewind.");
+   return;
+  }
+  // Keep the original tuner running while opening continuous timeshift.
+  document.getElementById("tablooffset").value="30";
+  document.getElementById("tablocontinuous").click();
+ }
+ updateTabloDvrUi();
+};
+document.getElementById("tablodvrforward").onclick=function(){
+ if(tabloPreviewSession)seekHistoricalClip(30);
+ updateTabloDvrUi();
+};
+document.getElementById("tablodvrlive").onclick=async function(){
+ if(!tabloSession)return;
+ if(tabloPreviewSession){
+  document.getElementById("tabloliveback").click();
+  return;
+ }
+ if(tabloLivePausedAt===null||!tabloLivePlaylist)return;
+ this.disabled=true;
+ try{
+  await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration,"live");
+  tabloLivePausedAt=null;
+  tabloPauseMarkerPromise=null;
+  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
+  playerMessage("Jumped to the current Tablo live stream.");
+ }catch(e){playerMessage("Jump to Live failed: "+e.message)}
+ finally{this.disabled=false;updateTabloDvrUi()}
+};
+const tabloSeekBar=document.getElementById("tablodvrseek");
+tabloSeekBar.addEventListener("pointerdown",()=>{tabloDvrDragging=true});
+tabloSeekBar.addEventListener("pointerup",()=>{tabloDvrDragging=false});
+tabloSeekBar.addEventListener("blur",()=>{tabloDvrDragging=false});
+tabloSeekBar.addEventListener("change",function(){
+ tabloDvrDragging=false;
+ if(!tabloPreviewSession)return;
+ const video=document.getElementById("plexvideo");
+ if(!video.seekable||!video.seekable.length)return;
+ const lo=video.seekable.start(0),hi=video.seekable.end(video.seekable.length-1);
+ const target=Math.min(hi-0.3,lo+(hi-lo)*Number(this.value)/1000);
+ if(!Number.isFinite(target)||target<lo)return;
+ try{video.currentTime=target}
+ catch(e){playerMessage("DVR timeline seek failed: "+e.message)}
+ updateTabloDvrUi();
+});
 document.getElementById("watchtablo").onclick=launchTabloLive;
 document.getElementById("playbegin").onclick=()=>launchPlex("beginning");
 document.getElementById("playjoin").onclick=()=>launchPlex("join");
