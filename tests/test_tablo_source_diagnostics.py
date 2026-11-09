@@ -80,6 +80,50 @@ seg_501.ts
             self.assertEqual(result["segment_duration_seconds"],6.1)
             self.assertEqual(result["streams"][0]["codec_name"],"h264")
 
+    def test_byte_ranges_keep_absolute_offsets_when_starting_mid_file(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n"
+        for i in range(30):
+            # Reuse one .ts file with implicit range offsets.
+            tag="188@0" if i==0 else "188"
+            body+=f"#EXTINF:1.000,\n#EXT-X-BYTERANGE:{tag}\nshared.ts\n"
+        origin="http://192.168.1.9:8885"
+        url="http://192.168.1.9/stream/abc/index.m3u8"
+        live,info=tablo_live._continuous_source_manifest(
+            origin,url,body,start_sequence=120)
+        self.assertEqual(info["start_sequence"],120)
+        self.assertIn("#EXT-X-VERSION:4",live)
+        self.assertIn("#EXT-X-MEDIA-SEQUENCE:120",live)
+        self.assertIn("#EXT-X-BYTERANGE:188@3760\n",live)
+        self.assertNotIn("#EXT-X-BYTERANGE:188@0\n",live)
+        self.assertEqual(live.count("#EXT-X-BYTERANGE:"),10)
+        self.assertEqual(live.count("/stream/abc/shared.ts"),10)
+        clip,meta=tablo_live._historic_clip_manifest(
+            origin,url,body,seconds_behind_live=20,clip_seconds=30)
+        self.assertIn("#EXT-X-VERSION:4",clip)
+        self.assertIn("#EXT-X-BYTERANGE:188@1880\n",clip)
+        self.assertNotIn("#EXT-X-BYTERANGE:188@0\n",clip)
+        self.assertEqual(meta["segment_count"],20)
+
+    def test_explicit_byte_ranges_across_file_rotation(self):
+        body=("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188@0\na.ts\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188\n a.ts\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:376@0\nb.ts\n"
+              "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188\nb.ts\n")
+        urls=tablo_live._media_segment_urls(
+            "http://192.168.1.9:8885",
+            "http://192.168.1.9/stream/abc/index.m3u8",body)
+        self.assertEqual(tablo_live._source_byte_ranges(body,urls),
+                         [(188,0),(188,188),(376,0),(188,376)])
+
+    def test_implicit_range_without_prior_start_is_rejected(self):
+        body="#EXTM3U\n#EXTINF:1,\n#EXT-X-BYTERANGE:188\none.ts\n"
+        origin="http://192.168.1.9:8885"
+        url="http://192.168.1.9/stream/abc/index.m3u8"
+        with self.assertRaises(HTTPException) as exc:
+            tablo_live._historic_clip_manifest(origin,url,body,30,75)
+        self.assertEqual(exc.exception.status_code,502)
+
     def test_native_segment_layout_detects_reused_urls_and_byte_ranges(self):
         body=("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:50\n"
               "#EXTINF:1.000,\n#EXT-X-BYTERANGE:188@0\nsame.ts\n"
