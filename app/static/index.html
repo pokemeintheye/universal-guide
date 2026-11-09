@@ -767,6 +767,7 @@ let plexTrackMetadata=null,plexActiveRatingKey=null,plexPlayerBaseOffset=0;
 let plexTotalDuration=0;
 let plexSelectedAudio=null,plexSelectedSubtitle=null,plexTrackMenu=null;
 let plexPreviewDebounce=null;
+let plexTrackRecovery=null;
 let tabloSession=null;
 let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
@@ -1076,23 +1077,43 @@ function showPlexTrackMenu(kind){
  document.getElementById("plextrackpanel").hidden=false;
  showPlexOverlay();
 }
-function applyPlexTrackChoice(){
+async function applyPlexTrackChoice(){
  const kind=plexTrackMenu,select=document.getElementById("plextrackselect");
- document.getElementById("plextrackpanel").hidden=true;
- plexTrackMenu=null;
+ const panel=document.getElementById("plextrackpanel");
  if(kind==="chapters"){
+  panel.hidden=true;plexTrackMenu=null;
   const chapter=plexTrackMetadata?.chapters?.[Number(select.value)];
   if(chapter)plexSafeSeek(chapter.start_seconds);
  }else if(kind==="audio"||kind==="subtitles"){
   const number=Number(select.value);
-  if(!Number.isInteger(number))return;
-  if(kind==="audio")plexSelectedAudio=number;
-  else plexSelectedSubtitle=number;
-  const position=plexPlaybackPosition(document.getElementById("plexvideo"));
-  // Plex applies selected streams when constructing a new HLS transcode.
-  // Resume approximately where the viewer was watching.
-  launchPlex("resume",{position,
-     audio_stream_id:plexSelectedAudio,subtitle_stream_id:plexSelectedSubtitle});
+  if(!Number.isInteger(number)||!playerSession)return;
+  const sid=playerSession,apply=document.getElementById("plextrackapply");
+  const oldAudio=plexSelectedAudio,oldSub=plexSelectedSubtitle;
+  const nextAudio=kind==="audio"?number:oldAudio;
+  const nextSub=kind==="subtitles"?number:oldSub;
+  if(nextAudio===oldAudio&&nextSub===oldSub){
+   panel.hidden=true;plexTrackMenu=null;return;
+  }
+  apply.disabled=true;
+  try{
+   // Validate and set the stream BEFORE closing the working player.
+   // Plex's documented media-part API returns an error if the track is invalid.
+   await req("/api/player/"+encodeURIComponent(sid)+"/tracks",{
+    method:"PUT",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(kind==="audio"?{audio_stream_id:number}:{subtitle_stream_id:number})
+   });
+   if(sid!==playerSession)return;
+   plexSelectedAudio=nextAudio;plexSelectedSubtitle=nextSub;
+   const position=plexPlaybackPosition(document.getElementById("plexvideo"));
+   panel.hidden=true;plexTrackMenu=null;
+   plexTrackRecovery={position,audio_stream_id:oldAudio,subtitle_stream_id:oldSub};
+   await launchPlex("resume",{position,
+     audio_stream_id:nextAudio,subtitle_stream_id:nextSub});
+  }catch(error){
+   // A failed part-selection request leaves the old stream playing.
+   playerMessage("Couldn't change Plex track: "+error.message);
+   panel.hidden=false;
+  }finally{apply.disabled=false}
  }
  showPlexOverlay();
 }
