@@ -264,6 +264,7 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 .player-backdrop.plex-mode .plex-bottom-options{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;pointer-events:auto;margin-top:8px}
 .player-backdrop.plex-mode .plex-bottom-options button{background:#182c48bd;border:1px solid #8da4c277;border-radius:50%;padding:0;width:46px;height:46px;display:grid;place-items:center}
 .player-backdrop.plex-mode .plex-bottom-options button svg{width:24px;height:24px}
+.player-backdrop.plex-mode .plex-bottom-options button:disabled{opacity:.4;cursor:default}
 .player-backdrop.plex-mode .plex-bottom-options button[hidden]{display:none!important}
 .player-backdrop.plex-mode .plex-track-panel[hidden]{display:none!important}
 .player-backdrop.plex-mode .plex-track-panel{
@@ -1073,7 +1074,10 @@ function plexTrackLabel(item){
  return [item.language,item.title||item.codec].filter(Boolean).join(" · ");
 }
 function setPlexTrackButtons(){
- document.getElementById("plexchaptersbutton").hidden=!(plexTrackMetadata?.chapters?.length);
+ const chapters=document.getElementById("plexchaptersbutton");
+ chapters.hidden=false;
+ chapters.disabled=!(plexTrackMetadata?.chapters?.length);
+ chapters.title=chapters.disabled?"No chapters available":"Chapters";
  document.getElementById("plexaudiobutton").hidden=!(plexTrackMetadata?.audio?.length);
  document.getElementById("plexsubtitlesbutton").hidden=!(plexTrackMetadata?.subtitles?.length);
 }
