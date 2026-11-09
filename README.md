@@ -394,3 +394,29 @@ transcoder status, source-follow state, and codec details. Long pauses
 and iOS background suspension beyond the retained cache duration
 will require additional work; this is not yet a finished unlimited
 pause-live-TV implementation.
+
+## Pause Live directly from Tablo live viewing (beta)
+
+The original live player now shows **Pause Live (beta)**. Press it to freeze
+the current picture while the Tablo keeps buffering. Press **Resume Live**
+to continue:
+
+- For a short pause (less than 12 seconds), continue the existing live HLS.
+- For a longer pause, request a continuous timeshift child from approximately
+  `pause duration + 12 seconds` behind live, allowing decode overlap.
+  The browser then switches to the continuous player and exposes the usual
+  Pause/Resume, 10-second backward and 30-second forward controls.
+- **Return to Live** reattaches to the original live transcoder. If a timeshift
+  request fails, the page attempts to restore live playback.
+
+This is **an approximate resume position**, not yet sample-accurate pause-live
+capture. Resuming may start slightly earlier than the scene where Pause was
+pressed. The Tablo buffer must still hold the paused scene; when a long pause
+exceeds the available history (or the 30-minute selection cap), resume cannot
+be guaranteed. Browser background suspension can interrupt keepalives.
+
+Test initially after letting the Tablo channel run for several minutes:
+pause live for roughly **90 seconds**, then resume and verify both picture
+and audio, 10-second rewind, 30-second forward, and Return to Live. Also test
+a **5-second pause** separately. If anything fails, the existing manual
+continuous timeshift and finite-clip playback remain available.
