@@ -413,8 +413,13 @@ def _probe_native_segment_pts(url):
             for chunk in resp.iter_content(chunk_size=16384):
                 sample.extend(chunk[:max(0,262144-len(sample))])
                 if len(sample)>=262144:break
+        # Hash only the bounded video bytes to determine whether different
+        # Tablo playlist entries actually return identical media content.
+        import hashlib
+        digest=hashlib.sha256(sample).hexdigest()[:20]
         if len(sample)<376 or sample[0]!=0x47 or sample[188]!=0x47:
-            return {"status":"not_ts","sample_bytes":len(sample)}
+            return {"status":"not_ts","sample_bytes":len(sample),
+                    "sample_sha256_prefix":digest}
         with tempfile.TemporaryDirectory(prefix="tablo-pts-") as temp:
             path=Path(temp)/"segment.ts"
             path.write_bytes(sample)
@@ -431,6 +436,7 @@ def _probe_native_segment_pts(url):
             except ValueError:pass
         return {"status":"ok" if timestamps else "no_video_pts",
                 "sample_bytes":len(sample),
+                "sample_sha256_prefix":digest,
                 "first_video_pts_seconds":round(timestamps[0],3) if timestamps else None,
                 "last_sample_video_pts_seconds":round(timestamps[-1],3) if timestamps else None}
     except (requests.RequestException,OSError,subprocess.TimeoutExpired) as exc:
@@ -627,6 +633,16 @@ def capture_pause_point(sid:str):
     source_pts=_source_pts_for_sequence(origin,media_url,body,sequence)
     source_edge_pts=_source_pts_for_sequence(
         origin,media_url,body,_summarize_source_playlist(body)["last_media_sequence"]-3)
+    native_urls=_media_segment_urls(origin,media_url,body)
+    native_base=_summarize_source_playlist(body)["media_sequence"]
+    first_idx=sequence-native_base
+    edge_idx=_summarize_source_playlist(body)["last_media_sequence"]-3-native_base
+    native_entry_urls_distinct=(
+        0<=first_idx<len(native_urls) and 0<=edge_idx<len(native_urls)
+        and native_urls[first_idx]!=native_urls[edge_idx])
+    native_samples_match=(
+        bool(source_pts.get("sample_sha256_prefix"))
+        and source_pts.get("sample_sha256_prefix")==source_edge_pts.get("sample_sha256_prefix"))
     live_age=round(time.monotonic()-parent["created"],1)
     with LOCK:
         if ACTIVE.get(sid) is not parent:
@@ -640,7 +656,9 @@ def capture_pause_point(sid:str):
             "live_transcoder_age_seconds":live_age,
             "live_segment_probe":live_probe,
             "pause_source_pts":source_pts,
-            "source_edge_pts":source_edge_pts}
+            "source_edge_pts":source_edge_pts,
+            "native_entry_urls_distinct":native_entry_urls_distinct,
+            "native_segment_samples_match":native_samples_match}
 
 
 def _follow_tablo_source(sid,stop_event):
