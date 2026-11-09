@@ -105,6 +105,14 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertNotIn('" behind disk edge"',HTML)
         self.assertNotIn('"LIVE · buffered"',HTML)
 
+    def test_startup_spinner_hides_technical_buffering_messages(self):
+        self.assertIn('id="tabloloading" class="tablo-loading" hidden',HTML)
+        self.assertIn('class="tablo-loading-spinner"',HTML)
+        self.assertIn('function setTabloLoading(active)',HTML)
+        self.assertIn('if(generation===playerGeneration){setTabloLoading(false);playerMessage("")}',HTML)
+        self.assertNotIn('Tablo tuner buffering… ',HTML)
+        self.assertNotIn('Preparing smooth DVR playback… ',HTML)
+
     def test_overlay_program_follows_recorded_playback_time(self):
         self.assertIn("function tabloDvrPlaybackWallTime(video)",HTML)
         self.assertIn("playerHls?.playingDate",HTML)
@@ -115,12 +123,12 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn("/api/tablo/live/schedule?channel_id=",HTML)
 
     def test_initial_dvr_playback_is_prebuffered(self):
-        self.assertIn("health.disk_dvr_playlist?.segment_count>=6",HTML)
+        self.assertIn("health.disk_dvr_playlist?.segment_count>=4",HTML)
         self.assertIn("startTabloAfterPrebuffer(video,generation)",HTML)
         self.assertIn("function tabloPlayableSecondsAhead(video)",HTML)
-        self.assertIn("ahead>=9",HTML)
+        self.assertIn("ahead>=7",HTML)
         self.assertIn("startFragPrefetch:true",HTML)
-        self.assertIn("liveSyncDurationCount:4",HTML)
+        self.assertIn("liveSyncDurationCount:3",HTML)
 
     def test_old_diagnostics_preserved_as_advanced_tools(self):
         self.assertIn('id="tabloquickdiagnostics"',HTML)
