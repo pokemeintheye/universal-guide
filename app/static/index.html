@@ -1130,6 +1130,12 @@ document.getElementById("plexquickdiagnostics").onclick=async function(){
  }finally{button.disabled=false}
 };
 document.getElementById("tabloquickdiagnostics").onclick=()=>{
+ // Diagnostics must stay visible even with Advanced collapsed.
+ const panel=document.getElementById("tabloadvanced");
+ panel.hidden=false;
+ const toggle=document.getElementById("tabloadvancedtoggle");
+ toggle.setAttribute("aria-expanded","true");
+ toggle.textContent="Hide advanced tools ▴";
  document.getElementById("tablopreviewstatus").click();
 };
 document.getElementById("tablocopydiagnostics").onclick=async function(){
