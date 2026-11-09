@@ -1274,6 +1274,7 @@ async function applyPlexTrackChoice(){
  const panel=document.getElementById("plextrackpanel");
  if(kind==="chapters"){
   panel.hidden=true;plexTrackMenu=null;
+  document.getElementById("plexchaptersbutton").focus();
   const chapter=plexTrackMetadata?.chapters?.[Number(select.value)];
   if(chapter)plexSafeSeek(chapter.start_seconds);
  }else if(kind==="audio"||kind==="subtitles"){
@@ -1411,7 +1412,14 @@ document.getElementById("plexchaptersbutton").onclick=()=>showPlexTrackMenu("cha
 document.getElementById("plexaudiobutton").onclick=()=>showPlexTrackMenu("audio");
 document.getElementById("plexsubtitlesbutton").onclick=()=>showPlexTrackMenu("subtitles");
 document.getElementById("plextrackcancel").onclick=()=>{
- document.getElementById("plextrackpanel").hidden=true;showPlexOverlay();
+ const kind=plexTrackMenu;
+ document.getElementById("plextrackpanel").hidden=true;
+ plexTrackMenu=null;
+ const triggers={chapters:"plexchaptersbutton",audio:"plexaudiobutton",
+  subtitles:"plexsubtitlesbutton"};
+ const trigger=document.getElementById(triggers[kind]||"plexpause");
+ if(!trigger.hidden&&!trigger.disabled)trigger.focus();
+ showPlexOverlay();
 };
 document.getElementById("plextrackapply").onclick=applyPlexTrackChoice;
 const plexScrubber=document.getElementById("plexseek");
