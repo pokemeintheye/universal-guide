@@ -290,3 +290,20 @@ This is a best-effort experimental branch of the existing player.
 Normal **Watch Live on Tablo** and the existing recording/guide integrations
 remain unchanged.
 
+
+## Historical preview troubleshooting: video absent or return to live fails
+
+The initial iPhone test produced audio but no historical video and failed to
+return to live. The experimental player now creates a fresh browser video
+element when swapping HLS sources, rather than reusing Safari's media decoder.
+It also removes the live HLS auto-resume-on-buffer callback, which prevented
+reliable manual pause. If the original live session cannot be reattached, a
+**Restart Live Tablo** button starts a fresh tuner session.
+
+To investigate video-only failures without revealing tokens, press **Historical
+playback diagnostics** while the test clip session is open and share the JSON.
+It reports FFmpeg exit status, segment output, and a safe ffprobe summary of the
+latest transcoded segment. It does not by itself prove successful image
+decoding on iOS. The previous historical test is not considered working until
+video, audio, and return-to-live all pass on the actual iPhone.
+
