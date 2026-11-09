@@ -29,7 +29,10 @@ PLAYLIST_LIMIT = 2 * 1024 * 1024
 
 class PlaybackRequest(BaseModel):
     rating_key: int
-    mode: Literal["beginning", "join"] = "beginning"
+    mode: Literal["beginning", "join", "resume"] = "beginning"
+    offset_seconds: float | None = None
+    audio_stream_id: int | None = None
+    subtitle_stream_id: int | None = None
     airing_start: str | None = None
     airing_end: str | None = None
 
@@ -272,6 +275,104 @@ def _upstream(session, url, *, stream=False):
         raise HTTPException(502, "Plex stream is unavailable or timed out")
 
 
+def _plex_item_metadata(key):
+    """Return only UI-safe metadata from the indexed Plex movie/episode."""
+    _, base, token = _config()
+    try:
+        response=requests.get(
+            base+"/library/metadata/"+str(key),
+            headers={"X-Plex-Token":token,"Accept":"application/xml"},
+            timeout=(5,20),allow_redirects=False)
+        response.raise_for_status()
+        root=ET.fromstring(response.content)
+    except (requests.RequestException,ET.ParseError) as exc:
+        raise HTTPException(502,"Plex metadata unavailable: "+type(exc).__name__)
+    video=root.find("Video")
+    if video is None:raise HTTPException(502,"Plex returned no video metadata")
+    media=video.find("Media")
+    part=media.find("Part") if media is not None else None
+    def number(value,default=0):
+        try:return int(value)
+        except (ValueError,TypeError):return default
+    chapters=[]
+    for node in video.findall(".//Chapter"):
+        starts=number(node.get("startTime"),-1)
+        if starts>=0:
+            chapters.append({"title":node.get("title") or "Chapter "+str(len(chapters)+1),
+                             "start_seconds":starts/1000})
+    streams={"audio":[],"subtitle":[]}
+    if part is not None:
+        for node in part.findall("Stream"):
+            kind={"2":"audio","3":"subtitle"}.get(node.get("streamType"))
+            if kind is None:continue
+            stream_id=number(node.get("id"))
+            if stream_id<=0:continue
+            entry={"id":stream_id,
+                   "language":node.get("language") or node.get("languageCode") or "Unknown",
+                   "codec":node.get("codec") or "",
+                   "title":node.get("title") or node.get("displayTitle") or "",
+                   "selected":node.get("selected")=="1"}
+            streams[kind].append(entry)
+    return {"kind":video.get("type") or "",
+            "title":video.get("title") or "",
+            "show_title":video.get("grandparentTitle") or "",
+            "year":number(video.get("year")),
+            "season":number(video.get("parentIndex")),
+            "episode":number(video.get("index")),
+            "duration_seconds":number(video.get("duration"))/1000,
+            "chapters":chapters,
+            "audio":streams["audio"],"subtitles":streams["subtitle"],
+            "preview_available":bool(part is not None and
+                                     "sd" in (part.get("indexes") or "").split(","))
+            }
+
+
+@router.get("/{session_id}/metadata")
+def playback_metadata(session_id:str):
+    session=_session(session_id)
+    return _plex_item_metadata(session["rating_key"])
+
+
+@router.get("/{session_id}/preview")
+def playback_preview(session_id:str,at:float=0):
+    """Proxy only Plex-generated BIF preview JPEGs for the active media item."""
+    session=_session(session_id)
+    details=_plex_item_metadata(session["rating_key"])
+    if not details["preview_available"]:
+        raise HTTPException(404,"No Plex preview thumbnails for this item")
+    if not (0<=at<=max(0,details["duration_seconds"])):
+        raise HTTPException(400,"Invalid preview time")
+    _,base,token=_config()
+    # Part IDs are determined independently by the server's indexed item.
+    response=requests.get(base+"/library/metadata/"+str(session["rating_key"]),
+        headers={"X-Plex-Token":token,"Accept":"application/xml"},
+        timeout=(5,15),allow_redirects=False)
+    try:
+        response.raise_for_status()
+        part=ET.fromstring(response.content).find(".//Media/Part")
+        if part is None or not re.fullmatch(r"\d+",part.get("id") or ""):
+            raise HTTPException(404,"Plex thumbnail index unavailable")
+        part_id=part.get("id")
+    except (requests.RequestException,ET.ParseError):
+        raise HTTPException(502,"Plex thumbnail index unavailable")
+    finally:
+        response.close()
+    try:
+        frame=requests.get(base+"/library/parts/"+part_id+"/indexes/sd/"+
+            str(int(at*1000)),headers={"X-Plex-Token":token,
+            "Accept":"image/jpeg"},timeout=(4,12),allow_redirects=False)
+        if frame.status_code==404:raise HTTPException(404,"Preview not indexed")
+        frame.raise_for_status()
+        if len(frame.content)>512*1024 or not frame.content.startswith(b"\xff\xd8"):
+            raise HTTPException(502,"Invalid Plex thumbnail")
+        return Response(content=frame.content,media_type="image/jpeg",
+                        headers={"Cache-Control":"private, max-age=30"})
+    except requests.RequestException:
+        raise HTTPException(502,"Plex thumbnail retrieval failed")
+    finally:
+        if "frame" in locals():frame.close()
+
+
 def _plex_duration(key):
     _, base, token = _config()
     try:
@@ -302,6 +403,18 @@ def start_playback(body: PlaybackRequest):
         raise HTTPException(404, "Movie or episode not found in indexed Plex library")
     offset = 0
     duration = _plex_duration(body.rating_key)
+    if body.mode == "resume":
+        if body.offset_seconds is None or not (0<=body.offset_seconds<max(duration,1)):
+            raise HTTPException(400,"Invalid resume time")
+        offset=float(body.offset_seconds)
+    if body.audio_stream_id is not None or body.subtitle_stream_id is not None:
+        meta=_plex_item_metadata(body.rating_key)
+        if (body.audio_stream_id is not None and
+            body.audio_stream_id not in [entry["id"] for entry in meta["audio"]]):
+            raise HTTPException(400,"Audio track is not available for this item")
+        if (body.subtitle_stream_id is not None and body.subtitle_stream_id!=0 and
+            body.subtitle_stream_id not in [entry["id"] for entry in meta["subtitles"]]):
+            raise HTTPException(400,"Subtitle track is not available for this item")
     if body.mode == "join":
         if not body.airing_start or not body.airing_end:
             raise HTTPException(400, "Join in progress requires airing start and end times")
@@ -342,11 +455,17 @@ def start_playback(body: PlaybackRequest):
         "X-Plex-Session-Identifier": sid,
         "X-Plex-Client-Profile-Name": "Chrome",
     }
+    if body.audio_stream_id is not None:
+        params["audioStreamID"]=str(body.audio_stream_id)
+    if body.subtitle_stream_id is not None:
+        params["subtitleStreamID"]=str(body.subtitle_stream_id)
     master = endpoint + "?" + urlencode(params)
     session = {"id": sid, "resources": {"master.m3u8": master},
                "last": time.monotonic(), "rating_key": body.rating_key,
                "mode":body.mode,"requested_offset_seconds":round(offset,1),
                "item_duration_seconds":duration,
+               "audio_stream_id":body.audio_stream_id,
+               "subtitle_stream_id":body.subtitle_stream_id,
                "requests": 0, "playlists": 0, "segments": 0,
                "last_resource": None, "last_http": None, "last_error": None,
                "decision_http": None, "decision_attempted": False}
