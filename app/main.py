@@ -425,12 +425,57 @@ def series_title_matches(guide_title,plex_title):
     return False
 
 
+def episode_title_alias(value):
+    """Conservative secondary title key: ignore only an initial 'The'."""
+    title=norm(value)
+    return title[4:] if title.startswith("the ") else title
+
+
+def numbered_episode_part(value):
+    """Recognize Plex's terminal '(1)', '(2)', '(3)' part suffixes only."""
+    raw=str(value or "").strip()
+    found=re.search(r"\s+\(\s*([123])\s*\)\s*$",raw)
+    if not found:return None
+    base=raw[:found.start()].strip()
+    return (episode_title_alias(base),int(found.group(1))) if base else None
+
+
+def episode_payload(m):
+    return {"kind":"episode","title":m["title"],"show":m["show_title"],
+            "rating_key":m["id"].split(":",1)[1]}
+
+
+def matched_numbered_parts(series,subtitle,index):
+    """Offer distinct Plex episodes when guide omits the part number.
+
+    Require a unique consecutively numbered group beginning with (1).
+    Never silently choose one part when the feed lacks the discriminator.
+    """
+    key=episode_title_alias(subtitle)
+    if not key:return None
+    candidates=index["part_title"].get((series,key),[])
+    distinct={part:m for part,m in candidates}
+    if len(distinct)!=len(candidates) or len(distinct) not in (2,3):
+        return None
+    if set(distinct)!=set(range(1,len(distinct)+1)):
+        return None
+    # Distinct content IDs are required for the separate-parts UI.
+    items=[distinct[part] for part in sorted(distinct)]
+    if len({m["id"] for m in items})!=len(items):return None
+    payload=[episode_payload(m) for m in items]
+    return {"kind":"episode","title":" / ".join(m["title"] for m in items),
+            "show":items[0]["show_title"],
+            "rating_key":payload[0]["rating_key"],"parts":payload}
+
+
 def build_media_index(catalog):
     """Build hash indexes once per guide request instead of scanning every Plex
     episode for every guide program (the previous O(programs * media) delay)."""
     movies={}
     episodes_by_number={}
     episodes_by_title={}
+    episodes_by_alias={}
+    parts_by_title={}
     series_counts={}
     for m in catalog:
         if m["kind"]=="movie":
@@ -445,7 +490,12 @@ def build_media_index(catalog):
             for key in keys:
                 episodes_by_number.setdefault((key,m["season"],m["episode"]),[]).append(m)
                 episodes_by_title.setdefault((key,norm(m["title"])),[]).append(m)
+                episodes_by_alias.setdefault((key,episode_title_alias(m["title"])),[]).append(m)
+                part=numbered_episode_part(m["title"])
+                if part:
+                    parts_by_title.setdefault((key,part[0]),[]).append((part[1],m))
     return {"movies":movies,"number":episodes_by_number,"title":episodes_by_title,
+            "alias_title":episodes_by_alias,"part_title":parts_by_title,
             "series_counts":series_counts}
 
 
@@ -510,7 +560,11 @@ def match(p,index):
     subtitle=norm(p.get("subtitle"))
     if season is not None and number is not None:
         by_number=index["number"].get((title,season,number),[])
-        if len(by_number)==1 and (not subtitle or norm(by_number[0]["title"])==subtitle):
+        if len(by_number)==1 and (not subtitle or
+                norm(by_number[0]["title"])==subtitle or
+                episode_title_alias(by_number[0]["title"])==episode_title_alias(p.get("subtitle")) or
+                (numbered_episode_part(by_number[0]["title"]) is not None and
+                 numbered_episode_part(by_number[0]["title"])[0]==episode_title_alias(p.get("subtitle")))):
             m=by_number[0]
             return {"kind":"episode","title":m["title"],"show":m["show_title"],
                     "rating_key":m["id"].split(":",1)[1]}
@@ -522,6 +576,13 @@ def match(p,index):
                     "rating_key":m["id"].split(":",1)[1]}
         multi=match_broadcast_segments(title,p.get("subtitle"),index)
         if multi:return multi
+        # Exact title matching takes priority, then safe variants.
+        # Never choose arbitrarily between two Plex part-numbered episodes.
+        alias=index["alias_title"].get((title,episode_title_alias(p.get("subtitle"))),[])
+        if len(alias)==1 and not numbered_episode_part(alias[0]["title"]):
+            return episode_payload(alias[0])
+        parts=matched_numbered_parts(title,p.get("subtitle"),index)
+        if parts:return parts
     return None
 
 @app.get("/static/manifest.webmanifest")
