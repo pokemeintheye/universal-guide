@@ -34,7 +34,7 @@ class PlexPlayerOverlayTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker,HTML)
         self.assertIn('panel.classList.add("plex-mode")',HTML)
-        self.assertIn('panel.classList.remove("plex-mode")',HTML)
+        self.assertIn('document.getElementById("playerbackdrop").classList.remove("plex-mode")',HTML)
         self.assertIn('class="tablo-network">PLEX</div>',HTML)
 
     def test_audio_and_subtitles_reopen_transcode_at_position(self):
