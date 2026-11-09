@@ -210,6 +210,9 @@ def _health(item,probe=False):
         result["mode"]="continuous_timeshift"
         result["source_follow"]=item.get("source_follow",{})
         result["follow_error"]=item.get("follow_error","")
+        result["source_start_sequence"]=item.get("start_sequence")
+        result["from_pause_marker"]=item.get("from_pause_marker",False)
+        result["initial_source_position"]=item.get("initial_source_position",{})
     if probe:
         result["segment_probe"]=_probe_segment(directory)
         if playlist.is_file():
@@ -479,7 +482,9 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
     for url,d in chosen:
         output.extend(("#EXTINF:"+format(d,".3f")+",",url))
     return "\n".join(output)+"\n",{"start_sequence":start_sequence,
+        "first_listed_sequence":base_sequence,
         "last_sequence":base_sequence+len(urls)-1,
+        "seconds_behind_source_live":round(sum(durations[first:]),1),
         "available_seconds":round(sum(durations),1),
         "source_segments":len(chosen)}
 
@@ -529,7 +534,9 @@ def capture_pause_point(sid:str):
         parent["pause_marker"]={"sequence":sequence,"captured":time.monotonic(),
                                 "media_url":media_url,"overlap":overlap}
     return {"captured":True,"source_sequence":sequence,
-            "seconds_behind_source_live":overlap}
+            "seconds_behind_source_live":overlap,
+            "source_playlist_segments":_summarize_source_playlist(body)["segment_count"],
+            "source_last_sequence":_summarize_source_playlist(body)["last_media_sequence"]}
 
 
 def _follow_tablo_source(sid,stop_event):
@@ -639,6 +646,8 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
                           "parent":sid,"origin":origin,"source_playlist":source,
                           "start_sequence":info["start_sequence"],
                           "source_follow":info,"follow_error":"",
+                          "from_pause_marker":bool(resume_paused),
+                          "initial_source_position":info,
                           "follower_stop":stop_event,"mode":"continuous_timeshift"}
     thread=threading.Thread(target=_follow_tablo_source,
                             args=(child_id,stop_event),daemon=True)
