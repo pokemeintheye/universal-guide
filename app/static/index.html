@@ -763,6 +763,7 @@ let playerHls=null;
 let playerSession=null;
 let plexOverlayTimer=null,plexOverlayClock=null,plexSeekDragging=false;
 let plexTrackMetadata=null,plexActiveRatingKey=null,plexPlayerBaseOffset=0;
+let plexTotalDuration=0;
 let plexSelectedAudio=null,plexSelectedSubtitle=null,plexTrackMenu=null;
 let plexPreviewDebounce=null;
 let tabloSession=null;
@@ -980,12 +981,14 @@ function plexFormatTime(seconds){
  return h?h+":"+String(m).padStart(2,"0")+":"+sec:m+":"+sec;
 }
 function plexPlaybackDuration(video){
+ if(plexTotalDuration>0)return plexTotalDuration;
  const value=video.duration;
- if(Number.isFinite(value)&&value>0)return value;
+ if(Number.isFinite(value)&&value>0)return value+plexPlayerBaseOffset;
  return plexTrackMetadata?.duration_seconds||0;
 }
 function plexPlaybackPosition(video){
- return Math.max(0,Number.isFinite(video.currentTime)?video.currentTime:0);
+ return plexPlayerBaseOffset+
+   Math.max(0,Number.isFinite(video.currentTime)?video.currentTime:0);
 }
 function clearPlexOverlayTimer(){
  if(plexOverlayTimer){clearTimeout(plexOverlayTimer);plexOverlayTimer=null}
@@ -1022,11 +1025,22 @@ function updatePlexOverlayUi(){
 }
 function plexSafeSeek(seconds){
  const video=document.getElementById("plexvideo");
- if(!video.seekable?.length)return;
- const min=video.seekable.start(0),max=video.seekable.end(video.seekable.length-1);
- const target=Math.max(min,Math.min(max-0.3,seconds));
- if(Number.isFinite(target)&&target>=min)video.currentTime=target;
- updatePlexOverlayUi();
+ if(!Number.isFinite(seconds))return;
+ const duration=plexPlaybackDuration(video);
+ const absolute=Math.max(0,Math.min(Math.max(0,duration-0.5),seconds));
+ const relative=absolute-plexPlayerBaseOffset;
+ const ranges=video.seekable;
+ if(relative>=0&&ranges?.length){
+  const min=ranges.start(0),max=ranges.end(ranges.length-1);
+  if(relative>=min&&relative<=max){
+   video.currentTime=relative;
+   updatePlexOverlayUi();return;
+  }
+ }
+ // When the Plex transcoder was started mid-title, earlier chapters and seeks
+ // require a new transcode at the requested absolute file timestamp.
+ launchPlex("resume",{position:absolute,
+  audio_stream_id:plexSelectedAudio,subtitle_stream_id:plexSelectedSubtitle});
 }
 function plexTrackLabel(item){
  return [item.language,item.title||item.codec].filter(Boolean).join(" · ");
@@ -1146,6 +1160,7 @@ function cleanupPlexOverlay(){
  if(plexPreviewDebounce){clearTimeout(plexPreviewDebounce);plexPreviewDebounce=null}
  plexSeekDragging=false;
  plexTrackMetadata=null;plexActiveRatingKey=null;plexPlayerBaseOffset=0;
+ plexTotalDuration=0;
  plexTrackMenu=null;
  document.getElementById("plexoverlay").hidden=true;
  document.getElementById("plexoverlay").classList.remove("controls-hidden");
@@ -1264,6 +1279,14 @@ async function launchPlex(mode,options=null){
  try{
   // Cleanup is complete before the next Plex start request.
   await closePlexPlayer();
+  // closePlexPlayer resets per-session state; restore only explicit
+  // selections for a same-item transcode restart.
+  if(mode==="resume"){
+   plexSelectedAudio=options?.audio_stream_id??null;
+   plexSelectedSubtitle=options?.subtitle_stream_id??null;
+  }else{
+   plexSelectedAudio=null;plexSelectedSubtitle=null;
+  }
   const generation=++playerGeneration;
   const selected=selectedPlexEpisode(program);
   const split=Array.isArray(program.plex.parts)&&program.plex.parts.length>1;
@@ -1290,6 +1313,7 @@ async function launchPlex(mode,options=null){
   playerSession=sid;
   plexActiveRatingKey=selectedKey;
   plexPlayerBaseOffset=Number(info.offset_seconds)||0;
+  plexTotalDuration=Number(info.duration_seconds)||0;
   document.getElementById("plexquickdiagnostics").hidden=(!tabloDebugEnabled);
   configurePlexOverlay(info,generation);
   document.getElementById("playertitle").textContent=info.title+
