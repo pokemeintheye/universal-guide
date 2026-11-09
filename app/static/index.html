@@ -696,6 +696,8 @@ let tabloLastPauseMarker=null;
 let tabloLastDiagnosticsText="";
 let tabloDvrPlaybackTelemetry={waiting_count:0,total_wait_ms:0,last_wait_started:null,last_wait_position:null,events:[]};
 let tabloDvrClock=null,tabloDvrSourceStart=null,tabloDvrDragging=false;
+let tabloSchedule=null,tabloScheduleLastFetch=0,tabloScheduleLoading=false;
+let tabloChannelId=null,tabloOverlayFallbackProgram=null;
 let tabloOverlayTimer=null;
 const tabloDebugEnabled=new URLSearchParams(location.search).get("debug")==="1";
 let selectedProgram=null;
@@ -720,6 +722,75 @@ async function explainPlayerFailure(fallback,generation){
  }
  playerMessage(detail);
 }
+function tabloOverlayProgramAt(programs,when){
+ if(!Number.isFinite(when))return null;
+ return (programs||[]).find(p=>{
+  const from=Date.parse(p.start),until=Date.parse(p.stop);
+  return Number.isFinite(from)&&Number.isFinite(until)&&from<=when&&when<until;
+ })||null;
+}
+function tabloDvrPlaybackWallTime(video){
+ // Program-date-time is stamped by FFmpeg when segments are recorded.
+ // Prefer HLS.js's currently playing segment date (respects seeks/pauses).
+ const playing=playerHls?.playingDate;
+ if(playing instanceof Date&&Number.isFinite(playing.getTime()))
+  return playing.getTime();
+ // Native Safari can map HLS presentation time to absolute broadcast time.
+ if(typeof video.getStartDate==="function"){
+  const start=video.getStartDate();
+  if(start instanceof Date&&Number.isFinite(start.getTime())&&
+       Number.isFinite(video.currentTime))
+   return start.getTime()+video.currentTime*1000;
+ }
+ // Last resort on browsers that don't expose program-date-time. Account
+ // for the current position relative to the rolling edge (approximate).
+ const window=tabloDvrWindow(video);
+ if(!window||!Number.isFinite(video.currentTime))return null;
+ return Date.now()-Math.max(0,window.hi-video.currentTime)*1000-10000;
+}
+function updateTabloOverlayProgram(){
+ if(!tabloSession||!tabloSchedule)return;
+ const video=document.getElementById("plexvideo");
+ const displayedAt=tabloDvrPlaybackWallTime(video);
+ if(displayedAt===null)return;
+ const program=tabloOverlayProgramAt(tabloSchedule.programs,displayedAt);
+ const entry=program||{title:"Live TV",no_guide_data:true};
+ const name=entry.title||"Live TV";
+ const title=document.getElementById("tablodvrtitle");
+ if(title.textContent!==name)title.textContent=name;
+ const from=Date.parse(entry.start),until=Date.parse(entry.stop);
+ let duration="";
+ if(!entry.no_guide_data&&Number.isFinite(from)&&Number.isFinite(until)&&until>from){
+  const minutes=Math.round((until-from)/60000);
+  duration=minutes>=60&&minutes%60===0?(minutes/60)+" hour"+(minutes===60?"":"s"):minutes+" min";
+ }
+ const meta=[tabloSchedule.channel?.number||"",
+   duration].filter(Boolean).join("   |   ");
+ const target=document.getElementById("tablodvrmeta");
+ if(target.textContent!==meta)target.textContent=meta;
+}
+async function refreshTabloOverlaySchedule(generation,force=false){
+ if(!tabloChannelId||!tabloSession||generation!==playerGeneration||
+    tabloScheduleLoading)return;
+ if(!force&&Date.now()-tabloScheduleLastFetch<4*60*1000)return;
+ tabloScheduleLoading=true;
+ try{
+  const result=await req("/api/tablo/live/schedule?channel_id="+
+     encodeURIComponent(tabloChannelId),{cache:"no-store"});
+  if(generation!==playerGeneration||!tabloSession)return;
+  tabloSchedule=result;
+  tabloScheduleLastFetch=Date.now();
+  updateTabloOverlayProgram();
+ }catch(error){
+  // A stale or temporarily missing EPG must never interrupt the DVR stream.
+  console.warn("Tablo overlay schedule unavailable:",error);
+  tabloScheduleLastFetch=Date.now()-3*60*1000;
+ }finally{
+  if(generation===playerGeneration)tabloScheduleLoading=false;
+ }
+}
+
+
 function configureTabloOverlay(channel,entry){
  const panel=document.getElementById("playerbackdrop");
  panel.classList.add("tablo-mode");
@@ -825,6 +896,8 @@ async function closePlexPlayer(){
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  if(tabloDvrClock){clearInterval(tabloDvrClock);tabloDvrClock=null;}
  tabloDvrSourceStart=null;tabloDvrDragging=false;
+ tabloSchedule=null;tabloScheduleLastFetch=0;tabloScheduleLoading=false;
+ tabloChannelId=null;tabloOverlayFallbackProgram=null;
  teardownTabloOverlay();
  document.getElementById("tablodvr").hidden=true;
  document.getElementById("tabloadvanced").hidden=true;
@@ -1024,6 +1097,9 @@ async function launchTabloLive(){
   }
   tabloSession=info.session_id;
   tabloLivePlaylist=info.playlist_url;
+  tabloChannelId=channel.id.slice("tablo:".length);
+  tabloOverlayFallbackProgram=selectedProgram?.entry||null;
+  refreshTabloOverlaySchedule(generation,true);
   // Keep the original tuner session active while a viewer watches/pauses
   // a historical clip. Safari may suspend timers when fully backgrounded.
   if(tabloHeartbeat)clearInterval(tabloHeartbeat);
@@ -1039,7 +1115,12 @@ async function launchTabloLive(){
   document.getElementById("tablodvr").hidden=false;
   configureTabloOverlay(channel,selectedProgram?.entry);
   if(tabloDvrClock)clearInterval(tabloDvrClock);
-  tabloDvrClock=setInterval(updateTabloDvrUi,800);
+  tabloDvrClock=setInterval(()=>{
+   updateTabloDvrUi();
+   updateTabloOverlayProgram();
+   if(Date.now()-tabloScheduleLastFetch>=4*60*1000)
+    refreshTabloOverlaySchedule(generation);
+  },800);
   updateTabloDvrUi();
   document.getElementById("tabloquickdiagnostics").hidden=false;
   document.getElementById("tablodiagnosticspanel").hidden=true;
