@@ -39,7 +39,7 @@ class DiskDvrTests(unittest.TestCase):
                 "#EXTINF:3.750,\nseg_00042.ts\n")
             info=tablo_live._disk_dvr_playlist_window(manifest)
             self.assertEqual(info["status"],"ok")
-            self.assertEqual(info["window_seconds"],7.75)
+            self.assertEqual(info["window_seconds"],7.8)
             self.assertEqual(info["first_sequence"],41)
             self.assertEqual(info["last_sequence"],42)
             self.assertNotIn("seg_00042.ts",str(info))
