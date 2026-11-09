@@ -563,3 +563,20 @@ currently has no per-user authentication and its backend uses a Plex
 token with access to the configured library. Keep it on a trusted LAN,
 do not expose it to untrusted users or the internet, and maintain
 Plex shared-user permissions separately.
+
+
+## Tune OTA channels without guide data
+
+Tablo channels in the indexed /guide/channels lineup are displayed even when
+their guide has no schedule entries for the current timeline. Uncovered periods
+are represented by a muted, clickable **No guide information** block with
+**Watch Live** in the details dialog. This also fills gaps between legitimate
+program listings without inventing titles. The live tuner still uses the real
+Tablo channel ID and its existing authorization/checks. Channels without
+schedule data also appear in Manage Channels, respecting hidden/favorite
+preferences. The Plex-only guide view does not include these placeholders.
+
+After updating, click **Refresh Tablo** at least once to pick up any channel
+missing from the stored Tablo lineup (e.g. OTA 20.1). A channel missing from
+Tablo's own /guide/channels response cannot be tuned through this feature;
+check Tablo's channel scan/lineup in that case.
