@@ -177,13 +177,23 @@ def _probe_segment(directory):
         import json
         cmd=["ffprobe","-v","error","-show_entries",
              "stream=codec_type,codec_name,width,height,pix_fmt",
+             "-show_entries","format=start_time,duration",
              "-of","json",str(segment)]
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=5,check=False)
         if p.returncode:
             return {"status":"probe_failed","exit_code":p.returncode,
                     "message":p.stderr[-180:].strip()}
-        streams=json.loads(p.stdout).get("streams",[])
+        payload=json.loads(p.stdout)
+        streams=payload.get("streams",[])
+        fmt=payload.get("format",{})
+        # MPEG-TS PTS in the transcoded segment can expose how far the
+        # live transcoder has progressed since its input was opened.
+        def fnum(value):
+            try:return round(float(value),2)
+            except (TypeError,ValueError):return None
         return {"status":"ok" if streams else "no_decodable_streams",
+                "segment_timestamp_seconds":fnum(fmt.get("start_time")),
+                "segment_duration_seconds":fnum(fmt.get("duration")),
                 "segment_bytes":segment.stat().st_size,
                 "streams":[{k:v for k,v in stream.items()
                            if k in ("codec_type","codec_name","width","height","pix_fmt")}
@@ -528,6 +538,11 @@ def capture_pause_point(sid:str):
         origin,source=parent["origin"],parent["source_playlist"]
     media_url,body,_=_source_media_playlist(origin,source)
     sequence,overlap=_pause_source_sequence(body)
+    # Diagnostic only: compare the source live edge with the original
+    # transcoder's most recently written MPEG-TS presentation timestamp.
+    # Never use this value to modify the requested pause segment yet.
+    live_probe=_probe_segment(parent["directory"])
+    live_age=round(time.monotonic()-parent["created"],1)
     with LOCK:
         if ACTIVE.get(sid) is not parent:
             raise HTTPException(409,"Tablo stream closed before pause marker was stored")
@@ -536,7 +551,9 @@ def capture_pause_point(sid:str):
     return {"captured":True,"source_sequence":sequence,
             "seconds_behind_source_live":overlap,
             "source_playlist_segments":_summarize_source_playlist(body)["segment_count"],
-            "source_last_sequence":_summarize_source_playlist(body)["last_media_sequence"]}
+            "source_last_sequence":_summarize_source_playlist(body)["last_media_sequence"],
+            "live_transcoder_age_seconds":live_age,
+            "live_segment_probe":live_probe}
 
 
 def _follow_tablo_source(sid,stop_event):
