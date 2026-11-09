@@ -23,6 +23,8 @@ small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}bu
 .epg-no-schedule a{color:#d6e6ff;background:#314969;border:1px solid #6581a3;border-radius:8px;padding:9px 12px;text-decoration:none;font-weight:650}
 .epg-no-schedule a:focus-visible{outline:3px solid #7cbdff}
 .epg-program strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.epg-program.no-guide{background:#222e40;border:1px dashed #60718b;color:#c4d1e3}
+.epg-program.no-guide:hover{background:#304057}
 .epg-program.owned{background:#194b43;border-color:#39896d}
 .epg-program em{font-style:normal;font-size:10px;color:#aef6d7}
 input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:pointer} .result label{display:inline-flex;align-items:center;gap:6px;font-size:13px}
@@ -310,7 +312,7 @@ async function guide(only){
     if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
     const left=(a-start)/(end-start)*100,width=(b-a)/(end-start)*100;
     const index=shownPrograms.push({channel:ch,entry:p})-1;
-    blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+'" data-program="'+index+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+esc(p.title)+'"><strong>'+esc(p.title)+'</strong>'+(p.plex?'<em>✓ In Plex</em>':'')+'</button>';
+    blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+(p.no_guide_data?' no-guide':'')+'" data-program="'+index+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+esc(p.title)+(p.no_guide_data?' — tap to watch live':'')+'"><strong>'+esc(p.title)+'</strong>'+(p.no_guide_data?'<em>▶ Watch Live</em>':p.plex?'<em>✓ In Plex</em>':'')+'</button>';
    }
    if(ch.schedule_unavailable && ch.source==="philo" && ch.philo_channel_url){
      const verified=/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(ch.philo_channel_url);
