@@ -15,6 +15,7 @@ Unified TV guide prototype for Plex, local OTA listings and Philo schedules, now
    - `PLEX_URL`: `http://YOUR-UNRAID-IP:32400` (if Plex uses host networking).
    - `PLEX_TOKEN`: your Plex API token (secret; **never commit it**).
    - `PLEX_ALLOWED_LABEL`: optional exact Plex sharing label; leave empty to index all Plex media (e.g. `Family Approved`).
+   - `PLEX_LABEL_MODE`: `allow` (default) or `exclude`.
    - `REFRESH_MINUTES`: `30`
    - `GUIDE_XMLTV`: `/data/guide.xml`
    - `TABLO_URL`: `http://YOUR-TABLO-IP:8885` (legacy network Tablo)
@@ -534,23 +535,28 @@ indexed catalog; refresh the guide after deploying the updated image.
 
 ## Optional Plex label filter for shared viewing
 
-Set `PLEX_ALLOWED_LABEL` in Unraid Docker container settings to the exact
-**Plex Label** used for sharing, for example `Family Approved`.
-This is an **allow-list**: only movies carrying the label and episodes
-of shows carrying the label are indexed, searched, offered as available,
-and eligible for playback. Labels are compared case-insensitively.
+Set `PLEX_ALLOWED_LABEL` to a Plex sharing label (for example,
+`Family Approved`) and set `PLEX_LABEL_MODE` to one of the following:
+
+- `allow` (default): Include only movies and shows carrying the label.
+- `exclude`: Include movies and shows that **do not** carry the label.
+
+The chosen rule determines which movies and TV episodes are indexed,
+searched, marked available and eligible for Universal Guide playback.
+Matching is case-insensitive.
 Apply labels to the **show** for TV episodes; this version does not
 independently allow episodes from an otherwise unlabelled show.
 
-Leaving the variable blank preserves existing behavior. When its value
-changes, restarting the container clears the old Plex metadata catalog
+Leaving `PLEX_ALLOWED_LABEL` blank disables filtering, regardless of mode.
+When the label **or mode** changes, restarting the container clears the old Plex metadata catalog
 before the new filtered sync. The filtered sync may take longer because
 Plex sometimes omits Label elements from library listing responses;
 in that case we request details for each movie/show.
 
 After updating the image and setting the variable, run **Refresh Plex
-catalog**. Confirm an allowed title appears and an unlabelled title
-does not. Plex label edits take effect after another sync.
+catalog**. In allow mode, confirm an approved item appears and an unlabelled item
+does not. In exclude mode, confirm a labeled item disappears and an
+unlabelled item remains. Plex label edits take effect after another sync.
 
 **Security:** This is not Plex user authorization. Universal Guide
 currently has no per-user authentication and its backend uses a Plex
