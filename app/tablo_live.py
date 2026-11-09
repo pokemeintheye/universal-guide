@@ -99,6 +99,36 @@ def _allowed_url(origin,url):
             str(target.port or 80)+str(target.path[:90]))
     return candidate
 
+@router.get("/schedule")
+def channel_schedule(channel_id:str):
+    """Small, channel-specific OTA schedule for the active DVR overlay.
+
+    Includes recent history so a delayed or rewound DVR playhead can display
+    the show actually being watched rather than the current live listing.
+    """
+    if not re.fullmatch(r"/guide/channels/[A-Za-z0-9_-]{1,80}",channel_id):
+        raise HTTPException(400,"Invalid Tablo channel identifier")
+    _,db_path=_settings()
+    import sqlite3
+    from datetime import timedelta
+    now=datetime.now(timezone.utc)
+    start=(now-timedelta(hours=2)).isoformat()
+    stop=(now+timedelta(hours=8)).isoformat()
+    with sqlite3.connect(db_path) as c:
+        c.row_factory=sqlite3.Row
+        channel=c.execute(
+            "SELECT channel_id,number,network,callsign FROM tablo_channels "
+            "WHERE channel_id=?",(channel_id,)).fetchone()
+        if not channel:raise HTTPException(404,"Tablo channel not in lineup")
+        rows=c.execute(
+            "SELECT title,subtitle,start,stop FROM tablo_listings "
+            "WHERE channel_id=? AND start < ? AND stop > ? ORDER BY start",
+            (channel_id,stop,start)).fetchall()
+    return {"channel":dict(channel),
+            "programs":[dict(x) for x in rows],
+            "fetched_at":now.isoformat()}
+
+
 @router.post("/start")
 def tune(channel_id:str):
     origin,db_path=_settings()
