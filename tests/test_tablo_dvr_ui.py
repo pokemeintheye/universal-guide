@@ -32,8 +32,10 @@ class TabloDvrControlsTests(unittest.TestCase):
     def test_normal_dvr_seeks_within_one_running_stream(self):
         self.assertIn("TABLO_DVR_EDGE_SECONDS=3",HTML)
         self.assertIn("function tabloDvrSeekTo(",HTML)
-        self.assertIn("tabloDvrSeekTo(video.currentTime-30,video)",HTML)
+        self.assertIn("tabloDvrSeekTo(video.currentTime-20,video)",HTML)
         self.assertIn("tabloDvrSeekTo(video.currentTime+30,video)",HTML)
+        self.assertIn('id="tablodvrback" type="button">↶ 20s',HTML)
+        self.assertIn('id="tablodvrforward" type="button">30s ↷',HTML)
         self.assertIn("if(video.paused)video.play()",HTML)
         self.assertIn("else video.pause()",HTML)
         self.assertIn("tabloDvrSeekTo(window.hi)",HTML)
