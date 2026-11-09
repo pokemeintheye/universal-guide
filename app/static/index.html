@@ -468,6 +468,7 @@ let tabloHistoricalClipSeconds=0;
 let tabloHeartbeat=null;
 let tabloLivePausedAt=null;
 let tabloPauseMarkerPromise=null;
+let tabloLastPauseMarker=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -502,6 +503,7 @@ async function closePlexPlayer(){
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  tabloLivePausedAt=null;
  tabloPauseMarkerPromise=null;
+ tabloLastPauseMarker=null;
  document.getElementById("tablolivepausecontrols").hidden=true;
  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
  const video=document.getElementById("plexvideo");
@@ -811,8 +813,9 @@ document.getElementById("tablolivepause").onclick=async function(){
   tabloPauseMarkerPromise=req("/api/tablo/live/"+
     encodeURIComponent(currentSession)+"/pause-point",
     {method:"POST",cache:"no-store"})
-    .then(data=>({ok:true,data}))
+    .then(data=>{tabloLastPauseMarker=data;return {ok:true,data}})
     .catch(error=>({ok:false,error:error.message}));
+  document.getElementById("tablopreviewstatus").hidden=false;
   playerMessage("Live paused. Saving this position in Tablo's native buffer…");
   return;
  }
@@ -983,15 +986,31 @@ document.getElementById("tabloliveback").onclick=async function(){
  }finally{button.disabled=false}
 };
 document.getElementById("tablopreviewstatus").onclick=async function(){
- if(!tabloPreviewSession)return;
+ if(!tabloSession)return;
  const button=this;button.disabled=true;
  const output=document.getElementById("tablobufferresult");
- output.hidden=false;output.textContent="Reading historical stream diagnostics…";
+ output.hidden=false;output.textContent="Reading Tablo pause/timeshift diagnostics…";
  try{
-  const status=await req("/api/tablo/live/"+encodeURIComponent(tabloPreviewSession)+
-     "/status?probe=true");
-  output.textContent=JSON.stringify({preview_status:status},null,2);
- }catch(e){output.textContent="Preview diagnostic failed: "+e.message}
+  const target=tabloPreviewSession||tabloSession;
+  const status=await req("/api/tablo/live/"+encodeURIComponent(target)+"/status?probe=true");
+  const video=document.getElementById("plexvideo");
+  const seekable=[];
+  for(let i=0;i<(video.seekable?.length||0);i++){
+   seekable.push([Number(video.seekable.start(i).toFixed(2)),
+                  Number(video.seekable.end(i).toFixed(2))]);
+  }
+  output.textContent=JSON.stringify({
+   pause_marker:tabloLastPauseMarker,
+   paused_for_seconds:tabloLivePausedAt===null?null:Math.round((Date.now()-tabloLivePausedAt)/1000),
+   browser_video:{
+    current_time:Number.isFinite(video.currentTime)?Number(video.currentTime.toFixed(2)):null,
+    duration:Number.isFinite(video.duration)?Number(video.duration.toFixed(2)):null,
+    ready_state:video.readyState,paused:video.paused,
+    seekable_ranges:seekable
+   },
+   session_status:status
+  },null,2);
+ }catch(e){output.textContent="Tablo diagnostic failed: "+e.message}
  finally{button.disabled=false}
 };
 document.getElementById("tablorestartlive").onclick=async function(){
