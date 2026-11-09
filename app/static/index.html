@@ -1063,12 +1063,48 @@ async function explainTabloFailure(message,generation){
   if(generation===playerGeneration)playerMessage(message+" | Tablo status: "+e.message);
  }
 }
+function tabloPlayableSecondsAhead(video){
+ if(!video.buffered||!video.buffered.length)return 0;
+ const position=Number(video.currentTime);
+ if(!Number.isFinite(position))return 0;
+ for(let i=0;i<video.buffered.length;i++){
+  const begin=video.buffered.start(i),end=video.buffered.end(i);
+  if(position>=begin-0.5&&position<=end)
+   return Math.max(0,end-Math.max(begin,position));
+ }
+ return 0;
+}
+async function startTabloAfterPrebuffer(video,generation){
+ // A few freshly produced HLS segments can start immediately and then
+ // exhaust the browser cache. Delay the FIRST Play until media is buffered.
+ const begun=Date.now();
+ while(generation===playerGeneration && tabloSession && video.isConnected){
+  const ahead=tabloPlayableSecondsAhead(video);
+  if(ahead>=9 || (ahead>=5 && Date.now()-begun>=12000) ||
+     (video.readyState>=2 && Date.now()-begun>=18000)){
+   try{await video.play();playerMessage("")}
+   catch(error){playerMessage("Tap Play to begin Tablo DVR playback.")}
+   return;
+  }
+  if(Date.now()-begun>=26000){
+   // Native Safari may not fill its paused buffered ranges until playing.
+   try{await video.play();playerMessage("")}
+   catch(error){playerMessage("Tap Play to begin Tablo DVR playback.")}
+   return;
+  }
+  playerMessage("Preparing smooth DVR playback… "+Math.floor(ahead)+"s ready");
+  await new Promise(resolve=>setTimeout(resolve,400));
+ }
+}
 async function waitForTabloReady(sessionId,generation){
  const started=Date.now();
- while(Date.now()-started<35000){
+ while(Date.now()-started<65000){
   if(generation!==playerGeneration)return false;
   const health=await req("/api/tablo/live/"+encodeURIComponent(sessionId)+"/status");
-  if(health.manifest_ready&&health.segment_count>0)return true;
+  // Require several COMPLETE segments before loading a live HLS player.
+  // The old one-segment startup could play briefly, then rebuffer.
+  if(health.manifest_ready&&
+     health.disk_dvr_playlist?.segment_count>=6)return true;
   if(!health.transcoder_running){
    throw Error("Tablo transcoder exited "+health.ffmpeg_exit_code+
      (health.ffmpeg_error?" · "+health.ffmpeg_error:""));
@@ -1077,7 +1113,7 @@ async function waitForTabloReady(sessionId,generation){
     "s (segments: "+health.segment_count+")");
   await new Promise(resolve=>setTimeout(resolve,900));
  }
- throw Error("Tablo did not produce a playable HLS playlist within 35 seconds. "+
+ throw Error("Tablo did not produce at least six playable HLS segments within 65 seconds. "+
    "Check tuner signal and FFmpeg diagnostics.");
 }
 async function launchTabloLive(){
@@ -1154,7 +1190,7 @@ async function launchTabloLive(){
   if(preferHlsJs){
    // One disk DVR session: prepare a larger forward MSE cache, with a
    // bounded memory footprint. Do not chase the live edge after pausing.
-   playerHls=new Hls({enableWorker:true,liveSyncDurationCount:3,
+   playerHls=new Hls({enableWorker:true,startFragPrefetch:true,liveSyncDurationCount:4,
       liveMaxLatencyDurationCount:Infinity,liveSyncMode:"buffered",
       maxLiveSyncPlaybackRate:1,maxBufferLength:180,maxMaxBufferLength:240,
       maxBufferSize:128*1024*1024,backBufferLength:120,
@@ -1167,15 +1203,15 @@ async function launchTabloLive(){
        data.response?.code?"HTTP "+data.response.code:null].filter(Boolean).join(" / ");
     if(data.fatal)explainTabloFailure("Tablo HLS fatal error: "+extra.slice(0,260),generation);
    });
-   playerHls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>
-     playerMessage("Press Play in the video controls.")));
+   playerHls.on(Hls.Events.MANIFEST_PARSED,()=>
+     startTabloAfterPrebuffer(video,generation));
    // Never restart playback on fragment buffering; respect user-initiated Pause.
    playerHls.attachMedia(video);
    playerHls.loadSource(url);
   }else if(video.canPlayType("application/vnd.apple.mpegurl")){
    video.src=url;
-   video.addEventListener("loadedmetadata",()=>video.play().catch(()=>
-     playerMessage("Press Play in the video controls.")),{once:true});
+   video.addEventListener("loadedmetadata",()=>
+     startTabloAfterPrebuffer(video,generation),{once:true});
    video.load();
   }else{
    explainTabloFailure("No compatible HLS playback engine is available in this browser.",generation);
