@@ -15,6 +15,7 @@ DB=Path("/data/guide.db")
 GUIDE=Path(os.getenv("GUIDE_XMLTV","/data/guide.xml"))
 PLEX_URL=os.getenv("PLEX_URL","").rstrip("/")
 PLEX_TOKEN=os.getenv("PLEX_TOKEN","")
+PLEX_ALLOWED_LABEL=os.getenv("PLEX_ALLOWED_LABEL","").strip()
 REFRESH=max(5,int(os.getenv("REFRESH_MINUTES","30")))*60
 TABLO_URL=os.getenv("TABLO_URL","").rstrip("/")
 TABLO_REFRESH=max(1,int(os.getenv("TABLO_REFRESH_HOURS","6")))*3600
@@ -61,6 +62,20 @@ def initialize():
                         c.execute("ALTER TABLE "+table+" ADD COLUMN "+key+" INTEGER")
 initialize()
 
+def enforce_plex_label_policy():
+    """Do not serve old unfiltered results after configuring a label."""
+    policy=PLEX_ALLOWED_LABEL.casefold()
+    with db() as c:
+        previous=c.execute("SELECT value FROM meta WHERE key='plex_label_policy'").fetchone()
+        old=previous["value"] if previous else ""
+        if old!=policy:
+            c.execute("DELETE FROM media")
+            c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES ('plex_label_policy',?)",
+                      (policy,))
+            c.execute("DELETE FROM meta WHERE key='last_plex_sync'")
+
+enforce_plex_label_policy()
+
 def metadata(key,default=""):
     with db() as c:
         row=c.execute("SELECT value FROM meta WHERE key=?",(key,)).fetchone()
@@ -92,6 +107,29 @@ def pages(path):
         if not items or start+len(items)>=total:break
         start+=len(items)
 
+def plex_item_labels(node):
+    """Read the Label elements, not genres or collections."""
+    return {label.get("tag","").strip().casefold()
+            for label in node.findall("Label") if label.get("tag")}
+
+
+def plex_item_has_allowed_label(node):
+    """Require the configured Plex label, including when list omits tags."""
+    if not PLEX_ALLOWED_LABEL:
+        return True
+    key=node.get("ratingKey")
+    if not key or not re.fullmatch(r"\d+",key):
+        return False
+    wanted=PLEX_ALLOWED_LABEL.casefold()
+    if wanted in plex_item_labels(node):
+        return True
+    detail=plex_xml("/library/metadata/"+key)
+    for item in detail:
+        if item.tag in ("Directory","Video") and item.get("ratingKey")==key:
+            return wanted in plex_item_labels(item)
+    return False
+
+
 def sync_plex():
     if not sync_lock.acquire(blocking=False):
         raise RuntimeError("Plex refresh already in progress")
@@ -104,9 +142,12 @@ def sync_plex():
             libraries+=1
             for obj in pages("/library/sections/"+sec.get("key")+"/all"):
                 if kind=="movie" and obj.get("type")=="movie":
+                    if not plex_item_has_allowed_label(obj):continue
                     title=obj.get("title","")
                     rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid"))))
                 elif kind=="show" and obj.get("type")=="show" and obj.get("ratingKey"):
+                    # A show-level label includes its episodes in the guide.
+                    if not plex_item_has_allowed_label(obj):continue
                     show=obj.get("title","")
                     for ep in pages("/library/metadata/"+obj.get("ratingKey")+"/allLeaves"):
                         if ep.get("type")!="episode":continue
@@ -117,7 +158,7 @@ def sync_plex():
             putmeta(c,"last_plex_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"plex_sections",libraries)
         errors["plex"]=""
-        return {"media_count":len(rows),"libraries":libraries}
+        return {"media_count":len(rows),"libraries":libraries,"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL)}
     except Exception as e:
         errors["plex"]=str(e)
         raise
@@ -633,7 +674,7 @@ def status():
         listings=c.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         tablo_count=c.execute("SELECT COUNT(*) FROM tablo_listings").fetchone()[0]
         philo_count=c.execute("SELECT COUNT(*) FROM philo_listings").fetchone()[0]
-    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists(),"tablo_configured":bool(TABLO_URL),"tablo_count":tablo_count,"tablo_sync":metadata("last_tablo_sync"),"tablo_error":errors["tablo"],"tablo_truncated":metadata("tablo_truncated","0")=="1","philo_count":philo_count,"philo_channels":int(metadata("philo_channel_count","0")),"philo_sync":metadata("last_philo_sync"),"philo_error":errors["philo"]}
+    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL),"media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists(),"tablo_configured":bool(TABLO_URL),"tablo_count":tablo_count,"tablo_sync":metadata("last_tablo_sync"),"tablo_error":errors["tablo"],"tablo_truncated":metadata("tablo_truncated","0")=="1","philo_count":philo_count,"philo_channels":int(metadata("philo_channel_count","0")),"philo_sync":metadata("last_philo_sync"),"philo_error":errors["philo"]}
 
 @app.post("/api/sync/plex")
 def refresh_plex():
