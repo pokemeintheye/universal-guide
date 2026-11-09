@@ -176,8 +176,7 @@ def _probe_segment(directory):
     try:
         import json
         cmd=["ffprobe","-v","error","-show_entries",
-             "stream=codec_type,codec_name,width,height,pix_fmt",
-             "-show_entries","format=start_time,duration",
+             "stream=codec_type,codec_name,width,height,pix_fmt:format=start_time,duration",
              "-of","json",str(segment)]
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=5,check=False)
         if p.returncode:
