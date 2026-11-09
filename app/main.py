@@ -16,6 +16,9 @@ GUIDE=Path(os.getenv("GUIDE_XMLTV","/data/guide.xml"))
 PLEX_URL=os.getenv("PLEX_URL","").rstrip("/")
 PLEX_TOKEN=os.getenv("PLEX_TOKEN","")
 PLEX_ALLOWED_LABEL=os.getenv("PLEX_ALLOWED_LABEL","").strip()
+PLEX_LABEL_MODE=os.getenv("PLEX_LABEL_MODE","allow").strip().casefold()
+if PLEX_LABEL_MODE not in ("allow","exclude"):
+    raise ValueError("PLEX_LABEL_MODE must be 'allow' or 'exclude'")
 REFRESH=max(5,int(os.getenv("REFRESH_MINUTES","30")))*60
 TABLO_URL=os.getenv("TABLO_URL","").rstrip("/")
 TABLO_REFRESH=max(1,int(os.getenv("TABLO_REFRESH_HOURS","6")))*3600
@@ -64,7 +67,7 @@ initialize()
 
 def enforce_plex_label_policy():
     """Do not serve old unfiltered results after configuring a label."""
-    policy=PLEX_ALLOWED_LABEL.casefold()
+    policy=PLEX_LABEL_MODE+":"+PLEX_ALLOWED_LABEL.casefold() if PLEX_ALLOWED_LABEL else ""
     with db() as c:
         previous=c.execute("SELECT value FROM meta WHERE key='plex_label_policy'").fetchone()
         old=previous["value"] if previous else ""
@@ -114,19 +117,27 @@ def plex_item_labels(node):
 
 
 def plex_item_has_allowed_label(node):
-    """Require the configured Plex label, including when list omits tags."""
+    """Apply Plex-style allow/exclude rules to full movie or show metadata.
+
+    A listing may omit labels, so absence in the listing is not proof of
+    absence in Plex. Metadata fetch failures abort the sync rather than
+    silently granting an excluded item access.
+    """
     if not PLEX_ALLOWED_LABEL:
         return True
     key=node.get("ratingKey")
     if not key or not re.fullmatch(r"\d+",key):
         return False
     wanted=PLEX_ALLOWED_LABEL.casefold()
-    if wanted in plex_item_labels(node):
-        return True
+    labels=plex_item_labels(node)
+    if wanted in labels:
+        return PLEX_LABEL_MODE!="exclude"
     detail=plex_xml("/library/metadata/"+key)
     for item in detail:
         if item.tag in ("Directory","Video") and item.get("ratingKey")==key:
-            return wanted in plex_item_labels(item)
+            labeled=wanted in plex_item_labels(item)
+            return labeled if PLEX_LABEL_MODE=="allow" else not labeled
+    # Unknown metadata is never considered safe to index under either mode.
     return False
 
 
@@ -158,7 +169,7 @@ def sync_plex():
             putmeta(c,"last_plex_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"plex_sections",libraries)
         errors["plex"]=""
-        return {"media_count":len(rows),"libraries":libraries,"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL)}
+        return {"media_count":len(rows),"libraries":libraries,"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL),"plex_label_mode":PLEX_LABEL_MODE if PLEX_ALLOWED_LABEL else "off"}
     except Exception as e:
         errors["plex"]=str(e)
         raise
@@ -674,7 +685,7 @@ def status():
         listings=c.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         tablo_count=c.execute("SELECT COUNT(*) FROM tablo_listings").fetchone()[0]
         philo_count=c.execute("SELECT COUNT(*) FROM philo_listings").fetchone()[0]
-    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL),"media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists(),"tablo_configured":bool(TABLO_URL),"tablo_count":tablo_count,"tablo_sync":metadata("last_tablo_sync"),"tablo_error":errors["tablo"],"tablo_truncated":metadata("tablo_truncated","0")=="1","philo_count":philo_count,"philo_channels":int(metadata("philo_channel_count","0")),"philo_sync":metadata("last_philo_sync"),"philo_error":errors["philo"]}
+    return {"plex_configured":bool(PLEX_URL and PLEX_TOKEN and not PLEX_TOKEN.startswith("REPLACE_")),"plex_label_filter_enabled":bool(PLEX_ALLOWED_LABEL),"plex_label_mode":PLEX_LABEL_MODE if PLEX_ALLOWED_LABEL else "off","media_count":media,"listings_count":listings,"plex_sync":metadata("last_plex_sync"),"guide_sync":metadata("last_guide_sync"),"plex_error":errors["plex"],"guide_error":errors["guide"],"xmltv_file_present":GUIDE.exists(),"tablo_configured":bool(TABLO_URL),"tablo_count":tablo_count,"tablo_sync":metadata("last_tablo_sync"),"tablo_error":errors["tablo"],"tablo_truncated":metadata("tablo_truncated","0")=="1","philo_count":philo_count,"philo_channels":int(metadata("philo_channel_count","0")),"philo_sync":metadata("last_philo_sync"),"philo_error":errors["philo"]}
 
 @app.post("/api/sync/plex")
 def refresh_plex():
