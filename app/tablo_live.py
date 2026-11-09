@@ -224,6 +224,32 @@ def _probe_segment(directory):
         return {"status":"probe_error","error":type(exc).__name__}
 
 
+def _disk_dvr_playlist_window(path):
+    """Read bounded HLS manifest metadata without exposing media paths or URLs."""
+    try:
+        if not path.is_file():return {"status":"not_ready"}
+        if path.stat().st_size>512*1024:return {"status":"playlist_too_large"}
+        lines=path.read_text(errors="replace").splitlines()
+        if not lines or lines[0].strip()!="#EXTM3U":
+            return {"status":"invalid_playlist"}
+        duration=0.0
+        count=0
+        sequence=None
+        for line in lines:
+            if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
+                try:sequence=int(line.partition(":")[2])
+                except ValueError:pass
+            elif line.startswith("#EXTINF:"):
+                try:duration+=float(line.partition(":")[2].split(",",1)[0]);count+=1
+                except ValueError:pass
+        return {"status":"ok","segment_count":count,
+                "window_seconds":round(duration,1),
+                "first_sequence":sequence,
+                "last_sequence":sequence+count-1 if sequence is not None and count else None}
+    except OSError:
+        return {"status":"read_error"}
+
+
 def _health(item,probe=False):
     directory=item["directory"]
     playlist=directory/"index.m3u8"
@@ -239,6 +265,7 @@ def _health(item,probe=False):
             "seconds_since_start":round(time.monotonic()-item["created"],1),
             "ffmpeg_error":_safe_ffmpeg_message(directory) if returncode is not None else ""}
     if not item.get("parent"):
+        result["disk_dvr_playlist"]=_disk_dvr_playlist_window(playlist)
         result["mode"]="rolling_dvr"
         result["dvr_window_target_seconds"]=DVR_MINUTES*60
         result["dvr_segment_target_seconds"]=DVR_SEGMENT_SECONDS
