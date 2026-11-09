@@ -635,3 +635,29 @@ Watch an OTA channel for a few minutes so the cache fills. Pause for
 30 seconds, drag the seekbar in both directions, then Jump to Live.
 Check whether any action causes a tuner reset or an extended buffering
 delay. Open **Copy Tablo diagnostics** if anything behaves unexpectedly.
+
+### Post-pause rebuffer investigation (November 2026)
+
+A 90-second DVR pause was observed to play up to the end of the browser's
+already-loaded media, stall for roughly 45 seconds, and then recover
+with a stable ~2-minute live delay. This suggested browser buffer
+starvation, despite FFmpeg continuing to record the rolling HLS cache.
+
+The hls.js primary live-player configuration now targets **180 seconds
+of forward media** instead of the default ~30 seconds, capped at
+240 seconds and 128 MiB. Its 120-second played-media back buffer is
+bounded to limit browser memory use; older available video can be
+reloaded from the rolling disk cache. The live-sync policy explicitly
+keeps speed at 1× and uses buffered synchronization so pauses do not
+intentionally trigger a catch-up to live. Native Safari HLS uses the
+platform's own buffering strategy and cannot be forced to honor these
+hls.js settings.
+
+**Copy Tablo diagnostics** now reports the real disk playlist duration
+and media sequence bounds, the browser's seekable and buffered ranges,
+plus video waiting/stalled/playing events and accumulated wait time.
+If a stall recurs, capture diagnostics while stalled and again after
+recovery to identify whether the browser or disk stream stopped.
+
+These changes are a targeted hypothesis-driven fix, not yet verified
+against the user's real iPhone and legacy Tablo.
