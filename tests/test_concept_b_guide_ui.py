@@ -48,6 +48,19 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('artworkImage.onerror=()=>{artworkImage.hidden=true}',HTML)
         self.assertIn('artworkImage.onload=()=>{if(selectedProgram===program)',HTML)
 
+    def test_keyboard_remote_arrow_enter_and_back(self):
+        self.assertIn('function remoteFocusNext(direction)',HTML)
+        self.assertIn('function remoteGuideFocus()',HTML)
+        self.assertIn('function remoteBack()',HTML)
+        self.assertIn('if(key==="Enter"||key===" ")',HTML)
+        self.assertIn('"ArrowUp","ArrowDown","ArrowLeft","ArrowRight"',HTML)
+        self.assertIn('"Backspace","Escape","BrowserBack"',HTML)
+        self.assertIn('remoteTypingTarget(event.target)',HTML)
+        self.assertIn('event.stopImmediatePropagation()',HTML)
+        self.assertIn('},true);',HTML)
+        self.assertIn('if(!$("plextrackpanel").hidden)',HTML)
+        self.assertIn('closePlexPlayer();remoteGuideFocus()',HTML)
+
     def test_focus_updates_program_strip_without_opening_modal(self):
         self.assertIn('el.onclick=()=>showGuidePreview(shownPrograms[index])',HTML)
         self.assertIn('el.addEventListener("focus",()=>showGuidePreview',HTML)
