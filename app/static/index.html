@@ -592,7 +592,7 @@ async function manageChannels(){
 status();guide(view.plex);
 </script>
 <div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
-<div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
+<div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
 <div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo DVR playback controls">
@@ -630,6 +630,7 @@ status();guide(view.plex);
  <button id="tabloadvancedtoggle" type="button" class="tablo-advanced-toggle" aria-expanded="false" hidden>Advanced playback tools ▾</button>
 </div>
 <div id="tabloadvanced" hidden>
+<button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
 <div id="tablolivepausecontrols" hidden style="margin:8px 0">
@@ -740,7 +741,6 @@ function configureTabloOverlay(channel,entry){
  const video=document.getElementById("plexvideo");
  video.controls=false;
  video.setAttribute("aria-label","Tablo live DVR playback. Tap to reveal controls.");
- video.addEventListener("click",showTabloOverlay);
  showTabloOverlay();
 }
 function clearTabloOverlayTimer(){
@@ -756,7 +756,7 @@ function showTabloOverlay(){
   tabloOverlayTimer=setTimeout(()=>{
    const panel=document.getElementById("tabloadvanced");
    if(!video.paused&&!tabloDvrDragging&&panel.hidden&&
-      !overlay.contains(document.activeElement)){
+      !overlay.querySelector(":focus-visible")){
     overlay.classList.add("controls-hidden");
    }
   },4500);
