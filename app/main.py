@@ -734,7 +734,10 @@ def refresh_philo():
 @app.get("/api/channels")
 def channels():
     with db() as c:
-        items=c.execute("""SELECT 'tablo' source,channel_id,channel_label,COUNT(*) programs FROM tablo_listings GROUP BY channel_id
+        items=c.execute("""SELECT 'tablo' source,t.channel_id,
+               COALESCE(NULLIF(t.number,''),NULLIF(t.network,''),NULLIF(t.callsign,''),t.channel_id) channel_label,
+               (SELECT COUNT(*) FROM tablo_listings l WHERE l.channel_id=t.channel_id) programs
+               FROM tablo_channels t
            UNION ALL SELECT 'philo',channel_id,channel_label,COUNT(*) FROM philo_listings GROUP BY channel_id
            UNION ALL SELECT 'xmltv',channel_id,channel_label,COUNT(*) FROM listings GROUP BY channel_id""").fetchall()
         preferences={(x["source"],x["channel_id"]):dict(x) for x in c.execute("SELECT * FROM channel_prefs")}
