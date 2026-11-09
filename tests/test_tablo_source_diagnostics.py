@@ -63,6 +63,33 @@ seg_501.ts
         self.assertTrue(r["mpeg_ts_sync"])
         self.assertNotIn("SECRET",str(r))
 
+    def test_pause_marker_captures_segment_near_live_not_buffer_start(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:700\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(360))
+        sequence,overlap=tablo_live._pause_source_sequence(body)
+        self.assertEqual(sequence,1041)
+        self.assertEqual(overlap,18.0)
+        next_body=body+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(360,450))
+        manifest,info=tablo_live._continuous_source_manifest(
+            "http://192.168.1.9:8885",
+            "http://192.168.1.9/stream/abc/index.m3u8",
+            next_body,start_sequence=sequence)
+        self.assertEqual(info["start_sequence"],1041)
+        self.assertIn("#EXT-X-MEDIA-SEQUENCE:1041",manifest)
+        self.assertIn("seg_341.ts",manifest)
+        self.assertNotIn("seg_0.ts",manifest)
+
+    def test_pause_marker_expired_source_segment_is_not_clamped(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1100\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(200))
+        with self.assertRaises(HTTPException) as exc:
+            tablo_live._continuous_source_manifest(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/abc/index.m3u8",
+                body,start_sequence=1041)
+        self.assertEqual(exc.exception.status_code,409)
+
     def test_continuous_manifest_has_no_endlist_and_keeps_sequence(self):
         body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1000\n"+"".join(
             "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(720))
