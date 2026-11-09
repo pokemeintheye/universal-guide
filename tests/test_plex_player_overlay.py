@@ -49,6 +49,28 @@ class PlexPlayerOverlayTests(unittest.TestCase):
         self.assertIn('img.onerror=()=>{img.hidden=true}',HTML)
         self.assertIn('document.getElementById("plexthumbtime").textContent=',HTML)
 
+    def test_remote_friendly_track_menu_and_chapter_images(self):
+        self.assertIn('id="plextrackchoices"',HTML)
+        self.assertIn('className="plex-option"',HTML)
+        self.assertIn('button.addEventListener("click",()=>{',HTML)
+        self.assertIn('button.dataset.value=String(id)',HTML)
+        self.assertIn('event.key==="ArrowDown"',HTML)
+        self.assertIn('event.key==="ArrowUp"',HTML)
+        self.assertIn('event.key==="Escape"',HTML)
+        self.assertIn('thumb.loading="lazy"',HTML)
+        self.assertIn('Math.floor(item.start_seconds)',HTML)
+        self.assertIn('@media (min-width:900px)',HTML)
+        self.assertIn('width:clamp(340px,28vw,480px)',HTML)
+
+    def test_plex_resumes_after_long_pause_and_recovers_expired_transcodes(self):
+        self.assertIn('function handlePlexPauseResume(video,generation)',HTML)
+        self.assertIn('Date.now()-pausedAt<90000',HTML)
+        self.assertIn('refreshExpiredPlexPlayback(generation,"long_pause")',HTML)
+        self.assertIn('refreshExpiredPlexPlayback(generation,"segment_404")',HTML)
+        self.assertIn('Date.now()-plexRecoveryAttemptAt<120000',HTML)
+        self.assertIn('plexLastPlaybackPosition=plexPlaybackPosition(video)',HTML)
+        self.assertIn('launchPlex("resume",{position,audio_stream_id:audio,',HTML)
+
     def test_plex_movie_metadata_and_tracks(self):
         response=MagicMock()
         response.content=MOVIE_XML
