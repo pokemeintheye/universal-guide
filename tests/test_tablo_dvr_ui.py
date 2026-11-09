@@ -29,16 +29,26 @@ class TabloDvrControlsTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(name,parser.ids)
 
-    def test_dvr_uses_existing_tested_playback_paths(self):
-        self.assertIn('document.getElementById("tablolivepause").click()',HTML)
-        self.assertIn('document.getElementById("tablocontinuous").click()',HTML)
-        self.assertIn('document.getElementById("tabloliveback").click()',HTML)
-        self.assertIn('seekHistoricalClip(-30)',HTML)
-        self.assertIn('seekHistoricalClip(30)',HTML)
+    def test_normal_dvr_seeks_within_one_running_stream(self):
+        self.assertIn("TABLO_DVR_EDGE_SECONDS=3",HTML)
+        self.assertIn("function tabloDvrSeekTo(",HTML)
+        self.assertIn("tabloDvrSeekTo(video.currentTime-30,video)",HTML)
+        self.assertIn("tabloDvrSeekTo(document.getElementById(",HTML)
+        self.assertIn("if(video.paused)video.play()",HTML)
+        self.assertIn("else video.pause()",HTML)
+        self.assertIn("tabloDvrSeekTo(window.hi)",HTML)
 
-    def test_live_seekbar_disabled_while_not_in_dvr(self):
-        self.assertIn('if(!historical||!video.seekable||!video.seekable.length)',HTML)
-        self.assertIn('slider.disabled=true;',HTML)
+    def test_live_dvr_scrubber_tracks_seekable_buffer(self):
+        self.assertIn("function tabloDvrWindow(video)",HTML)
+        self.assertIn("const window=tabloDvrWindow(video)",HTML)
+        self.assertIn("if(!window)",HTML)
+        self.assertIn("slider.disabled=true",HTML)
+
+    def test_original_historical_fallback_remains_available(self):
+        self.assertIn('id="tablopauseadjust"',HTML)
+        self.assertIn('id="tablocontinuous"',HTML)
+        self.assertIn('id="tabloliveback"',HTML)
+        self.assertIn('document.getElementById("tabloliveback").click()',HTML)
 
     def test_old_diagnostics_preserved_as_advanced_tools(self):
         self.assertIn('id="tabloquickdiagnostics"',HTML)
