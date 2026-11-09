@@ -364,3 +364,33 @@ Video is still temporarily transcoded on Unraid for iPhone compatibility;
 Tablo itself remains the historical media store. A dynamic continuously
 growing timeshift playlist is needed before the 5-minute limit can be
 removed. The regular Watch Live path remains unchanged.
+
+## Continuous Tablo timeshift (opt-in beta)
+
+The player now offers a **Continuous timeshift (beta)** button next to the
+existing known-good finite historical previews. Select an offset into
+Tablo's available buffer (2–20 minutes) and start the continuous mode.
+This mode uses a locally refreshed **text-only** HLS source playlist to
+follow Tablo's growing stream. FFmpeg reads the selected Tablo transport
+stream segments directly, transcodes at real-time speed, and publishes a
+rolling playlist with approximately 90 transcoded HLS segments retained
+on Unraid. Old segments are deleted as new ones are produced, instead
+of preserving an entire second DVR recording.
+
+Pause/Resume and 10-second back / 30-second forward operate within
+the *currently retained output seek window*, which is approximately
+six minutes depending on segment boundaries. To jump to earlier points,
+select another historical offset and start a new timeshift child.
+**Return to Live** closes the timeshift child and reattaches to the
+original tuner stream. The established finite 75-second and five-minute
+preview options remain available as a fallback.
+
+**Unverified until hardware test:** FFmpeg must reload the growing
+file-based source playlist and native Safari must follow the resulting
+rolling HLS manifest without stopping. Test at 5 minutes behind live
+for more than 7 minutes, then Pause/Resume, seek, and Return to Live.
+If it stops or fails, use Historical playback diagnostics to capture
+transcoder status, source-follow state, and codec details. Long pauses
+and iOS background suspension beyond the retained cache duration
+will require additional work; this is not yet a finished unlimited
+pause-live-TV implementation.
