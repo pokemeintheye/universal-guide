@@ -45,8 +45,10 @@ class ConceptBGuideUiTests(unittest.TestCase):
     def test_selected_plex_program_artwork_is_token_isolated(self):
         self.assertIn('id="guideartimage"',HTML)
         self.assertIn('local.src="/api/guide/art/"',HTML)
-        self.assertIn('local.onerror=()=>{if(valid())external()}',HTML)
-        self.assertIn('artworkImage.src=result.image_url',HTML)
+        self.assertIn('local.onerror=()=>{}',HTML)
+        self.assertIn('const result=await req("/api/guide/artwork?"+params.toString())',HTML)
+        self.assertIn('img.src=result.image_url',HTML)
+        self.assertIn('if(!result.image_url){plexFallback();return;}',HTML)
         self.assertIn('id="guideartcredit"',HTML)
         self.assertIn('requestId===guideArtworkRequestId',HTML)
 
