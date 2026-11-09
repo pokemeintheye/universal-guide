@@ -63,6 +63,35 @@ seg_501.ts
         self.assertTrue(r["mpeg_ts_sync"])
         self.assertNotIn("SECRET",str(r))
 
+    def test_continuous_manifest_has_no_endlist_and_keeps_sequence(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1000\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(720))
+        url="http://192.168.1.9/stream/abc/index.m3u8"
+        manifest,meta=tablo_live._continuous_source_manifest(
+            "http://192.168.1.9:8885",url,body,seconds_behind_live=600)
+        self.assertTrue(manifest.startswith("#EXTM3U\n"))
+        self.assertNotIn("#EXT-X-ENDLIST",manifest)
+        self.assertIn("#EXT-X-MEDIA-SEQUENCE:1120",manifest)
+        self.assertEqual(meta["start_sequence"],1120)
+        self.assertIn("seg_120.ts",manifest)
+        # Next refresh preserves the same start rather than jumping to live.
+        updated=body+"#EXTINF:1.000,\nseg_720.ts\n"
+        next_manifest,next_meta=tablo_live._continuous_source_manifest(
+            "http://192.168.1.9:8885",url,updated,start_sequence=1120)
+        self.assertEqual(next_meta["start_sequence"],1120)
+        self.assertIn("seg_720.ts",next_manifest)
+        self.assertIn("#EXT-X-MEDIA-SEQUENCE:1120",next_manifest)
+
+    def test_continuous_rejects_insufficient_buffer(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(60))
+        with self.assertRaises(HTTPException) as e:
+            tablo_live._continuous_source_manifest(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/abc/index.m3u8",
+                body,seconds_behind_live=120)
+        self.assertEqual(e.exception.status_code,409)
+
     def test_historical_manifest_is_bounded_and_uses_native_segments(self):
         body="#EXTM3U\n"+ "".join(
             "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(220))
