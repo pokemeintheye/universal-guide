@@ -701,7 +701,7 @@ and may briefly differ near a show boundary. Missing schedules show
 "Live TV" rather than inventing a program title.
 
 To avoid the short startup/play/stall sequence, first playback now waits for
-at least **six complete disk HLS segments**, then waits for the browser to
+at least **four complete disk HLS segments**, then waits for the browser to
 buffer video before calling Play. Startup may take longer by design. Browser
 prebuffer target is nine seconds; a bounded fallback accommodates native
 HLS implementations that will not buffer further while paused.
@@ -712,3 +712,14 @@ boundary, resuming from the previous show, and then seeking forward across
 the boundary. The title should follow the show *on screen*, not live TV.
 On channel startup, the first picture should be stable rather than playing
 a few seconds and briefly stalling.
+
+### Faster Tablo startup and clean loading indicator
+
+The Tablo overlay shows only a centered circular spinner while tuning, reading
+HLS segments, and preparing playback. Technical tuner/segment messages are no
+longer shown to viewers; real playback errors remain visible. Startup now
+requires four complete disk HLS segments instead of six, with a reduced
+browser prebuffer threshold (target seven seconds, with bounded fallback).
+This aims for roughly 10–15 seconds on a healthy tuner, but tuning, encoding,
+and native Safari HLS buffering can still take longer. Recheck that the first
+few seconds do not stall; increasing warmup again may be preferable if they do.
