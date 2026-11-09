@@ -204,7 +204,7 @@ function openDetails(program){
  $("philonote").textContent=hasUntested
    ?"Test Link means the URL is listed on Philo's public site but has not yet been verified on your iPhone. Check the destination; playback may require another tap."
    :"Opens the Philo app when supported. The channel or episode may need you to press Play in Philo.";
- $("tabloliveactions").hidden=!(p.source==="tablo"&&Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop));
+ $("tabloliveactions").hidden=!(p.source==="tablo"&&(e.no_guide_data||(Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop))));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
  const fmt={weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"};
