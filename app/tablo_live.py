@@ -148,10 +148,12 @@ def tune(channel_id:str):
           "-user_agent",USER_AGENT,"-i",playlist,
           "-map","0:v:0","-map","0:a:0?","-vf","yadif",
           "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
+          "-force_key_frames","expr:gte(t,n_forced*4)",
           "-pix_fmt","yuv420p","-b:v","3000k","-maxrate","3500k","-bufsize","6000k",
           "-c:a","aac","-ac","2","-b:a","128k",
           "-f","hls","-hls_time",str(DVR_SEGMENT_SECONDS),
           "-hls_list_size",str(DVR_SEGMENT_COUNT),
+          "-hls_delete_threshold","3",
           "-hls_flags","delete_segments+omit_endlist",
           "-hls_segment_filename",str(directory/"seg_%05d.ts"),
           str(directory/"index.m3u8")]
