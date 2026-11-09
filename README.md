@@ -439,3 +439,23 @@ pause for 90 seconds during a recognizable program moment, resume, and
 check that the scene is from the paused moment rather than live. The
 resume point intentionally includes about 12 seconds of overlap, and
 exact frame-accurate positioning is not yet implemented.
+
+## Long Pause Live: capture native segment at pause time
+
+A later iPhone test found that changing FFmpeg to start at index zero made a
+long-pause resume appear to begin at the initial tuning point rather than the
+scene where Pause was pressed. The long-pause handoff now saves a native Tablo
+media sequence immediately on Pause Live via `POST /api/tablo/live/{sid}/pause-point`.
+That stores a segment roughly 18 seconds behind the Tablo source live edge.
+Resume uses `POST /api/tablo/live/{sid}/timeshift?resume_paused=true`,
+which pins the newly created continuous session to the saved segment.
+The five-minute manual historical playback and original live stream paths
+remain unchanged. The small overlap is for tolerance, not exact
+frame-level synchronization with the displayed iPhone frame.
+
+If Tablo has already dropped the saved native segment, the backend returns
+409 rather than silently selecting the oldest remaining segment. A missing
+pause marker is also reported instead of guessing how many seconds to seek.
+For the next iPhone test, start live playback for several minutes, pause on
+a recognizable scene for 90 seconds, and check the scene at resume.
+The message displays the captured source segment number for diagnosis.
