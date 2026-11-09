@@ -424,7 +424,18 @@ status();guide(view.plex);
 <div id="playerstatus" role="status"></div>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
-<button id="tablopreview" type="button" hidden>▶ Test playback 2 min ago</button>
+<div id="tablooffsetcontrols" hidden style="margin:8px 0">
+<label for="tablooffset">Historical playback position</label>
+<select id="tablooffset" aria-label="Minutes behind live">
+<option value="120">2 minutes behind</option>
+<option value="300">5 minutes behind</option>
+<option value="600">10 minutes behind</option>
+<option value="900">15 minutes behind</option>
+<option value="1200">20 minutes behind</option>
+</select>
+<button id="tablopreview" type="button">▶ Play from selected time</button>
+<span class="note">Requires the selected amount of native Tablo buffer history.</span>
+</div>
 <div id="tabloseekcontrols" hidden style="margin:8px 0" role="group" aria-label="Historical Tablo playback controls">
 <button id="tablopause" type="button">Pause</button>
 <button id="tabloback10" type="button">↶ 10 sec</button>
@@ -491,7 +502,7 @@ async function closePlexPlayer(){
  const oldTablo=tabloSession;tabloSession=null;
  const oldPreview=tabloPreviewSession;tabloPreviewSession=null;
  tabloLivePlaylist=null;
- document.getElementById("tablopreview").hidden=true;
+ document.getElementById("tablooffsetcontrols").hidden=true;
  document.getElementById("tabloliveback").hidden=true;
  document.getElementById("tablopreviewstatus").hidden=true;
  document.getElementById("tabloseekcontrols").hidden=true;
@@ -657,7 +668,7 @@ async function launchTabloLive(){
   }
   tabloSession=info.session_id;
   tabloLivePlaylist=info.playlist_url;
-  document.getElementById("tablopreview").hidden=false;
+  document.getElementById("tablooffsetcontrols").hidden=false;
   document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablopreviewstatus").hidden=true;
   document.getElementById("tablorestartlive").hidden=true;
@@ -752,13 +763,16 @@ async function deleteTabloPreview(){
     {method:"DELETE",cache:"no-store"})}catch(e){console.warn("Preview cleanup:",e)}
 }
 document.getElementById("tablopreview").onclick=async function(){
- if(!tabloSession||tabloPreviewSession)return;
+ if(!tabloSession)return;
  const button=this;button.disabled=true;
  const generation=playerGeneration;
+ const offset=Number(document.getElementById("tablooffset").value);
  try{
+  if(tabloPreviewSession){await deleteTabloPreview();if(generation!==playerGeneration)return;}
+  document.getElementById("tabloseekcontrols").hidden=true;
   playerMessage("Preparing a historical clip from Tablo's own buffer…");
   const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
-     "/preview?seconds_behind_live=120",{method:"POST",cache:"no-store"});
+     "/preview?seconds_behind_live="+encodeURIComponent(offset),{method:"POST",cache:"no-store"});
   if(generation!==playerGeneration){
    fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),{method:"DELETE"}).catch(()=>{});
    return;
