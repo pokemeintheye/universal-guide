@@ -770,56 +770,100 @@ def refresh_tablo():
 ARTWORK_DIR=Path("/data/artwork")
 ARTWORK_BATCH=max(1,min(30,int(os.getenv("ARTWORK_BATCH_SIZE","12"))))
 artwork_refresh_lock=threading.Lock()
+artwork_progress_lock=threading.Lock()
+artwork_progress={"running":False,"mode":None,"completed":0,"planned":0,
+                  "downloaded":0,"missing":0,"failed":0,"current_title":"",
+                  "last_error":"","last_finished":None}
 
 def artwork_key(title):
     from app.artwork import normalize_title
     return json.dumps([normalize_title(title),None,None],separators=(",",":"))
 
-def refresh_show_artwork():
-    """Preload a small, bounded group of unique upcoming TV shows per cycle."""
+def upcoming_artwork_titles():
+    now=datetime.now(timezone.utc)
+    until=now+timedelta(hours=48)
+    with db() as c:
+        titles=c.execute("""
+            SELECT DISTINCT title FROM (
+                SELECT title,stop,program_kind FROM listings
+                UNION ALL SELECT title,stop,program_kind FROM tablo_listings
+                UNION ALL SELECT title,stop,program_kind FROM philo_listings
+            )
+            WHERE stop>? AND stop<? AND title IS NOT NULL AND length(title) BETWEEN 2 AND 120
+              AND coalesce(program_kind,'unknown') != 'movie'
+            ORDER BY title
+        """,(now.isoformat(),until.isoformat())).fetchall()
+    # De-duplicate spelling/punctuation variants before calling the provider.
+    unique={}
+    for row in titles:
+        unique.setdefault(artwork_key(row["title"]),row["title"])
+    return unique
+
+def artwork_snapshot():
+    titles=upcoming_artwork_titles()
+    with db() as c:
+        records={row["cache_key"]:row for row in c.execute(
+            "SELECT cache_key,image_url,checked_at FROM guide_artwork_cache")}
+    cached=missing=pending=0
+    now=time.time()
+    for key in titles:
+        row=records.get(key)
+        if not row:
+            pending+=1
+        elif row["image_url"] and str(row["image_url"]).startswith("/api/guide/artwork/cached/") and (
+                ARTWORK_DIR/str(row["image_url"]).rsplit("/",1)[-1]).is_file() and (
+                now-float(row["checked_at"])<30*86400):
+            cached+=1
+        elif not row["image_url"] and now-float(row["checked_at"])<86400:
+            missing+=1
+        else:
+            pending+=1
+    with artwork_progress_lock:
+        progress=dict(artwork_progress)
+    return {**progress,"total":len(titles),"cached":cached,
+            "no_artwork":missing,"pending":pending}
+
+def refresh_show_artwork(manual=False):
+    """Fetch upcoming show-level images, one title at a time, without blocking UI."""
     from app.artwork import find_tvmaze_artwork,safe_image_url
     import hashlib
+    # The manual job reserves the same lock as the automatic job.
     if not artwork_refresh_lock.acquire(blocking=False):
-        return
+        return False
+    with artwork_progress_lock:
+        artwork_progress.update(running=True,mode="manual" if manual else "automatic",
+            completed=0,planned=0,downloaded=0,missing=0,failed=0,
+            current_title="",last_error="")
     try:
+        titles=upcoming_artwork_titles()
         now=time.time()
-        deadline=datetime.fromtimestamp(now,timezone.utc).isoformat()
-        until=datetime.fromtimestamp(now+48*3600,timezone.utc).isoformat()
-        # A single show, not every episode, consumes one lookup and one image.
         with db() as c:
-            titles=c.execute("""
-                SELECT DISTINCT title FROM (
-                    SELECT title,stop,program_kind FROM listings
-                    UNION ALL SELECT title,stop,program_kind FROM tablo_listings
-                    UNION ALL SELECT title,stop,program_kind FROM philo_listings
-                )
-                WHERE stop>? AND stop<? AND title IS NOT NULL AND length(title) BETWEEN 2 AND 120
-                  AND coalesce(program_kind,'unknown') != 'movie'
-                ORDER BY title
-            """,(deadline,until)).fetchall()
             cached={row["cache_key"]:row for row in c.execute(
                 "SELECT cache_key,image_url,checked_at FROM guide_artwork_cache")}
-        processed=0
-        for item in titles:
-            title=item["title"]
-            key=artwork_key(title)
+        todo=[]
+        for key,title in titles.items():
             previous=cached.get(key)
-            if previous and now-float(previous["checked_at"]) < (
-                30*86400 if previous["image_url"] else 86400
-            ):
-                # Old URL-only cache entries must be replaced by local files.
-                if not previous["image_url"] or str(previous["image_url"]).startswith("/api/guide/artwork/cached/"):
+            if previous and now-float(previous["checked_at"])<(
+                    30*86400 if previous["image_url"] else 86400):
+                image=str(previous["image_url"] or "")
+                if not image or (image.startswith("/api/guide/artwork/cached/") and (
+                    ARTWORK_DIR/image.rsplit("/",1)[-1]).is_file()):
                     continue
-            if processed>=ARTWORK_BATCH:
-                break
-            processed+=1
+            todo.append((key,title))
+        if not manual:
+            todo=todo[:ARTWORK_BATCH]
+        with artwork_progress_lock:
+            artwork_progress["planned"]=len(todo)
+        for key,title in todo:
+            with artwork_progress_lock:
+                artwork_progress["current_title"]=title
             image_url=None
             credit_url=None
             try:
-                result=find_tvmaze_artwork(title) # Series art only; no episode lookup.
+                result=find_tvmaze_artwork(title)
                 if result and safe_image_url(result.get("image_url")):
-                    remote=result["image_url"]
-                    response=requests.get(remote,timeout=(3,8),stream=True,allow_redirects=False)
+                    response=requests.get(result["image_url"],timeout=(3,8),
+                                          stream=True,allow_redirects=False)
                     try:
                         response.raise_for_status()
                         kind=response.headers.get("Content-Type","").split(";",1)[0].lower()
@@ -840,17 +884,47 @@ def refresh_show_artwork():
                                 credit_url=result.get("credit_url")
                     finally:
                         response.close()
-            except (requests.RequestException,ValueError,RuntimeError,OSError):
-                # Network/rate-limit failures get another chance next cycle.
-                continue
-            with db() as c:
-                c.execute("INSERT OR REPLACE INTO guide_artwork_cache "
-                    "(cache_key,image_url,credit_url,checked_at) VALUES (?,?,?,?)",
-                    (key,image_url,credit_url,time.time()))
-            # Space provider requests out to reduce throttling.
-            time.sleep(0.5)
+            except (requests.RequestException,ValueError,RuntimeError,OSError) as exc:
+                with artwork_progress_lock:
+                    artwork_progress["failed"]+=1
+                    artwork_progress["last_error"]=str(exc)[:160]
+                # Don't mark transient failures as permanent misses.
+            else:
+                with db() as c:
+                    c.execute("INSERT OR REPLACE INTO guide_artwork_cache "
+                        "(cache_key,image_url,credit_url,checked_at) VALUES (?,?,?,?)",
+                        (key,image_url,credit_url,time.time()))
+                with artwork_progress_lock:
+                    artwork_progress["downloaded" if image_url else "missing"]+=1
+            finally:
+                with artwork_progress_lock:
+                    artwork_progress["completed"]+=1
+                # Prevent provider rate limits while background caching.
+                time.sleep(0.5)
+        return True
+    except Exception as exc:
+        with artwork_progress_lock:
+            artwork_progress["last_error"]=str(exc)[:160]
+        return False
     finally:
+        with artwork_progress_lock:
+            artwork_progress.update(running=False,current_title="",
+                last_finished=datetime.now(timezone.utc).isoformat())
         artwork_refresh_lock.release()
+
+@app.get("/api/guide/artwork/status")
+def guide_artwork_status():
+    return artwork_snapshot()
+
+@app.post("/api/guide/artwork/refresh")
+def guide_artwork_refresh():
+    # Schedule a single bounded-concurrency job; do not keep the request open.
+    if artwork_refresh_lock.locked():
+        return {"started":False,"message":"Artwork download already running"}
+    def run():
+        refresh_show_artwork(manual=True)
+    threading.Thread(target=run,daemon=True).start()
+    return {"started":True,"message":"Artwork refresh requested"}
 
 @app.get("/api/guide/artwork")
 def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
