@@ -63,6 +63,33 @@ class PlexPlayerOverlayTests(unittest.TestCase):
         self.assertEqual(meta["subtitles"][0]["id"],51)
         self.assertTrue(meta["preview_available"])
 
+    def test_hevc_source_requests_h264_aac_1080p_output(self):
+        import sqlite3
+        from tempfile import TemporaryDirectory
+        from urllib.parse import parse_qs,urlparse
+        with TemporaryDirectory() as directory:
+            path=Path(directory)/"plex.db"
+            with sqlite3.connect(path) as con:
+                con.execute("CREATE TABLE media(id TEXT,title TEXT,kind TEXT)")
+                con.execute("INSERT INTO media VALUES(?,?,?)",
+                            ("movie:142","Test Movie","movie"))
+            with patch.object(playback,"_config",
+                    return_value=(path,"http://plex","secret")), \
+                 patch.object(playback,"_plex_duration",return_value=7200):
+                details=playback.start_playback(
+                    playback.PlaybackRequest(rating_key=142))
+            sid=details["playlist_url"].split("/")[3]
+            try:
+                master=playback._sessions[sid]["resources"]["master.m3u8"]
+                params=parse_qs(urlparse(master).query)
+                self.assertEqual(params["videoCodec"],["h264"])
+                self.assertEqual(params["audioCodec"],["aac"])
+                self.assertEqual(params["videoResolution"],["1920x1080"])
+                self.assertEqual(params["maxVideoBitrate"],["12000"])
+                self.assertEqual(params["directPlay"],["0"])
+            finally:
+                playback._sessions.pop(sid,None)
+
     def test_metadata_requires_active_session(self):
         with self.assertRaises(HTTPException):
             playback.playback_metadata("session_that_does_not_exist")
