@@ -336,6 +336,113 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
  .player-backdrop.plex-mode .plex-option{min-height:58px;gap:11px;padding:9px;font-size:15px}
  .player-backdrop.plex-mode .plex-option-thumb{width:100px}
 }
+
+/* Concept B: the EPG is the home screen, not an admin dashboard. */
+:root{background:#090d18;color:#f4f3ff}
+body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090d18 68%)}
+.guide-app{max-width:none;width:100%;min-height:100dvh;padding:clamp(10px,2vw,30px);
+ display:flex;flex-direction:column;gap:clamp(10px,1.5vh,22px)}
+.guide-app [hidden]{display:none!important}
+.guide-topbar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;z-index:9}
+.guide-navigation,.guide-top-actions{display:flex;align-items:center;gap:8px}
+.guide-navigation button{border:0;background:#222337;border-radius:20px;font-size:18px;min-width:44px;min-height:44px}
+.guide-navigation .guide-today{background:transparent;font-weight:750;font-size:19px;padding:6px}
+.guide-navigation #jumpdate{width:42px;max-width:42px;border:none;padding:5px;color-scheme:dark;background:#23263b}
+.guide-navigation #viewtime{color:#b6bad4;font-size:13px;white-space:nowrap}
+.guide-top-actions{margin-left:auto}
+.guide-icon-button{border:1px solid #3e405b;background:#1b2031;
+ border-radius:50%;width:54px;height:54px;min-width:54px;padding:12px;
+ display:grid;place-items:center;font-size:27px;color:#f7f6ff}
+.guide-icon-button svg{width:25px;height:25px}
+.guide-icon-button[aria-expanded="true"]{background:#6535a6;border-color:#ac7aff;box-shadow:0 0 17px #a56cff80}
+.guide-popover[hidden],.guide-drawer[hidden],.guide-shade[hidden]{display:none!important}
+.guide-popover{position:absolute;right:70px;top:62px;width:min(340px,calc(100vw - 28px));
+ background:#1b2033f8;border:1px solid #64638b;border-radius:20px;box-shadow:0 20px 50px #000d;
+ padding:12px;display:flex;flex-direction:column;gap:6px;max-height:75dvh;overflow:auto}
+.guide-popover button{width:100%;text-align:left;font-size:17px;padding:13px 16px;min-height:50px;
+ background:#292e45;border:1px solid transparent;border-radius:14px}
+.guide-popover button[aria-checked="true"]{background:#7652bc;color:#fff;border-color:#bd97ff}
+.guide-popover button:focus-visible{outline:3px solid #e2cbff}
+.guide-menu-heading{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#acb3cf;padding:11px 11px 4px}
+.guide-main{min-height:0;flex:1;display:flex}
+.guide-main .timeline{height:100%;max-height:none;width:100%;border:0;border-radius:12px;
+ background:#0e1423;scrollbar-color:#505471 transparent}
+.guide-main .epg{min-width:0}
+.guide-main .epg-time{background:#151a2c;min-height:52px}
+.guide-main .epg-time .epg-station{background:#151a2c}
+.guide-main .epg-station{width:clamp(124px,16vw,230px);min-width:clamp(124px,16vw,230px);
+ border-right:1px solid #38334d;background:#1a2032;padding:14px 12px}
+.guide-main .epg-row{min-height:72px;border-color:#141a2a}
+.guide-main .epg-tracks{background:repeating-linear-gradient(to right,transparent 0,transparent 179px,#393448 179px,#393448 180px)}
+.guide-main .epg-program{background:#262b41;border:1px solid #353954;border-radius:8px;
+ font-size:14px;padding:12px;color:#f5f4ff}
+.guide-main .epg-program strong{font-size:14px}
+.guide-main .epg-program.owned{background:#293345;border-color:#8460be}
+.guide-main .epg-program.owned em{color:#f4c56d}
+.guide-main .epg-program:hover{background:#3e3a5b}
+.guide-main .epg-program:focus-visible,.guide-main .epg-program.return-selected{
+ outline:3px solid #cf9dff;outline-offset:-3px;background:#4f337f;box-shadow:0 0 13px #8953f060}
+.guide-main .nowline{width:2px;background:#a35aff}
+.guide-detail{border:1px solid #43425f;border-radius:22px;background:linear-gradient(120deg,#23243d,#141a2c 75%);
+ padding:clamp(12px,1.5vw,24px);min-height:190px;display:flex;gap:clamp(14px,2vw,30px);
+ box-shadow:0 8px 32px #0007}
+.guide-art{width:clamp(120px,23vw,360px);min-width:clamp(120px,23vw,360px);min-height:145px;
+ background:linear-gradient(145deg,#46317a 5%,#283956 52%,#121d31);border-radius:13px;
+ display:grid;place-items:center;overflow:hidden;color:#a38bca;font-size:clamp(26px,3vw,46px);font-weight:800}
+.guide-art span{letter-spacing:.1em;text-shadow:0 3px 12px #111}
+.guide-detail-content{min-width:0;flex:1;display:flex;flex-direction:column}
+.guide-detail-content h2{font-size:clamp(21px,2.6vw,38px);margin:0 0 4px;line-height:1.2}
+.guide-preview-episode{color:#d1cbe3;font-size:clamp(13px,1.35vw,20px)}
+.guide-source-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.guide-source-tags span{border:1px solid #665e85;color:#e4dbfa;
+ border-radius:14px;padding:4px 9px;font-size:12px}
+.guide-source-tags .plex-match{border-color:#af893b;color:#ffcf71}
+.guide-detail-content p{color:#c5c6dc;line-height:1.5;font-size:clamp(12px,1.1vw,16px);
+ margin:10px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.guide-detail-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-top:auto}
+.guide-detail-actions button{font-size:clamp(14px,1.4vw,19px);border-radius:18px;min-height:50px;padding:12px 22px;
+ background:#35374f;border:1px solid #514d6a}
+.guide-detail-actions .guide-action-primary{background:#f0ecff;color:#141328;border-color:#fff;font-weight:800}
+.guide-detail-actions button:focus-visible,.guide-topbar button:focus-visible{outline:3px solid #c69aff;outline-offset:2px}
+.guide-shade{position:fixed;inset:0;background:#000a;z-index:29}
+.guide-drawer{position:fixed;z-index:30;top:0;right:0;width:min(540px,100%);height:100dvh;
+ overflow:auto;background:#171c2e;border-left:1px solid #585178;padding:24px;
+ box-shadow:-10px 0 50px #0008}
+.guide-drawer-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.guide-drawer-heading h2{font-size:28px;margin:0}
+.guide-drawer h3{margin:24px 0 10px}
+.guide-drawer #findshow,.guide-drawer #search{max-width:none;flex:1}
+.guide-drawer #findresults{margin:12px 0;max-height:45vh;overflow:auto}
+.guide-drawer details{margin-top:24px;border-top:1px solid #45415b;padding-top:15px}
+.guide-drawer summary{padding:12px 0;cursor:pointer}
+.guide-drawer .bar{margin:12px 0}
+.guide-drawer button{min-height:46px}
+.guide-legacy-controls{display:none!important}
+#detailsmodal.plex-pick-mode .dialog-card{max-width:520px}
+#detailsmodal.plex-pick-mode .dialog-card > :not(#closedetails):not(#plexhandoff){display:none!important}
+#detailsmodal.plex-pick-mode #plexhandoff>p,#detailsmodal.plex-pick-mode #plexopen,
+#detailsmodal.plex-pick-mode #plexlinkerror{display:none!important}
+#detailsmodal.plex-pick-mode #plexhandoff::before{content:"Watch on Plex";display:block;font-size:25px;font-weight:750;margin:4px 0 12px}
+#detailsmodal.plex-pick-mode #playbackchoices{display:flex!important;flex-direction:column}
+#detailsmodal.plex-pick-mode #playbackchoices button{min-height:66px;text-align:left;font-size:19px}
+@media(min-width:1150px){.guide-detail{min-height:220px}.guide-art{min-height:185px}}
+@media(max-width:650px){
+ .guide-app{padding:9px;gap:9px}
+ .guide-topbar{flex-wrap:wrap}
+ .guide-navigation .compact-date{display:none}
+ .guide-navigation #viewtime{display:none}
+ .guide-icon-button{height:44px;width:44px;min-width:44px;font-size:23px;padding:8px}
+ .guide-popover{right:0;top:52px}
+ .guide-main{min-height:42dvh}
+ .guide-main .epg-station{width:112px;min-width:112px;padding:9px 6px}
+ .guide-main .epg-row{min-height:64px}
+ .guide-main .epg-program{padding:8px 6px}
+ .guide-detail{min-height:0;gap:10px;padding:10px;border-radius:14px}
+ .guide-art{width:88px;min-width:88px;min-height:100px}
+ .guide-detail-content h2{font-size:18px}
+ .guide-detail-content p{font-size:12px;-webkit-line-clamp:2}
+ .guide-detail-actions button{min-height:43px;padding:9px 11px;font-size:12px;border-radius:11px}
+}
 </style></head>
 <body>
 <main class="container guide-app">
