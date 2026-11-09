@@ -222,6 +222,8 @@ def _health(item,probe=False):
         result["source_start_sequence"]=item.get("start_sequence")
         result["from_pause_marker"]=item.get("from_pause_marker",False)
         result["resume_adjust_seconds"]=item.get("resume_adjust_seconds",0)
+        if item.get("resume_source_pts") is not None:
+            result["resume_source_pts"]=item["resume_source_pts"]
         result["initial_source_position"]=item.get("initial_source_position",{})
     if probe:
         result["segment_probe"]=_probe_segment(directory)
@@ -396,6 +398,54 @@ def _probe_source_segment(url):
     except requests.RequestException as exc:
         # Exception strings can contain upstream token-bearing URLs.
         return {"readable":False,"error":type(exc).__name__}
+
+
+def _probe_native_segment_pts(url):
+    """Read a bounded TS sample and report its first video PTS without URLs."""
+    import tempfile
+    try:
+        with requests.get(url,headers={"User-Agent":USER_AGENT,
+                "Accept":"video/mp2t","Range":"bytes=0-262143"},
+                timeout=(3,8),allow_redirects=False,stream=True) as resp:
+            if resp.status_code not in (200,206):
+                return {"status":"source_http_error","http_status":resp.status_code}
+            sample=bytearray()
+            for chunk in resp.iter_content(chunk_size=16384):
+                sample.extend(chunk[:max(0,262144-len(sample))])
+                if len(sample)>=262144:break
+        if len(sample)<376 or sample[0]!=0x47 or sample[188]!=0x47:
+            return {"status":"not_ts","sample_bytes":len(sample)}
+        with tempfile.TemporaryDirectory(prefix="tablo-pts-") as temp:
+            path=Path(temp)/"segment.ts"
+            path.write_bytes(sample)
+            cmd=["ffprobe","-v","error","-select_streams","v:0",
+                 "-show_packets","-show_entries","packet=pts_time",
+                 "-of","csv=p=0",str(path)]
+            result=subprocess.run(cmd,capture_output=True,text=True,
+                                  timeout=8,check=False)
+        timestamps=[]
+        for line in result.stdout.splitlines():
+            try:
+                value=float(line.strip().split(",",1)[0])
+                if value>=0:timestamps.append(value)
+            except ValueError:pass
+        return {"status":"ok" if timestamps else "no_video_pts",
+                "sample_bytes":len(sample),
+                "first_video_pts_seconds":round(timestamps[0],3) if timestamps else None,
+                "last_sample_video_pts_seconds":round(timestamps[-1],3) if timestamps else None}
+    except (requests.RequestException,OSError,subprocess.TimeoutExpired) as exc:
+        return {"status":"probe_error","error":type(exc).__name__}
+
+
+def _source_pts_for_sequence(origin,media_url,body,sequence):
+    """Use validated native segment URLs only; never include URLs in output."""
+    summary=_summarize_source_playlist(body)
+    first=summary["media_sequence"]
+    if first is None:return {"status":"no_source_sequence"}
+    urls=_media_segment_urls(origin,media_url,body)
+    index=sequence-first
+    if index<0 or index>=len(urls):return {"status":"segment_not_available"}
+    return {"source_sequence":sequence,**_probe_native_segment_pts(urls[index])}
 
 
 def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_seconds=75):
@@ -574,6 +624,9 @@ def capture_pause_point(sid:str):
     # transcoder's most recently written MPEG-TS presentation timestamp.
     # Never use this value to modify the requested pause segment yet.
     live_probe=_probe_segment(parent["directory"])
+    source_pts=_source_pts_for_sequence(origin,media_url,body,sequence)
+    source_edge_pts=_source_pts_for_sequence(
+        origin,media_url,body,_summarize_source_playlist(body)["last_media_sequence"]-3)
     live_age=round(time.monotonic()-parent["created"],1)
     with LOCK:
         if ACTIVE.get(sid) is not parent:
@@ -585,7 +638,9 @@ def capture_pause_point(sid:str):
             "source_playlist_segments":_summarize_source_playlist(body)["segment_count"],
             "source_last_sequence":_summarize_source_playlist(body)["last_media_sequence"],
             "live_transcoder_age_seconds":live_age,
-            "live_segment_probe":live_probe}
+            "live_segment_probe":live_probe,
+            "pause_source_pts":source_pts,
+            "source_edge_pts":source_edge_pts}
 
 
 def _follow_tablo_source(sid,stop_event):
@@ -653,12 +708,15 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
             body,marker["sequence"],resume_adjust_seconds)
         manifest,info=_continuous_source_manifest(
             origin,media_url,body,start_sequence=adjusted_sequence)
+        resume_source_pts=_source_pts_for_sequence(
+            origin,media_url,body,adjusted_sequence)
     else:
         if resume_adjust_seconds:
             raise HTTPException(400,"Resume adjustment requires a saved Pause Live marker")
         actual_adjust=0.0
         manifest,info=_continuous_source_manifest(
             origin,media_url,body,seconds_behind_live=seconds_behind_live)
+        resume_source_pts=None
     child_id=secrets.token_urlsafe(20)
     directory=STORE/child_id
     directory.mkdir(mode=0o700,parents=True,exist_ok=False)
@@ -702,6 +760,7 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120,resume_paused:bool=
                           "source_follow":info,"follow_error":"",
                           "from_pause_marker":bool(resume_paused),
                           "resume_adjust_seconds":actual_adjust,
+                          "resume_source_pts":resume_source_pts,
                           "initial_source_position":info,
                           "follower_stop":stop_event,"mode":"continuous_timeshift"}
     thread=threading.Thread(target=_follow_tablo_source,
