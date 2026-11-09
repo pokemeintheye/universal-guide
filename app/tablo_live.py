@@ -547,7 +547,7 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
     chosen=[]
     elapsed=0.0
     for index in range(start,len(urls)):
-        chosen.append((urls[index],durations[index]))
+        chosen.append((urls[index],durations[index],byte_ranges[index]))
         elapsed+=durations[index]
         if elapsed>=clip_seconds:break
     if elapsed<15:
