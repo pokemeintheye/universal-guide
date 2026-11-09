@@ -846,7 +846,9 @@ def refresh_show_artwork(manual=False):
             if previous and now-float(previous["checked_at"])<(
                     30*86400 if previous["image_url"] else 86400):
                 image=str(previous["image_url"] or "")
-                if not image or (image.startswith("/api/guide/artwork/cached/") and (
+                # Manual refresh retries known misses; automatic runs honor
+                # the 24-hour negative cache to avoid excessive API traffic.
+                if (not image and not manual) or (image.startswith("/api/guide/artwork/cached/") and (
                     ARTWORK_DIR/image.rsplit("/",1)[-1]).is_file()):
                     continue
             todo.append((key,title))
