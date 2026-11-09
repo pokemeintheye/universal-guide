@@ -98,6 +98,14 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
 }
 
 /* Tablo's normal player is video-first; Plex keeps its existing player. */
+/* Tablo startup spinner replaces raw tuner/segment counts. */
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#tabloloading[hidden]{display:none!important}
+.player-backdrop .tablo-loading{display:none}
+.player-backdrop.tablo-mode .tablo-loading{position:absolute;inset:0;z-index:8;display:grid;place-items:center;pointer-events:none;background:#00000050}
+.tablo-loading-spinner{display:block;width:54px;height:54px;border-radius:50%;border:5px solid #ffffff48;border-top-color:#fff;animation:tablo-loading-spin .8s linear infinite}
+@keyframes tablo-loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.tablo-loading-spinner{animation-duration:2s}}
 .player-backdrop.tablo-mode{padding:0;overflow:hidden;display:block;background:#000}
 .player-backdrop.tablo-mode video{
  position:absolute;inset:0;width:100%;height:100%;max-height:none;max-width:none;
@@ -594,6 +602,10 @@ status();guide(view.plex);
 <div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
 <div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
+<div id="tabloloading" class="tablo-loading" hidden role="status" aria-label="Loading Tablo channel">
+ <span class="tablo-loading-spinner" aria-hidden="true"></span>
+ <span class="visually-hidden">Loading channel</span>
+</div>
 <div id="playerstatus" role="status"></div>
 <div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo DVR playback controls">
  <div class="tablo-dvr-top">
@@ -704,6 +716,10 @@ let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
 function playerMessage(msg){document.getElementById("playerstatus").textContent=msg}
+function setTabloLoading(active){
+ document.getElementById("tabloloading").hidden=!active;
+ if(active)playerMessage("");
+}
 let hlsLastError=null;
 async function explainPlayerFailure(fallback,generation){
  if(generation!==playerGeneration)return;
@@ -898,6 +914,7 @@ async function closePlexPlayer(){
  tabloDvrSourceStart=null;tabloDvrDragging=false;
  tabloSchedule=null;tabloScheduleLastFetch=0;tabloScheduleLoading=false;
  tabloChannelId=null;tabloOverlayFallbackProgram=null;
+ setTabloLoading(false);
  teardownTabloOverlay();
  document.getElementById("tablodvr").hidden=true;
  document.getElementById("tabloadvanced").hidden=true;
@@ -1080,40 +1097,39 @@ async function startTabloAfterPrebuffer(video,generation){
  const begun=Date.now();
  while(generation===playerGeneration && tabloSession && video.isConnected){
   const ahead=tabloPlayableSecondsAhead(video);
-  if(ahead>=9 || (ahead>=5 && Date.now()-begun>=12000) ||
-     (video.readyState>=2 && Date.now()-begun>=18000)){
+  if(ahead>=7 || (ahead>=4 && Date.now()-begun>=4000) ||
+     (video.readyState>=2 && Date.now()-begun>=10000)){
    try{await video.play();playerMessage("")}
    catch(error){playerMessage("Tap Play to begin Tablo DVR playback.")}
    return;
   }
-  if(Date.now()-begun>=26000){
+  if(Date.now()-begun>=15000){
    // Native Safari may not fill its paused buffered ranges until playing.
    try{await video.play();playerMessage("")}
    catch(error){playerMessage("Tap Play to begin Tablo DVR playback.")}
    return;
   }
-  playerMessage("Preparing smooth DVR playback… "+Math.floor(ahead)+"s ready");
+  setTabloLoading(true);
   await new Promise(resolve=>setTimeout(resolve,400));
  }
 }
 async function waitForTabloReady(sessionId,generation){
  const started=Date.now();
- while(Date.now()-started<65000){
+ while(Date.now()-started<50000){
   if(generation!==playerGeneration)return false;
   const health=await req("/api/tablo/live/"+encodeURIComponent(sessionId)+"/status");
   // Require several COMPLETE segments before loading a live HLS player.
   // The old one-segment startup could play briefly, then rebuffer.
   if(health.manifest_ready&&
-     health.disk_dvr_playlist?.segment_count>=6)return true;
+     health.disk_dvr_playlist?.segment_count>=4)return true;
   if(!health.transcoder_running){
    throw Error("Tablo transcoder exited "+health.ffmpeg_exit_code+
      (health.ffmpeg_error?" · "+health.ffmpeg_error:""));
   }
-  playerMessage("Tablo tuner buffering… "+Math.round(health.seconds_since_start)+
-    "s (segments: "+health.segment_count+")");
+  setTabloLoading(true);
   await new Promise(resolve=>setTimeout(resolve,900));
  }
- throw Error("Tablo did not produce at least six playable HLS segments within 65 seconds. "+
+ throw Error("Tablo did not produce at least four playable HLS segments within 50 seconds. "+
    "Check tuner signal and FFmpeg diagnostics.");
 }
 async function launchTabloLive(){
@@ -1173,24 +1189,26 @@ async function launchTabloLive(){
   document.getElementById("detailsmodal").hidden=true;
   document.getElementById("playertitle").textContent="Live Tablo · "+(channel.network||channel.label);
   document.getElementById("playerbackdrop").hidden=false;
-  playerMessage("Starting Tablo tuner and transcoder. This may take 15–30 seconds…");
+  setTabloLoading(true);
   const video=document.getElementById("plexvideo");
   attachTabloDvrTelemetry(video);
   attachTabloOverlayVideoEvents(video);
   const url=info.playlist_url;
   if(!await waitForTabloReady(info.session_id,generation))return;
-  video.addEventListener("playing",()=>{if(generation===playerGeneration)playerMessage("")},{once:true});
+  video.addEventListener("playing",()=>{
+   if(generation===playerGeneration){setTabloLoading(false);playerMessage("")}
+  },{once:true});
   video.addEventListener("error",()=>{if(generation===playerGeneration)
     explainTabloFailure("Live Tablo media failed (browser error "+(video.error?.code||"?")+
       ")",generation)},{once:true});
   // Chrome/Edge use MediaSource via hls.js even if canPlayType reports
   // tentative support for HLS. Native HLS remains the Safari fallback.
   const preferHlsJs=Boolean(window.Hls&&Hls.isSupported());
-  playerMessage("Tablo live stream prepared. Player: "+(preferHlsJs?"HLS.js":"native HLS"));
+  setTabloLoading(true);
   if(preferHlsJs){
    // One disk DVR session: prepare a larger forward MSE cache, with a
    // bounded memory footprint. Do not chase the live edge after pausing.
-   playerHls=new Hls({enableWorker:true,startFragPrefetch:true,liveSyncDurationCount:4,
+   playerHls=new Hls({enableWorker:true,startFragPrefetch:true,liveSyncDurationCount:3,
       liveMaxLatencyDurationCount:Infinity,liveSyncMode:"buffered",
       maxLiveSyncPlaybackRate:1,maxBufferLength:180,maxMaxBufferLength:240,
       maxBufferSize:128*1024*1024,backBufferLength:120,
@@ -1217,6 +1235,7 @@ async function launchTabloLive(){
    explainTabloFailure("No compatible HLS playback engine is available in this browser.",generation);
   }
  }catch(e){
+  setTabloLoading(false);
   alert("Tablo live playback unavailable: "+e.message);
   playerMessage("Tablo live playback unavailable: "+e.message);
  }finally{button.disabled=false}
