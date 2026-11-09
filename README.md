@@ -307,3 +307,20 @@ latest transcoded segment. It does not by itself prove successful image
 decoding on iOS. The previous historical test is not considered working until
 video, audio, and return-to-live all pass on the actual iPhone.
 
+
+## Experimental Tablo clip controls after successful live-history test
+
+The user's iPhone confirmed approximately a minute of historical Tablo video
+with working audio, followed by successful return to live. The historical test
+clip now exposes **Pause/Resume**, **10-second Back**, and **30-second Forward**
+buttons; these use the browser video element's seekable range and never seek
+outside the currently loaded test clip. **Return to Live** remains separate.
+
+**Important scope:** This is the first UI control milestone, not a finished
+continuous DVR player. The current historical test is still a finite ~75-second
+clip. These buttons cannot seek beyond that clip and may depend on Safari
+reporting a usable video.seekable range. Live pause for longer than the
+existing FFmpeg live HLS window is not yet implemented. To support seamless
+hour-long timeshift next, we must serve a continuous indexed playback path
+from Tablo's native segments and handle relaying/transcoding at arbitrary
+positions without creating a separate Unraid recording buffer.
