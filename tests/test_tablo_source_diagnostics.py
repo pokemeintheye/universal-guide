@@ -82,27 +82,27 @@ seg_501.ts
 
     def test_byte_ranges_keep_absolute_offsets_when_starting_mid_file(self):
         body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n"
-        for i in range(30):
+        for i in range(50):
             # Reuse one .ts file with implicit range offsets.
             tag="188@0" if i==0 else "188"
             body+=f"#EXTINF:1.000,\n#EXT-X-BYTERANGE:{tag}\nshared.ts\n"
         origin="http://192.168.1.9:8885"
         url="http://192.168.1.9/stream/abc/index.m3u8"
         live,info=tablo_live._continuous_source_manifest(
-            origin,url,body,start_sequence=120)
-        self.assertEqual(info["start_sequence"],120)
+            origin,url,body,start_sequence=140)
+        self.assertEqual(info["start_sequence"],140)
         self.assertIn("#EXT-X-VERSION:4",live)
-        self.assertIn("#EXT-X-MEDIA-SEQUENCE:120",live)
-        self.assertIn("#EXT-X-BYTERANGE:188@3760\n",live)
+        self.assertIn("#EXT-X-MEDIA-SEQUENCE:140",live)
+        self.assertIn("#EXT-X-BYTERANGE:188@7520\n",live)
         self.assertNotIn("#EXT-X-BYTERANGE:188@0\n",live)
         self.assertEqual(live.count("#EXT-X-BYTERANGE:"),10)
         self.assertEqual(live.count("/stream/abc/shared.ts"),10)
         clip,meta=tablo_live._historic_clip_manifest(
-            origin,url,body,seconds_behind_live=20,clip_seconds=30)
+            origin,url,body,seconds_behind_live=35,clip_seconds=30)
         self.assertIn("#EXT-X-VERSION:4",clip)
-        self.assertIn("#EXT-X-BYTERANGE:188@1880\n",clip)
+        self.assertIn("#EXT-X-BYTERANGE:188@2820\n",clip)
         self.assertNotIn("#EXT-X-BYTERANGE:188@0\n",clip)
-        self.assertEqual(meta["segment_count"],20)
+        self.assertEqual(meta["segment_count"],30)
 
     def test_explicit_byte_ranges_across_file_rotation(self):
         body=("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n"
