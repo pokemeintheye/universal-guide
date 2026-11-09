@@ -223,9 +223,16 @@ def live_status(sid:str,probe:bool=False):
     with LOCK:
         item=ACTIVE.get(sid)
         if not item:raise HTTPException(404,"Tablo stream ended or was unavailable")
-        item["last"]=time.monotonic()
+        now=time.monotonic()
+        item["last"]=now
         if item.get("parent") in ACTIVE:
-            ACTIVE[item["parent"]]["last"]=time.monotonic()
+            ACTIVE[item["parent"]]["last"]=now
+        else:
+            # Keep a paused preview around while the browser refreshes
+            # the original live tuner lease. No additional media is read.
+            for child in ACTIVE.values():
+                if child.get("parent")==sid:
+                    child["last"]=now
         return _health(item,probe=probe)
 
 
@@ -373,13 +380,13 @@ def _probe_source_segment(url):
 
 
 def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_seconds=75):
-    if not isinstance(clip_seconds,int) or not 30<=clip_seconds<=300:
-        raise HTTPException(400,"Historical clip length must be 30 to 300 seconds")
     """Make a bounded, finite HLS timeline for a seek playback proof of concept.
 
     The original Tablo still holds the buffer; only a short clip is transcoded
     to the existing temporary playback directory, not the entire history.
     """
+    if not isinstance(clip_seconds,int) or not 30<=clip_seconds<=300:
+        raise HTTPException(400,"Historical clip length must be 30 to 300 seconds")
     if not isinstance(seconds_behind_live,int) or not 30<=seconds_behind_live<=1800:
         raise HTTPException(400,"Preview offset must be 30 to 1800 seconds")
     urls=_media_segment_urls(origin,media_url,body)
