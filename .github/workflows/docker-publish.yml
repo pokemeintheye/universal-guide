@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
   packages: write
+# Publish only the newest main-branch image when changes arrive rapidly.
+concurrency:
+  group: universal-guide-docker-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   publish:
     runs-on: ubuntu-latest
