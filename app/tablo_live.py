@@ -475,6 +475,44 @@ def _source_pts_for_sequence(origin,media_url,body,sequence):
     return {"source_sequence":sequence,**_probe_native_segment_pts(urls[index])}
 
 
+def _source_byte_ranges(body,urls):
+    """Rebuild explicit byte ranges from native HLS tags, including implicit offsets."""
+    ranges=[]
+    pending=None
+    last_url=None
+    last_end=None
+    for line in body.splitlines():
+        line=line.strip()
+        if line.startswith("#EXT-X-BYTERANGE:"):
+            if pending is not None:
+                raise HTTPException(502,"Duplicate Tablo HLS byte range tag")
+            value=line.split(":",1)[1]
+            match=re.fullmatch(r"(\d+)(?:@(\d+))?",value)
+            if not match or int(match.group(1))<=0:
+                raise HTTPException(502,"Invalid Tablo HLS byte range")
+            pending=(int(match.group(1)),int(match.group(2)) if match.group(2) is not None else None)
+        elif line and not line.startswith("#"):
+            if len(ranges)>=len(urls):
+                continue
+            current_url=urls[len(ranges)]
+            if pending is None:
+                ranges.append(None)
+                last_end=None
+            else:
+                length,offset=pending
+                if offset is None:
+                    if current_url!=last_url or last_end is None:
+                        raise HTTPException(502,"Tablo HLS implicit byte range has no previous range")
+                    offset=last_end
+                ranges.append((length,offset))
+                last_end=offset+length
+            last_url=current_url
+            pending=None
+    if pending is not None or len(ranges)!=len(urls):
+        raise HTTPException(502,"Tablo segment byte ranges are incomplete")
+    return ranges
+
+
 def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_seconds=75):
     """Make a bounded, finite HLS timeline for a seek playback proof of concept.
 
@@ -486,6 +524,7 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
     if not isinstance(seconds_behind_live,int) or not 30<=seconds_behind_live<=1800:
         raise HTTPException(400,"Preview offset must be 30 to 1800 seconds")
     urls=_media_segment_urls(origin,media_url,body)
+    byte_ranges=_source_byte_ranges(body,urls)
     durations=[]
     for line in body.splitlines():
         if line.startswith("#EXTINF:"):
@@ -513,11 +552,14 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
         if elapsed>=clip_seconds:break
     if elapsed<15:
         raise HTTPException(409,"Not enough buffered video for a test clip")
-    output=["#EXTM3U","#EXT-X-VERSION:3",
-            "#EXT-X-TARGETDURATION:"+str(max(1,int(__import__("math").ceil(max(d for _,d in chosen))))),
+    output=["#EXTM3U","#EXT-X-VERSION:"+("4" if any(byte_ranges) else "3"),
+            "#EXT-X-TARGETDURATION:"+str(max(1,int(__import__("math").ceil(max(d for _,d,_ in chosen))))),
             "#EXT-X-MEDIA-SEQUENCE:0"]
-    for url,duration in chosen:
+    for url,duration,byte_range in chosen:
         output.append("#EXTINF:"+format(duration,".3f")+",")
+        if byte_range is not None:
+            length,offset=byte_range
+            output.append("#EXT-X-BYTERANGE:"+str(length)+"@"+str(offset))
         output.append(url)
     output.append("#EXT-X-ENDLIST")
     return "\n".join(output)+"\n",{"start_seconds_behind_live":round(total-accumulated,1),
@@ -534,6 +576,7 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
     grows or eventually prunes its native buffer.
     """
     urls=_media_segment_urls(origin,media_url,body)
+    byte_ranges=_source_byte_ranges(body,urls)
     durations=[]
     for line in body.splitlines():
         if line.startswith("#EXTINF:"):
@@ -562,12 +605,16 @@ def _continuous_source_manifest(origin,media_url,body,start_sequence=None,
     # Avoid silently skipping requested history for extremely long playlists.
     if len(urls)-first>2400:
         raise HTTPException(409,"Requested timeshift window exceeds the current safety cap")
-    chosen=list(zip(urls[first:],durations[first:]))
-    output=["#EXTM3U","#EXT-X-VERSION:3",
-            "#EXT-X-TARGETDURATION:"+str(max(1,__import__("math").ceil(max(d for _,d in chosen)))),
+    chosen=list(zip(urls[first:],durations[first:],byte_ranges[first:]))
+    output=["#EXTM3U","#EXT-X-VERSION:"+("4" if any(byte_ranges) else "3"),
+            "#EXT-X-TARGETDURATION:"+str(max(1,__import__("math").ceil(max(d for _,d,_ in chosen)))),
             "#EXT-X-MEDIA-SEQUENCE:"+str(base_sequence+first)]
-    for url,d in chosen:
-        output.extend(("#EXTINF:"+format(d,".3f")+",",url))
+    for url,d,byte_range in chosen:
+        output.append("#EXTINF:"+format(d,".3f")+",")
+        if byte_range is not None:
+            length,offset=byte_range
+            output.append("#EXT-X-BYTERANGE:"+str(length)+"@"+str(offset))
+        output.append(url)
     return "\n".join(output)+"\n",{"start_sequence":start_sequence,
         "first_listed_sequence":base_sequence,
         "last_sequence":base_sequence+len(urls)-1,
