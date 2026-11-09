@@ -296,7 +296,7 @@ def _plex_item_metadata(key):
         except (ValueError,TypeError):return default
     chapters=[]
     for node in video.findall(".//Chapter"):
-        starts=number(node.get("startTime"),-1)
+        starts=number(node.get("startTimeOffset") or node.get("startTime"),-1)
         if starts>=0:
             chapters.append({"title":node.get("title") or "Chapter "+str(len(chapters)+1),
                              "start_seconds":starts/1000})
