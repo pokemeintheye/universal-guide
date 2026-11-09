@@ -14,6 +14,8 @@ services:
       GUIDE_XMLTV: /data/guide.xml
       TABLO_URL: "${TABLO_URL:-}"
       TABLO_REFRESH_HOURS: "6"
+      TABLO_DVR_MINUTES: "${TABLO_DVR_MINUTES:-20}"
+      TABLO_CACHE_DIR: "${TABLO_CACHE_DIR:-/data/tablo-live-cache}"
       PHILO_REFRESH_HOURS: "24"
     volumes:
       - /mnt/user/appdata/universal-guide:/data
