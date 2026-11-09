@@ -85,6 +85,26 @@ seg_501.ts
                 "http://192.168.1.9/stream/abc/index.m3u8",body,120)
         self.assertEqual(ctx.exception.status_code,409)
 
+    def test_long_tablo_playlist_within_4mib_limit(self):
+        class Response:
+            status_code=200
+            def __init__(self,body):self.body=body
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def iter_content(self,chunk_size=8192):
+                for i in range(0,len(self.body),chunk_size):
+                    yield self.body[i:i+chunk_size]
+        # A growing native playlist commonly passes the old 256 KiB cap.
+        payload=b"#EXTM3U\\n"+b"#EXTINF:1,\\nseg.ts\\n"*16000
+        self.assertGreater(len(payload),262144)
+        with patch.object(tablo_live.requests,"get",return_value=Response(payload)):
+            self.assertEqual(tablo_live._read_source_playlist("http://tablo/stream/pl.m3u8"),
+                             payload.decode())
+        with patch.object(tablo_live.requests,"get",return_value=Response(b"#EXTM3U\\n"+b"x"*(4*1024*1024))):
+            with self.assertRaises(HTTPException) as err:
+                tablo_live._read_source_playlist("http://tablo/stream/pl.m3u8")
+        self.assertEqual(err.exception.status_code,502)
+
     def test_error_never_includes_signed_stream_url(self):
         import requests
         with patch.object(tablo_live.requests,"get",side_effect=requests.Timeout(
