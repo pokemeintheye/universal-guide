@@ -475,6 +475,7 @@ status();guide(view.plex);
 <div id="tablooffsetcontrols" hidden style="margin:8px 0">
 <label for="tablooffset">Historical playback position</label>
 <select id="tablooffset" aria-label="Minutes behind live">
+<option value="30">30 seconds behind</option>
 <option value="120">2 minutes behind</option>
 <option value="300">5 minutes behind</option>
 <option value="600">10 minutes behind</option>
@@ -521,6 +522,7 @@ let tabloLivePausedAt=null;
 let tabloPauseMarkerPromise=null;
 let tabloLastPauseMarker=null;
 let tabloLastDiagnosticsText="";
+let tabloDvrClock=null,tabloDvrSourceStart=null,tabloDvrDragging=false;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -553,6 +555,12 @@ async function closePlexPlayer(){
  hlsLastError=null;
  clearPlayerWatchdog();
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
+ if(tabloDvrClock){clearInterval(tabloDvrClock);tabloDvrClock=null;}
+ tabloDvrSourceStart=null;tabloDvrDragging=false;
+ document.getElementById("tablodvr").hidden=true;
+ document.getElementById("tabloadvanced").hidden=true;
+ document.getElementById("tabloadvancedtoggle").setAttribute("aria-expanded","false");
+ document.getElementById("tabloadvancedtoggle").textContent="Advanced playback tools ▾";
  tabloLivePausedAt=null;
  tabloPauseMarkerPromise=null;
  tabloLastPauseMarker=null;
@@ -754,6 +762,10 @@ async function launchTabloLive(){
      {cache:"no-store"}).catch(()=>{});
   },30000);
   document.getElementById("tablooffsetcontrols").hidden=false;
+  document.getElementById("tablodvr").hidden=false;
+  if(tabloDvrClock)clearInterval(tabloDvrClock);
+  tabloDvrClock=setInterval(updateTabloDvrUi,800);
+  updateTabloDvrUi();
   document.getElementById("tabloquickdiagnostics").hidden=false;
   document.getElementById("tablodiagnosticspanel").hidden=true;
   document.getElementById("tablolivepausecontrols").hidden=false;
@@ -912,6 +924,7 @@ document.getElementById("tablolivepause").onclick=async function(){
    return;
   }
   tabloPreviewSession=info.session_id;
+  tabloDvrSourceStart={behind:Number(info.source_behind_live_seconds),at:Date.now()};
   document.getElementById("tabloliveback").hidden=false;
   document.getElementById("tablopreviewstatus").hidden=false;
   if(!await waitForTabloReady(info.session_id,generation))return;
@@ -972,6 +985,7 @@ document.getElementById("tablocontinuous").onclick=async function(){
    return;
   }
   tabloPreviewSession=info.session_id;
+  tabloDvrSourceStart={behind:Number(info.source_behind_live_seconds),at:Date.now()};
   document.getElementById("tabloliveback").hidden=false;
   document.getElementById("tablopreviewstatus").hidden=false;
   if(!await waitForTabloReady(info.session_id,generation))return;
@@ -1006,6 +1020,7 @@ document.getElementById("tablopreview").onclick=async function(){
    return;
   }
   tabloPreviewSession=info.session_id;
+  tabloDvrSourceStart={behind:Number(info.start_seconds_behind_live),at:Date.now()};
   tabloHistoricalClipSeconds=info.clip_duration_seconds;
   document.getElementById("tabloliveback").hidden=false;
   document.getElementById("tablopreviewstatus").hidden=false;
@@ -1032,6 +1047,7 @@ document.getElementById("tabloliveback").onclick=async function(){
   if(!health.transcoder_running)throw Error("Live transcoder stopped");
   await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration,"live");
   await deleteTabloPreview();
+  tabloDvrSourceStart=null;
   tabloLivePausedAt=null;
   document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
   document.getElementById("tablolivepausecontrols").hidden=false;
