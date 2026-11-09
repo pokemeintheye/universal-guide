@@ -76,6 +76,9 @@ seg_501.ts
             "http://192.168.1.9/stream/abc/index.m3u8",
             next_body,start_sequence=sequence)
         self.assertEqual(info["start_sequence"],1041)
+        self.assertEqual(info["first_listed_sequence"],700)
+        self.assertEqual(info["last_sequence"],1149)
+        self.assertEqual(info["seconds_behind_source_live"],109.0)
         self.assertIn("#EXT-X-MEDIA-SEQUENCE:1041",manifest)
         self.assertIn("seg_341.ts",manifest)
         self.assertNotIn("seg_0.ts",manifest)
