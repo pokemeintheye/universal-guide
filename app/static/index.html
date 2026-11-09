@@ -519,6 +519,12 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
    <div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div>
    <div id="message" class="note" aria-live="polite"></div>
    <p class="note">The guide uses your configured Plex library, legacy Tablo, and Philo schedule feeds. Keep this server on your trusted network.</p>
+   <h3>Show artwork</h3>
+   <p class="note">Artwork is downloaded and cached on Unraid for upcoming TV shows, with one image per series.</p>
+   <div class="bar"><span class="chip" id="artworkstatus" role="status">Checking artwork…</span><button id="artworkrefresh" type="button">Download missing artwork</button></div>
+   <progress id="artworkprogress" max="100" value="0" style="width:100%;height:16px;margin:12px 0 3px" aria-label="Artwork download progress"></progress>
+   <p id="artworkcounts" class="note" aria-live="polite">Checking artwork cache…</p>
+   <p id="artworkcurrent" class="note"></p>
    <h3>Channel management</h3><button type="button" id="settingsmanage">Manage favorite and hidden channels</button>
   </div>
  </section>
@@ -714,6 +720,7 @@ function openGuidePlexChoices(){
  $("playbegin").focus();
 }
 function closeGuideDrawer(){
+ if(artworkPolling){clearInterval(artworkPolling);artworkPolling=null}
  $("searchdrawer").hidden=true;$("settingsdrawer").hidden=true;
  $("guideshade").hidden=true;
  $("opensearch").setAttribute("aria-expanded","false");
@@ -738,7 +745,51 @@ function updateGuideFilterMenu(){
  });
 }
 $("opensearch").onclick=()=>openGuideDrawer("search");
-$("opensettings").onclick=()=>openGuideDrawer("settings");
+let artworkPolling=null;
+async function updateArtworkStatus(){
+ if($("settingsdrawer").hidden)return;
+ try{
+  const status=await req("/api/guide/artwork/status",{cache:"no-store"});
+  if($("settingsdrawer").hidden)return;
+  const total=status.total||0;
+  const done=status.cached+status.no_artwork;
+  const percent=total?Math.round(100*done/total):100;
+  $("artworkprogress").max=total||1;
+  $("artworkprogress").value=done;
+  $("artworkstatus").textContent=status.running
+   ?("Downloading artwork · "+status.completed+"/"+status.planned+" in this batch")
+   :(status.pending?"Artwork pending":"Artwork up to date");
+  $("artworkcounts").textContent=total+" shows · "+status.cached+
+   " cached · "+status.no_artwork+" without provider art · "+status.pending+" pending"+
+   (status.failed?" · "+status.failed+" failed in last batch":"");
+  $("artworkcurrent").textContent=status.running?(status.current_title?
+   "Looking up: "+status.current_title:"Starting artwork refresh…"):
+   (status.last_error?"Last error: "+status.last_error:"Cache coverage: "+percent+"%");
+  $("artworkrefresh").disabled=Boolean(status.running);
+  $("artworkrefresh").textContent=status.running?"Downloading…":"Download missing artwork";
+ }catch(error){
+  $("artworkstatus").textContent="Unable to read artwork status";
+  $("artworkcurrent").textContent=String(error.message||error);
+ }
+}
+async function requestArtworkRefresh(){
+ $("artworkrefresh").disabled=true;
+ $("artworkstatus").textContent="Starting artwork download…";
+ try{
+  const result=await req("/api/guide/artwork/refresh",{method:"POST"});
+  $("artworkcurrent").textContent=result.message||"Refresh requested";
+ }catch(error){
+  $("artworkcurrent").textContent="Unable to start download: "+String(error.message||error);
+ }
+ await updateArtworkStatus();
+}
+$("artworkrefresh").onclick=requestArtworkRefresh;
+$("opensettings").onclick=()=>{
+ openGuideDrawer("settings");
+ updateArtworkStatus();
+ if(artworkPolling)clearInterval(artworkPolling);
+ artworkPolling=setInterval(updateArtworkStatus,2000);
+};
 $("closesearch").onclick=closeGuideDrawer;
 $("closesettings").onclick=closeGuideDrawer;
 $("guideshade").onclick=closeGuideDrawer;
