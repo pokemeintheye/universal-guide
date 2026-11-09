@@ -761,6 +761,10 @@ status();guide(view.plex);
 <script>
 let playerHls=null;
 let playerSession=null;
+let plexOverlayTimer=null,plexOverlayClock=null,plexSeekDragging=false;
+let plexTrackMetadata=null,plexActiveRatingKey=null,plexPlayerBaseOffset=0;
+let plexSelectedAudio=null,plexSelectedSubtitle=null,plexTrackMenu=null;
+let plexPreviewDebounce=null;
 let tabloSession=null;
 let tabloPreviewSession=null;
 let tabloLivePlaylist=null;
@@ -970,6 +974,221 @@ function attachTabloDvrTelemetry(video){
 function clearPlayerWatchdog(){
  if(playerWatchdog){clearTimeout(playerWatchdog);playerWatchdog=null}
 }
+function plexFormatTime(seconds){
+ const n=Math.max(0,Math.floor(Number(seconds)||0));
+ const h=Math.floor(n/3600),m=Math.floor(n%3600/60),sec=String(n%60).padStart(2,"0");
+ return h?h+":"+String(m).padStart(2,"0")+":"+sec:m+":"+sec;
+}
+function plexPlaybackDuration(video){
+ const value=video.duration;
+ if(Number.isFinite(value)&&value>0)return value;
+ return plexTrackMetadata?.duration_seconds||0;
+}
+function plexPlaybackPosition(video){
+ return Math.max(0,Number.isFinite(video.currentTime)?video.currentTime:0);
+}
+function clearPlexOverlayTimer(){
+ if(plexOverlayTimer){clearTimeout(plexOverlayTimer);plexOverlayTimer=null}
+}
+function showPlexOverlay(){
+ if(!playerSession)return;
+ const overlay=document.getElementById("plexoverlay");
+ overlay.classList.remove("controls-hidden");
+ clearPlexOverlayTimer();
+ const video=document.getElementById("plexvideo");
+ if(!video.paused&&!plexSeekDragging){
+  plexOverlayTimer=setTimeout(()=>{
+   if(!video.paused&&!plexSeekDragging&&
+       document.getElementById("plextrackpanel").hidden&&
+       !overlay.querySelector(":focus-visible"))
+    overlay.classList.add("controls-hidden");
+  },4500);
+ }
+}
+function updatePlexOverlayUi(){
+ if(!playerSession||document.getElementById("plexoverlay").hidden)return;
+ const video=document.getElementById("plexvideo");
+ const pause=document.getElementById("plexpause");
+ pause.textContent=video.paused?"▶":"⏸";
+ pause.setAttribute("aria-label",video.paused?"Play":"Pause");
+ const duration=plexPlaybackDuration(video);
+ const now=plexPlaybackPosition(video);
+ document.getElementById("plexelapsed").textContent=plexFormatTime(now);
+ document.getElementById("plexremaining").textContent="-"+plexFormatTime(Math.max(0,duration-now));
+ const seek=document.getElementById("plexseek");
+ seek.disabled=!(duration>0);
+ if(!plexSeekDragging&&duration>0)seek.value=String(Math.min(1000,Math.round(now/duration*1000)));
+ seek.style.setProperty("--dvr-progress",seek.value/10+"%");
+}
+function plexSafeSeek(seconds){
+ const video=document.getElementById("plexvideo");
+ if(!video.seekable?.length)return;
+ const min=video.seekable.start(0),max=video.seekable.end(video.seekable.length-1);
+ const target=Math.max(min,Math.min(max-0.3,seconds));
+ if(Number.isFinite(target)&&target>=min)video.currentTime=target;
+ updatePlexOverlayUi();
+}
+function plexTrackLabel(item){
+ return [item.language,item.title||item.codec].filter(Boolean).join(" · ");
+}
+function setPlexTrackButtons(){
+ document.getElementById("plexchaptersbutton").hidden=!(plexTrackMetadata?.chapters?.length);
+ document.getElementById("plexaudiobutton").hidden=!(plexTrackMetadata?.audio?.length);
+ document.getElementById("plexsubtitlesbutton").hidden=!(plexTrackMetadata?.subtitles?.length);
+}
+function showPlexTrackMenu(kind){
+ if(!plexTrackMetadata)return;
+ const entries=kind==="chapters"?plexTrackMetadata.chapters:
+   kind==="audio"?plexTrackMetadata.audio:plexTrackMetadata.subtitles;
+ const select=document.getElementById("plextrackselect");
+ const label=document.getElementById("plextracklabel");
+ select.replaceChildren();
+ if(kind==="subtitles"){
+  const option=document.createElement("option");option.value="0";option.textContent="Off";
+  select.appendChild(option);
+ }
+ for(const [index,item] of entries.entries()){
+  const option=document.createElement("option");
+  option.value=String(kind==="chapters"?index:item.id);
+  option.textContent=kind==="chapters"?
+    plexFormatTime(item.start_seconds)+" · "+item.title:plexTrackLabel(item);
+  select.appendChild(option);
+ }
+ if(kind==="audio"&&plexSelectedAudio!==null)select.value=String(plexSelectedAudio);
+ if(kind==="subtitles")select.value=String(plexSelectedSubtitle??0);
+ label.textContent={chapters:"Jump to chapter",audio:"Audio language",subtitles:"Subtitles"}[kind];
+ plexTrackMenu=kind;
+ document.getElementById("plextrackpanel").hidden=false;
+ showPlexOverlay();
+}
+function applyPlexTrackChoice(){
+ const kind=plexTrackMenu,select=document.getElementById("plextrackselect");
+ document.getElementById("plextrackpanel").hidden=true;
+ plexTrackMenu=null;
+ if(kind==="chapters"){
+  const chapter=plexTrackMetadata?.chapters?.[Number(select.value)];
+  if(chapter)plexSafeSeek(chapter.start_seconds);
+ }else if(kind==="audio"||kind==="subtitles"){
+  const number=Number(select.value);
+  if(!Number.isInteger(number))return;
+  if(kind==="audio")plexSelectedAudio=number;
+  else plexSelectedSubtitle=number;
+  const position=plexPlaybackPosition(document.getElementById("plexvideo"));
+  // Plex applies selected streams when constructing a new HLS transcode.
+  // Resume approximately where the viewer was watching.
+  launchPlex("resume",{position,
+     audio_stream_id:plexSelectedAudio,subtitle_stream_id:plexSelectedSubtitle});
+ }
+ showPlexOverlay();
+}
+async function configurePlexOverlay(info,generation){
+ const panel=document.getElementById("playerbackdrop");
+ panel.classList.add("plex-mode");
+ panel.setAttribute("aria-label","Plex library player");
+ const overlay=document.getElementById("plexoverlay");
+ overlay.hidden=false;
+ const title=document.getElementById("plexoverlaytitle");
+ const meta=document.getElementById("plexoverlaymeta");
+ title.textContent=info.title||"Plex library";
+ meta.textContent="";
+ document.getElementById("plextrackpanel").hidden=true;
+ setPlexTrackButtons();
+ const video=document.getElementById("plexvideo");
+ video.controls=false;
+ video.setAttribute("aria-label","Plex playback. Tap to reveal controls.");
+ video.addEventListener("click",showPlexOverlay);
+ video.addEventListener("play",showPlexOverlay);
+ video.addEventListener("pause",showPlexOverlay);
+ video.addEventListener("timeupdate",updatePlexOverlayUi);
+ video.addEventListener("loadedmetadata",updatePlexOverlayUi);
+ if(plexOverlayClock)clearInterval(plexOverlayClock);
+ plexOverlayClock=setInterval(updatePlexOverlayUi,800);
+ showPlexOverlay();
+ try{
+  const details=await req("/api/player/"+encodeURIComponent(playerSession)+"/metadata",{cache:"no-store"});
+  if(generation!==playerGeneration)return;
+  plexTrackMetadata=details;
+  if(details.kind==="episode"){
+   title.textContent=details.show_title||details.title||"Plex";
+   meta.textContent=[details.title,
+      "S"+String(details.season).padStart(2,"0")+" E"+String(details.episode).padStart(2,"0")]
+      .filter(Boolean).join(" · ");
+  }else{
+   title.textContent=details.title||info.title||"Plex";
+   meta.textContent=details.year?String(details.year):"";
+  }
+  if(plexSelectedAudio===null)
+   plexSelectedAudio=details.audio?.find(x=>x.selected)?.id??details.audio?.[0]?.id??null;
+  if(plexSelectedSubtitle===null)
+   plexSelectedSubtitle=details.subtitles?.find(x=>x.selected)?.id??0;
+  setPlexTrackButtons();
+  updatePlexOverlayUi();
+ }catch(error){
+  console.warn("Plex playback details unavailable:",error);
+ }
+}
+function plexPreviewAt(seconds){
+ const box=document.getElementById("plexthumb");
+ if(!plexTrackMetadata?.preview_available||!playerSession)return;
+ box.hidden=false;
+ document.getElementById("plexthumbtime").textContent=plexFormatTime(seconds);
+ const img=document.getElementById("plexthumbimage");
+ if(plexPreviewDebounce)clearTimeout(plexPreviewDebounce);
+ plexPreviewDebounce=setTimeout(()=>{
+  img.hidden=false;
+  img.src="/api/player/"+encodeURIComponent(playerSession)+
+    "/preview?at="+encodeURIComponent(Math.floor(seconds));
+ },180);
+}
+function cleanupPlexOverlay(){
+ clearPlexOverlayTimer();
+ if(plexOverlayClock){clearInterval(plexOverlayClock);plexOverlayClock=null}
+ if(plexPreviewDebounce){clearTimeout(plexPreviewDebounce);plexPreviewDebounce=null}
+ plexSeekDragging=false;
+ plexTrackMetadata=null;plexActiveRatingKey=null;plexPlayerBaseOffset=0;
+ plexTrackMenu=null;
+ document.getElementById("plexoverlay").hidden=true;
+ document.getElementById("plexoverlay").classList.remove("controls-hidden");
+ document.getElementById("plextrackpanel").hidden=true;
+ document.getElementById("plexthumb").hidden=true;
+ document.getElementById("playerbackdrop").classList.remove("plex-mode");
+}
+document.getElementById("plexoverlayclose").onclick=closePlexPlayer;
+document.getElementById("plexpause").onclick=()=>{
+ if(!playerSession)return;
+ const video=document.getElementById("plexvideo");
+ if(video.paused)video.play().catch(()=>playerMessage("Tap Play to resume."));
+ else video.pause();
+ updatePlexOverlayUi();
+};
+document.getElementById("plexback").onclick=()=>plexSafeSeek(plexPlaybackPosition(
+ document.getElementById("plexvideo"))-20);
+document.getElementById("plexforward").onclick=()=>plexSafeSeek(plexPlaybackPosition(
+ document.getElementById("plexvideo"))+30);
+document.getElementById("plexchaptersbutton").onclick=()=>showPlexTrackMenu("chapters");
+document.getElementById("plexaudiobutton").onclick=()=>showPlexTrackMenu("audio");
+document.getElementById("plexsubtitlesbutton").onclick=()=>showPlexTrackMenu("subtitles");
+document.getElementById("plextrackcancel").onclick=()=>{
+ document.getElementById("plextrackpanel").hidden=true;showPlexOverlay();
+};
+document.getElementById("plextrackapply").onclick=applyPlexTrackChoice;
+const plexScrubber=document.getElementById("plexseek");
+plexScrubber.addEventListener("pointerdown",()=>{plexSeekDragging=true;clearPlexOverlayTimer()});
+plexScrubber.addEventListener("input",()=>{
+ const duration=plexPlaybackDuration(document.getElementById("plexvideo"));
+ plexPreviewAt(duration*Number(plexScrubber.value)/1000);
+ plexScrubber.style.setProperty("--dvr-progress",plexScrubber.value/10+"%");
+});
+plexScrubber.addEventListener("change",()=>{
+ const duration=plexPlaybackDuration(document.getElementById("plexvideo"));
+ plexSeekDragging=false;
+ document.getElementById("plexthumb").hidden=true;
+ plexSafeSeek(duration*Number(plexScrubber.value)/1000);
+ showPlexOverlay();
+});
+plexScrubber.addEventListener("pointerup",()=>{plexSeekDragging=false;showPlexOverlay()});
+
+
 async function closePlexPlayer(){
  // Fully detach the old browser media element/MediaSource so Chrome cannot
  // reuse stale HLS buffers and handlers when the SAME episode is reopened.
@@ -983,6 +1202,7 @@ async function closePlexPlayer(){
  tabloSchedule=null;tabloScheduleLastFetch=0;tabloScheduleLoading=false;
  tabloChannelId=null;tabloOverlayFallbackProgram=null;
  setTabloLoading(false);
+ cleanupPlexOverlay();
  teardownTabloOverlay();
  document.getElementById("tablodvr").hidden=true;
  document.getElementById("tabloadvanced").hidden=true;
