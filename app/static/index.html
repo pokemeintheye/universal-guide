@@ -1609,7 +1609,8 @@ document.getElementById("tablodvrlive").onclick=async function(){
   playerMessage("Unable to seek to latest recorded segment.");return;
  }
  video.play().catch(()=>playerMessage("Tap Play to resume at the disk edge."));
- playerMessage("Playing near the latest completed DVR segment.");
+ // Successful Go Live is silent; the DVR timeline already shows the position.
+ playerMessage("");
  updateTabloDvrUi();
 };
 const tabloSeekBar=document.getElementById("tablodvrseek");
