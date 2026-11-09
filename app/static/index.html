@@ -844,6 +844,8 @@ async function closePlexPlayer(){
  video.removeAttribute("src");
  video.load();
  const clean=video.cloneNode(false);
+ clean.controls=true; // Plex always retains its native controls.
+ clean.setAttribute("aria-label","Plex playback");
  video.replaceWith(clean);
  document.getElementById("playerbackdrop").hidden=true;
  document.getElementById("tablobuffer").hidden=true;
@@ -1534,7 +1536,9 @@ function updateTabloDvrUi(){
  const window=tabloDvrWindow(video);
  const lag=window?Math.max(0,window.hi-video.currentTime):null;
  const playing=video.readyState>=2&&!video.paused;
- pause.textContent=playing?"⏸ Pause":"▶ Resume";
+ pause.textContent=playing?"⏸":"▶";
+ pause.setAttribute("aria-label",playing?"Pause":"Resume");
+ pause.title=playing?"Pause":"Resume";
  back.disabled=video.readyState<2||!window||video.currentTime<=window.lo+0.4;
  // Keep these controls visually stable as the seekable live edge moves.
  forward.disabled=false;
@@ -1546,14 +1550,16 @@ function updateTabloDvrUi(){
  else state.textContent="DVR"+(lag===null?"":" · "+tabloDvrTime(lag)+" behind disk edge");
  if(!window){
   slider.disabled=true;slider.value="1000";
-  left.textContent="Buffering DVR…";right.textContent="--:--";
+  slider.style.setProperty("--dvr-progress","0%");
+  left.textContent="0:00";right.textContent="--:--";
   return;
  }
  slider.disabled=false;
  const current=Math.max(window.lo,Math.min(window.hi,Number(video.currentTime)||window.lo));
  if(!tabloDvrDragging)slider.value=String(Math.round((current-window.lo)/(window.hi-window.lo)*1000));
- left.textContent=tabloDvrTime(window.hi-window.lo)+" available";
- right.textContent="-"+tabloDvrTime(window.hi-current);
+ left.textContent=tabloDvrTime(current-window.lo);
+ right.textContent=window.hi-current<=TABLO_DVR_EDGE_SECONDS+5?"LIVE":"-"+tabloDvrTime(window.hi-current);
+ slider.style.setProperty("--dvr-progress",slider.value/10+"%");
 }
 document.getElementById("tabloadvancedtoggle").onclick=function(){
  const panel=document.getElementById("tabloadvanced");
@@ -1561,6 +1567,7 @@ document.getElementById("tabloadvancedtoggle").onclick=function(){
  this.setAttribute("aria-expanded",String(!panel.hidden));
  this.textContent=panel.hidden?"Advanced playback tools ▾":"Hide advanced tools ▴";
 };
+document.getElementById("tablodvr").addEventListener("pointerdown",showTabloOverlay);
 document.getElementById("tablodvrpause").onclick=function(){
  if(!tabloSession)return;
  if(tabloPreviewSession){
@@ -1607,11 +1614,18 @@ document.getElementById("tablodvrlive").onclick=async function(){
  updateTabloDvrUi();
 };
 const tabloSeekBar=document.getElementById("tablodvrseek");
-tabloSeekBar.addEventListener("pointerdown",()=>{tabloDvrDragging=true});
-tabloSeekBar.addEventListener("pointerup",()=>{tabloDvrDragging=false});
-tabloSeekBar.addEventListener("blur",()=>{tabloDvrDragging=false});
+tabloSeekBar.addEventListener("pointerdown",()=>{
+ tabloDvrDragging=true;clearTabloOverlayTimer();
+});
+tabloSeekBar.addEventListener("pointerup",()=>{
+ tabloDvrDragging=false;showTabloOverlay();
+});
+tabloSeekBar.addEventListener("blur",()=>{
+ tabloDvrDragging=false;showTabloOverlay();
+});
 tabloSeekBar.addEventListener("change",function(){
  tabloDvrDragging=false;
+ showTabloOverlay();
  if(!tabloSession)return;
  const video=document.getElementById("plexvideo");
  const window=tabloDvrWindow(video);
