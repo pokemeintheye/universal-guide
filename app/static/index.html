@@ -427,6 +427,7 @@ status();guide(view.plex);
 <button id="tablopreview" type="button" hidden>▶ Test playback 2 min ago</button>
 <button id="tabloliveback" type="button" hidden>↩ Return to Live</button>
 <button id="tablopreviewstatus" type="button" hidden>Historical playback diagnostics</button>
+<button id="tablorestartlive" type="button" hidden>Restart Live Tablo</button>
 <pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
@@ -486,6 +487,7 @@ async function closePlexPlayer(){
  document.getElementById("tablopreview").hidden=true;
  document.getElementById("tabloliveback").hidden=true;
  document.getElementById("tablopreviewstatus").hidden=true;
+ document.getElementById("tablorestartlive").hidden=true;
  if(oldPreview){try{await fetch("/api/tablo/live/"+encodeURIComponent(oldPreview),{method:"DELETE"})}catch(e){console.warn("Preview cleanup:",e)}}
  if(oldTablo){
   try{await fetch("/api/tablo/live/"+encodeURIComponent(oldTablo),{method:"DELETE"})}
@@ -650,6 +652,7 @@ async function launchTabloLive(){
   document.getElementById("tablopreview").hidden=false;
   document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablopreviewstatus").hidden=true;
+  document.getElementById("tablorestartlive").hidden=true;
   document.getElementById("tablobuffer").hidden=false;
   document.getElementById("tablosegments").hidden=false;
   document.getElementById("tablobufferresult").hidden=true;
@@ -776,10 +779,12 @@ document.getElementById("tabloliveback").onclick=async function(){
   await deleteTabloPreview();
   document.getElementById("tablopreviewstatus").hidden=true;
   this.hidden=true;
+  document.getElementById("tablorestartlive").hidden=true;
   playerMessage("Live stream reloaded. Press Play if needed.");
  }catch(e){
   playerMessage("Return to Live failed: "+e.message+
-   ". Close the player and tap Watch Live on Tablo to start a fresh session.");
+   ". Tap Restart Live Tablo to start a fresh tuner session.");
+  document.getElementById("tablorestartlive").hidden=false;
  }finally{button.disabled=false}
 };
 document.getElementById("tablopreviewstatus").onclick=async function(){
@@ -793,6 +798,11 @@ document.getElementById("tablopreviewstatus").onclick=async function(){
   output.textContent=JSON.stringify({preview_status:status},null,2);
  }catch(e){output.textContent="Preview diagnostic failed: "+e.message}
  finally{button.disabled=false}
+};
+document.getElementById("tablorestartlive").onclick=async function(){
+ if(!selectedProgram?.channel || selectedProgram.channel.source!=="tablo")return;
+ playerMessage("Reinitializing live Tablo tuner…");
+ await launchTabloLive();
 };
 document.getElementById("tablobuffer").onclick=async function(){
  if(!tabloSession)return;
