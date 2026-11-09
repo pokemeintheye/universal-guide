@@ -467,6 +467,7 @@ let tabloLivePlaylist=null;
 let tabloHistoricalClipSeconds=0;
 let tabloHeartbeat=null;
 let tabloLivePausedAt=null;
+let tabloPauseMarkerPromise=null;
 let selectedProgram=null;
 let playerWatchdog=null;
 let playerGeneration=0;
@@ -500,6 +501,7 @@ async function closePlexPlayer(){
  clearPlayerWatchdog();
  if(tabloHeartbeat){clearInterval(tabloHeartbeat);tabloHeartbeat=null;}
  tabloLivePausedAt=null;
+ tabloPauseMarkerPromise=null;
  document.getElementById("tablolivepausecontrols").hidden=true;
  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
  const video=document.getElementById("plexvideo");
@@ -696,6 +698,7 @@ async function launchTabloLive(){
   document.getElementById("tablooffsetcontrols").hidden=false;
   document.getElementById("tablolivepausecontrols").hidden=false;
   tabloLivePausedAt=null;
+  tabloPauseMarkerPromise=null;
   document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
   document.getElementById("tabloliveback").hidden=true;
   document.getElementById("tablopreviewstatus").hidden=true;
@@ -802,7 +805,15 @@ document.getElementById("tablolivepause").onclick=async function(){
   tabloLivePausedAt=Date.now();
   video.pause();
   button.textContent="▶ Resume Live";
-  playerMessage("Live paused. The broadcast is still buffering on Tablo.");
+  // Capture the native source sequence NOW. Measuring elapsed pause time at
+  // resume is not reliable for recovering the displayed broadcast position.
+  const currentSession=tabloSession;
+  tabloPauseMarkerPromise=req("/api/tablo/live/"+
+    encodeURIComponent(currentSession)+"/pause-point",
+    {method:"POST",cache:"no-store"})
+    .then(data=>({ok:true,data}))
+    .catch(error=>({ok:false,error:error.message}));
+  playerMessage("Live paused. Saving this position in Tablo's native buffer…");
   return;
  }
  button.disabled=true;
@@ -812,17 +823,26 @@ document.getElementById("tablolivepause").onclick=async function(){
   if(pausedSeconds<12){
    await video.play();
    tabloLivePausedAt=null;
+   tabloPauseMarkerPromise=null;
    button.textContent="⏸ Pause Live (beta)";
    playerMessage("Live playback resumed.");
    return;
   }
-  // The original live output retains only ~28 seconds of HLS. Reopen native
-  // Tablo history for longer pauses, with a small overlap for decode safety.
-  const offset=Math.max(30,Math.min(1800,pausedSeconds+12));
-  playerMessage("Resuming from Tablo buffer, approximately "+
-     Math.round(offset)+" seconds behind live…");
+  // Use the segment captured at the moment Pause was pressed rather than
+  // estimating the position from elapsed time. Never silently fall back.
+  const marker=tabloPauseMarkerPromise?
+    await tabloPauseMarkerPromise:{ok:false,error:"Pause position was not captured"};
+  if(generation!==playerGeneration)return;
+  if(!marker.ok){
+   playerMessage("Could not save the paused scene: "+marker.error+
+    ". Choose Return to Live or restart the channel.");
+   document.getElementById("tabloliveback").hidden=false;
+   return;
+  }
+  playerMessage("Resuming native Tablo segment "+marker.data.source_sequence+
+    " (captured "+pausedSeconds+" seconds ago)…");
   const info=await req("/api/tablo/live/"+encodeURIComponent(tabloSession)+
-    "/timeshift?seconds_behind_live="+offset,{method:"POST",cache:"no-store"});
+    "/timeshift?resume_paused=true",{method:"POST",cache:"no-store"});
   if(generation!==playerGeneration){
    fetch("/api/tablo/live/"+encodeURIComponent(info.session_id),
      {method:"DELETE"}).catch(()=>{});
@@ -835,6 +855,7 @@ document.getElementById("tablolivepause").onclick=async function(){
   await switchTabloExperimentSource(info.playlist_url,generation,"historical");
   if(generation!==playerGeneration)return;
   tabloLivePausedAt=null;
+  tabloPauseMarkerPromise=null;
   button.textContent="⏸ Pause Live (beta)";
   document.getElementById("tablolivepausecontrols").hidden=true;
   document.getElementById("tabloseekcontrols").hidden=false;
