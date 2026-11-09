@@ -11,6 +11,22 @@ small,.sub{color:#a9bad5}.container{max-width:1500px;margin:auto;padding:24px}bu
 .timeline{overflow:auto;border:1px solid #33425c;border-radius:10px;max-height:65vh}
 .epg{min-width:1100px;width:max-content}
 .epg-program.return-selected{outline:2px solid #f0be60;outline-offset:-2px}
+
+/* Unified Tablo DVR transport. Advanced tools remain available separately. */
+.tablo-dvr{margin:10px 0;padding:12px;border:1px solid #38526f;border-radius:12px;background:#172538}
+.tablo-dvr-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.tablo-dvr-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tablo-dvr-controls button{padding:9px 12px;min-width:68px}
+.tablo-dvr-controls button:disabled{opacity:.45;cursor:not-allowed}
+.tablo-dvr-state{display:inline-flex;gap:7px;align-items:center;font-size:12px;font-weight:700;color:#d3deee}
+.tablo-dvr-state.live{color:#fc9e9e}
+.tablo-dvr-state.live::before{content:"";height:7px;width:7px;background:#f45f67;border-radius:50%}
+.tablo-dvr-timeline{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:12px;color:#c3d4ec}
+.tablo-dvr-timeline input[type=range]{flex:1;max-width:none;min-width:100px;accent-color:#72c7e8;padding:0;cursor:pointer}
+.tablo-dvr-timeline input[type=range]:disabled{opacity:.42;cursor:not-allowed}
+.tablo-dvr-time{min-width:50px;text-align:right;font-variant-numeric:tabular-nums}
+.tablo-advanced-toggle{margin-top:8px;font-size:12px;background:transparent;border-color:#465875;color:#d4e0f5;padding:6px 9px}
+
 .epg-time,.epg-row{display:flex;min-height:70px;border-bottom:1px solid #2b3b55}
 .epg-time{min-height:44px;position:sticky;top:0;z-index:4;background:#1b2940}
 .epg-station{width:150px;min-width:150px;padding:13px 10px;background:#172235;border-right:1px solid #33425c;position:sticky;left:0;z-index:2;font-weight:700;font-size:13px}
@@ -425,6 +441,24 @@ status();guide(view.plex);
 <div class="player-tools"><strong id="playertitle"></strong><button id="plexquickdiagnostics" type="button" hidden>Copy Plex diagnostics</button><button id="tabloquickdiagnostics" type="button" hidden>Copy Tablo diagnostics</button><button id="closeplayer" type="button">✕ Close player</button></div>
 <video id="plexvideo" controls playsinline preload="auto" aria-label="Plex playback"></video>
 <div id="playerstatus" role="status"></div>
+<div id="tablodvr" class="tablo-dvr" hidden aria-label="Tablo playback controls">
+ <div class="tablo-dvr-top">
+  <div class="tablo-dvr-controls" role="group" aria-label="DVR transport">
+   <button id="tablodvrpause" type="button">⏸ Pause</button>
+   <button id="tablodvrback" type="button">↶ 30s</button>
+   <button id="tablodvrforward" type="button" disabled>30s ↷</button>
+   <button id="tablodvrlive" type="button" disabled>● Jump to Live</button>
+  </div>
+  <span id="tablodvrstate" class="tablo-dvr-state live" role="status">LIVE</span>
+ </div>
+ <div class="tablo-dvr-timeline">
+  <span id="tablodvrstart">DVR</span>
+  <input id="tablodvrseek" type="range" min="0" max="1000" value="1000" step="1" disabled aria-label="Seek through available Tablo DVR window"/>
+  <span id="tablodvrtime" class="tablo-dvr-time">LIVE</span>
+ </div>
+ <button id="tabloadvancedtoggle" type="button" class="tablo-advanced-toggle" aria-expanded="false">Advanced playback tools ▾</button>
+</div>
+<div id="tabloadvanced" hidden>
 <button id="tablobuffer" type="button" hidden>Inspect Tablo buffer (diagnostic)</button>
 <button id="tablosegments" type="button" hidden>Test older Tablo segments</button>
 <div id="tablolivepausecontrols" hidden style="margin:8px 0">
@@ -472,6 +506,7 @@ status();guide(view.plex);
 <span id="tablocopystatus" role="status"></span>
 </div>
 <pre id="tablobufferresult" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto"></pre>
+</div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
 <script>
