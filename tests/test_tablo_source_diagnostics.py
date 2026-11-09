@@ -76,6 +76,27 @@ seg_501.ts
         self.assertNotIn("/stream/abc/seg_0.ts",manifest)
         self.assertLess(meta["clip_duration_seconds"],100)
 
+    def test_five_minute_history_preview_is_bounded(self):
+        body="#EXTM3U\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(720))
+        manifest,info=tablo_live._historic_clip_manifest(
+            "http://192.168.1.9:8885",
+            "http://192.168.1.9/stream/abc/index.m3u8",
+            body,seconds_behind_live=600,clip_seconds=300)
+        self.assertEqual(info["segment_count"],300)
+        self.assertEqual(info["clip_duration_seconds"],300.0)
+        self.assertTrue(manifest.endswith("#EXT-X-ENDLIST\n"))
+        self.assertIn("seg_120.ts",manifest)
+        self.assertNotIn("seg_420.ts",manifest)
+
+    def test_oversized_history_preview_is_rejected(self):
+        with self.assertRaises(HTTPException) as exc:
+            tablo_live._historic_clip_manifest(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/abc/index.m3u8",
+                "#EXTM3U",seconds_behind_live=600,clip_seconds=601)
+        self.assertEqual(exc.exception.status_code,400)
+
     def test_historical_manifest_refuses_insufficient_history(self):
         body="#EXTM3U\n"+ "".join(
             "#EXTINF:1,\nseg_"+str(i)+".ts\n" for i in range(25))
