@@ -1205,10 +1205,25 @@ document.getElementById("tablosegments").onclick=async function(){
  }catch(e){output.textContent="Segment diagnostic failed: "+e.message}
  finally{button.disabled=false}
 };
-// DVR bar delegates to the already-tested Tablo playback handlers.
+// Default Tablo controls use the SAME rolling disk-backed live HLS stream.
+// The older native-source timeshift paths remain available under Advanced.
+const TABLO_DVR_EDGE_SECONDS=3;
 function tabloDvrTime(seconds){
  const n=Math.max(0,Math.floor(Number(seconds)||0));
  return Math.floor(n/60)+":"+String(n%60).padStart(2,"0");
+}
+function tabloDvrWindow(video){
+ if(!video.seekable||!video.seekable.length)return null;
+ const lo=video.seekable.start(0),hi=video.seekable.end(video.seekable.length-1);
+ if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi-lo<0.5)return null;
+ return {lo,hi};
+}
+function tabloDvrSeekTo(target,video=document.getElementById("plexvideo")){
+ const window=tabloDvrWindow(video);
+ if(!window)return false;
+ const safeEnd=Math.max(window.lo,window.hi-TABLO_DVR_EDGE_SECONDS);
+ try{video.currentTime=Math.max(window.lo,Math.min(safeEnd,target));return true}
+ catch(error){playerMessage("DVR seek unavailable: "+error.message);return false}
 }
 function updateTabloDvrUi(){
  const bar=document.getElementById("tablodvr");
@@ -1223,42 +1238,28 @@ function updateTabloDvrUi(){
  const slider=document.getElementById("tablodvrseek");
  const left=document.getElementById("tablodvrstart");
  const right=document.getElementById("tablodvrtime");
+ const window=tabloDvrWindow(video);
+ const lag=window?Math.max(0,window.hi-video.currentTime):null;
  const playing=video.readyState>=2&&!video.paused;
- const livePaused=tabloLivePausedAt!==null&&!historical;
  pause.textContent=playing?"⏸ Pause":"▶ Resume";
- back.disabled=video.readyState<2;
- forward.disabled=!historical||video.readyState<2;
- live.disabled=!historical&&!livePaused;
- state.classList.toggle("live",!historical&&!livePaused);
- if(historical){
-  state.textContent="DVR";
-  if(tabloDvrSourceStart&&Number.isFinite(tabloDvrSourceStart.behind)&&
-     Number.isFinite(video.currentTime)){
-   const behind=Math.max(0,tabloDvrSourceStart.behind+
-    (Date.now()-tabloDvrSourceStart.at)/1000-video.currentTime);
-   state.textContent="DVR · ≈"+tabloDvrTime(behind)+" behind live";
-  }
- }else{
-  const paused=livePaused?Math.round((Date.now()-tabloLivePausedAt)/1000):0;
-  state.textContent=livePaused?"PAUSED · "+tabloDvrTime(paused):"LIVE";
- }
- if(!historical||!video.seekable||!video.seekable.length){
-  slider.disabled=true;
-  slider.value="1000";
-  left.textContent=historical?"Buffering DVR…":"Live channel";
-  right.textContent=historical?"--:--":"LIVE";
+ back.disabled=video.readyState<2||!window||video.currentTime<=window.lo+0.4;
+ forward.disabled=video.readyState<2||!window||lag<=TABLO_DVR_EDGE_SECONDS+1;
+ live.disabled=!historical&&(!window||lag<=TABLO_DVR_EDGE_SECONDS+1)&&!video.paused;
+ const isLive=!historical&&playing&&lag!==null&&lag<=TABLO_DVR_EDGE_SECONDS+5;
+ state.classList.toggle("live",isLive);
+ if(isLive)state.textContent="LIVE · buffered";
+ else if(video.paused)state.textContent="PAUSED"+(lag===null?"":" · "+tabloDvrTime(lag)+" behind disk edge");
+ else state.textContent="DVR"+(lag===null?"":" · "+tabloDvrTime(lag)+" behind disk edge");
+ if(!window){
+  slider.disabled=true;slider.value="1000";
+  left.textContent="Buffering DVR…";right.textContent="--:--";
   return;
  }
- const lo=video.seekable.start(0),hi=video.seekable.end(video.seekable.length-1);
- if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi-lo<0.5){
-  slider.disabled=true;
-  left.textContent="Buffering DVR…";right.textContent="--:--";return;
- }
  slider.disabled=false;
- const current=Math.max(lo,Math.min(hi,Number(video.currentTime)||lo));
- if(!tabloDvrDragging)slider.value=String(Math.round((current-lo)/(hi-lo)*1000));
- left.textContent=tabloDvrTime(hi-lo)+" available";
- right.textContent="-"+tabloDvrTime(hi-current);
+ const current=Math.max(window.lo,Math.min(window.hi,Number(video.currentTime)||window.lo));
+ if(!tabloDvrDragging)slider.value=String(Math.round((current-window.lo)/(window.hi-window.lo)*1000));
+ left.textContent=tabloDvrTime(window.hi-window.lo)+" available";
+ right.textContent="-"+tabloDvrTime(window.hi-current);
 }
 document.getElementById("tabloadvancedtoggle").onclick=function(){
  const panel=document.getElementById("tabloadvanced");
@@ -1268,45 +1269,41 @@ document.getElementById("tabloadvancedtoggle").onclick=function(){
 };
 document.getElementById("tablodvrpause").onclick=function(){
  if(!tabloSession)return;
- if(tabloPreviewSession)document.getElementById("tablopause").click();
- else document.getElementById("tablolivepause").click();
+ if(tabloPreviewSession){
+  document.getElementById("tablopause").click();
+ }else{
+  const video=document.getElementById("plexvideo");
+  if(video.paused)video.play().catch(()=>playerMessage("Tap Play in the video controls to resume."));
+  else video.pause();
+ }
  updateTabloDvrUi();
 };
 document.getElementById("tablodvrback").onclick=function(){
  if(!tabloSession)return;
- if(tabloPreviewSession){
-  seekHistoricalClip(-30);
- }else{
-  if(tabloLivePausedAt!==null){
-   playerMessage("Resume paused live video before starting a rewind.");
-   return;
-  }
-  // Keep the original tuner running while opening continuous timeshift.
-  document.getElementById("tablooffset").value="30";
-  document.getElementById("tablocontinuous").click();
- }
+ const video=document.getElementById("plexvideo");
+ if(!tabloDvrSeekTo(video.currentTime-30,video))
+  playerMessage("DVR buffer isn't seekable yet. Try again after a few seconds.");
  updateTabloDvrUi();
 };
 document.getElementById("tablodvrforward").onclick=function(){
- if(tabloPreviewSession)seekHistoricalClip(30);
+ if(!tabloSession)return;
+ tabloDvrSeekTo(document.getElementById("plexvideo").currentTime+30);
  updateTabloDvrUi();
 };
 document.getElementById("tablodvrlive").onclick=async function(){
  if(!tabloSession)return;
- if(tabloPreviewSession){
-  document.getElementById("tabloliveback").click();
-  return;
+ // Only an explicitly selected advanced historical source requires switching
+ // back to the primary DVR stream; normal playback never restarts FFmpeg.
+ if(tabloPreviewSession){document.getElementById("tabloliveback").click();return}
+ const video=document.getElementById("plexvideo");
+ const window=tabloDvrWindow(video);
+ if(!window){playerMessage("Waiting for the next recorded DVR segment.");return}
+ if(!tabloDvrSeekTo(window.hi)){
+  playerMessage("Unable to seek to latest recorded segment.");return;
  }
- if(tabloLivePausedAt===null||!tabloLivePlaylist)return;
- this.disabled=true;
- try{
-  await switchTabloExperimentSource(tabloLivePlaylist,playerGeneration,"live");
-  tabloLivePausedAt=null;
-  tabloPauseMarkerPromise=null;
-  document.getElementById("tablolivepause").textContent="⏸ Pause Live (beta)";
-  playerMessage("Jumped to the current Tablo live stream.");
- }catch(e){playerMessage("Jump to Live failed: "+e.message)}
- finally{this.disabled=false;updateTabloDvrUi()}
+ video.play().catch(()=>playerMessage("Tap Play to resume at the disk edge."));
+ playerMessage("Playing near the latest completed DVR segment.");
+ updateTabloDvrUi();
 };
 const tabloSeekBar=document.getElementById("tablodvrseek");
 tabloSeekBar.addEventListener("pointerdown",()=>{tabloDvrDragging=true});
@@ -1314,14 +1311,12 @@ tabloSeekBar.addEventListener("pointerup",()=>{tabloDvrDragging=false});
 tabloSeekBar.addEventListener("blur",()=>{tabloDvrDragging=false});
 tabloSeekBar.addEventListener("change",function(){
  tabloDvrDragging=false;
- if(!tabloPreviewSession)return;
+ if(!tabloSession)return;
  const video=document.getElementById("plexvideo");
- if(!video.seekable||!video.seekable.length)return;
- const lo=video.seekable.start(0),hi=video.seekable.end(video.seekable.length-1);
- const target=Math.min(hi-0.3,lo+(hi-lo)*Number(this.value)/1000);
- if(!Number.isFinite(target)||target<lo)return;
- try{video.currentTime=target}
- catch(e){playerMessage("DVR timeline seek failed: "+e.message)}
+ const window=tabloDvrWindow(video);
+ if(!window)return;
+ const target=window.lo+(window.hi-window.lo)*Number(this.value)/1000;
+ tabloDvrSeekTo(target,video);
  updateTabloDvrUi();
 });
 document.getElementById("watchtablo").onclick=launchTabloLive;
