@@ -54,6 +54,25 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('.guide-detail{flex:0 0 auto;max-height:33dvh;overflow:auto}',HTML)
         self.assertIn('if(action)action.focus({preventScroll:true});',HTML)
 
+    def test_live_first_navigation_without_calendar(self):
+        self.assertNotIn('id="jumpdate"',HTML)
+        self.assertNotIn('id="nextday"',HTML)
+        self.assertNotIn('$("jumpdate").onchange',HTML)
+        self.assertNotIn('$("nextday").onclick',HTML)
+        self.assertIn('id="now" type="button" class="guide-today"',HTML)
+
+    def test_directional_navigation_never_jumps_diagonally_over_program_rows(self):
+        self.assertIn('function guideProgramButtons(row)',HTML)
+        self.assertIn('function guideChooseByTime(programs,time)',HTML)
+        self.assertIn('current.closest(".epg-row")',HTML)
+        self.assertIn('programs[here+1]||null',HTML)
+        self.assertIn('programs[here-1]||null',HTML)
+        self.assertIn('for(let next=rowIndex+delta;next>=0&&next<rows.length;next+=delta)',HTML)
+        self.assertIn('target=guideChooseByTime(nextPrograms,guideNavigationTime)',HTML)
+        self.assertIn('event.stopPropagation()',HTML)
+        self.assertIn('guideNavigationTime=el.offsetLeft+el.offsetWidth/2',HTML)
+        self.assertNotIn('const score=primary+secondary*2;',HTML)
+
     def test_keyboard_remote_arrow_enter_and_back(self):
         self.assertIn('function remoteFocusNext(direction)',HTML)
         self.assertIn('function remoteGuideFocus()',HTML)
