@@ -42,6 +42,12 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('verifiedPhiloPlaybackUrl(program)',HTML)
         self.assertIn('if(selectedProgram.channel.source==="tablo")launchTabloLive()',HTML)
 
+    def test_selected_plex_program_artwork_is_token_isolated(self):
+        self.assertIn('id="guideartimage"',HTML)
+        self.assertIn('artworkImage.src="/api/guide/art/"',HTML)
+        self.assertIn('artworkImage.onerror=()=>{artworkImage.hidden=true}',HTML)
+        self.assertIn('artworkImage.onload=()=>{if(selectedProgram===program)',HTML)
+
     def test_focus_updates_program_strip_without_opening_modal(self):
         self.assertIn('el.onclick=()=>showGuidePreview(shownPrograms[index])',HTML)
         self.assertIn('el.addEventListener("focus",()=>showGuidePreview',HTML)
