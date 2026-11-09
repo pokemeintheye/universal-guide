@@ -33,7 +33,7 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn("TABLO_DVR_EDGE_SECONDS=3",HTML)
         self.assertIn("function tabloDvrSeekTo(",HTML)
         self.assertIn("tabloDvrSeekTo(video.currentTime-30,video)",HTML)
-        self.assertIn("tabloDvrSeekTo(document.getElementById(",HTML)
+        self.assertIn("tabloDvrSeekTo(video.currentTime+30,video)",HTML)
         self.assertIn("if(video.paused)video.play()",HTML)
         self.assertIn("else video.pause()",HTML)
         self.assertIn("tabloDvrSeekTo(window.hi)",HTML)
