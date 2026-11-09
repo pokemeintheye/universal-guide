@@ -133,6 +133,83 @@ def _rewrite_playlist(session, parent, raw):
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _trim_join_playlist(session, payload):
+    """Drop Plex's empty pre-seek HLS slots for join-in-progress sessions.
+
+    Plex may expose one segment slot for every second of the entire media,
+    even though a nonzero offset starts the transcoder much later. Requests
+    for pre-offset slots return 188-byte empty TS packets, which Safari
+    traverses without ever attaining HAVE_METADATA. Only process simple,
+    finite MPEG-TS media playlists, never master or encrypted playlists.
+    """
+    offset=session.get("requested_offset_seconds",0)
+    if session.get("mode")!="join" or not offset:
+        return payload,None
+    text=payload.decode("utf-8")
+    lines=text.splitlines()
+    if (not lines or lines[0].strip()!="#EXTM3U"
+        or not any(line.startswith("#EXTINF:") for line in lines)
+        or not any(line.strip()=="#EXT-X-ENDLIST" for line in lines)
+        or any(line.startswith(("#EXT-X-KEY:","#EXT-X-MAP:",
+                                 "#EXT-X-BYTERANGE:","#EXT-X-DISCONTINUITY"))
+               for line in lines)):
+        return payload,None
+    duration=session.get("item_duration_seconds") or 0
+    if not duration:
+        return payload,None
+    # Keep the first segment at/just after the requested media position.
+    # Do not modify short/range-limited Plex manifests that already start
+    # near the seek point. Count only complete EXTINF+URI pairs.
+    segments=[]
+    current=None
+    for line in lines:
+        if line.startswith("#EXTINF:"):
+            try:current=float(line[8:].split(",",1)[0])
+            except ValueError:return payload,None
+            if current<=0:return payload,None
+        elif current is not None and line.strip() and not line.startswith("#"):
+            segments.append((current,line))
+            current=None
+    if current is not None or len(segments)<2:
+        return payload,None
+    total=sum(d for d,_ in segments)
+    if abs(total-duration)>max(30,duration*.03):
+        # Full media timeline must match duration before assuming the
+        # offset corresponds to the earlier segment indices.
+        return payload,None
+    index=0
+    elapsed=0.0
+    # Skip the empty slots, then retain a few seconds of seek tolerance.
+    threshold=max(0.0,float(offset)-2.0)
+    while index<len(segments)-1 and elapsed+segments[index][0]<=threshold:
+        elapsed+=segments[index][0]
+        index+=1
+    if index<2 or len(segments)-index<2:
+        return payload,None
+    header=[]
+    sequence=0
+    for line in lines:
+        if line.startswith("#EXTINF:"):
+            break
+        if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
+            try:sequence=int(line.split(":",1)[1])
+            except ValueError:return payload,None
+            continue
+        if line=="#EXT-X-ENDLIST":continue
+        header.append(line)
+    # HLS media-sequence must reflect the first visible media segment.
+    header.append("#EXT-X-MEDIA-SEQUENCE:"+str(sequence+index))
+    out=header[:]
+    for seg_duration,uri in segments[index:]:
+        out.extend(("#EXTINF:"+format(seg_duration,".3f")+",",uri))
+    out.append("#EXT-X-ENDLIST")
+    return ("\n".join(out)+"\n").encode("utf-8"),{
+        "skipped_segments":index,
+        "start_at_seconds":round(elapsed,2),
+        "remaining_segments":len(segments)-index
+    }
+
+
 def _record(session, **values):
     with _guard:
         for key,value in values.items():
@@ -292,7 +369,8 @@ def stream_diagnostics(session_id: str):
                  "mode","requested_offset_seconds","item_duration_seconds",
                  "playlist_segment_references","playlist_endlist",
                  "first_segment_probe","last_segment_probe",
-                 "completed_segments","segment_bytes_total")}
+                 "completed_segments","segment_bytes_total",
+                 "join_playlist_trim")}
 
 
 @router.get("/{session_id}/{resource_id}")
@@ -319,6 +397,9 @@ def serve_resource(session_id: str, resource_id: str):
             if len(body) > PLAYLIST_LIMIT:
                 raise HTTPException(502, "Plex HLS playlist exceeded maximum size")
             rewritten = _rewrite_playlist(session, url, body)
+            rewritten,trim_info=_trim_join_playlist(session,rewritten)
+            if trim_info:
+                _record(session,join_playlist_trim=trim_info)
             text=rewritten.decode("utf-8",errors="replace")
             _record(session,
                     playlist_segment_references=sum(1 for line in text.splitlines()
