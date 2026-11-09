@@ -443,6 +443,9 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  .guide-detail-content p{font-size:12px;-webkit-line-clamp:2}
  .guide-detail-actions button{min-height:43px;padding:9px 11px;font-size:12px;border-radius:11px}
 }
+.guide-art{position:relative}
+.guide-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.guide-art img[hidden]{display:none!important}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -478,7 +481,7 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
   <div class="timeline" id="guide">Loading TV guide…</div>
  </section>
  <section class="guide-detail" id="guidedetail" aria-live="polite">
-  <div class="guide-art" id="guideart" aria-hidden="true"><span>TV</span></div>
+  <div class="guide-art" id="guideart" aria-hidden="true"><span>TV</span><img id="guideartimage" hidden alt=""/></div>
   <div class="guide-detail-content">
    <h2 id="guidepreviewtitle">Select a program</h2>
    <div id="guidepreviewepisode" class="guide-preview-episode"></div>
@@ -638,6 +641,15 @@ function showGuidePreview(program){
  }
  const artwork=$("guideart");
  artwork.querySelector("span").textContent=(e.title||"TV").slice(0,2).toUpperCase();
+ const artworkImage=$("guideartimage");
+ artworkImage.hidden=true;
+ artworkImage.removeAttribute("src");
+ const imageKey=Number(e.plex?.rating_key);
+ if(Number.isInteger(imageKey)&&imageKey>0){
+   artworkImage.onload=()=>{if(selectedProgram===program)artworkImage.hidden=false};
+   artworkImage.onerror=()=>{artworkImage.hidden=true};
+   artworkImage.src="/api/guide/art/"+encodeURIComponent(imageKey);
+ }
  $("guide").querySelectorAll("[data-program]").forEach(el=>{
    el.classList.toggle("return-selected",
     sameGuideIdentity(guideIdentity(shownPrograms[Number(el.dataset.program)]),
