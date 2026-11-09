@@ -469,8 +469,6 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
    <button id="earlier" type="button" aria-label="Earlier programs">‹</button>
    <button id="now" type="button" class="guide-today">Today</button>
    <button id="later" type="button" aria-label="Later programs">›</button>
-   <button id="nextday" type="button" class="compact-date">+1 day</button>
-   <label class="visually-hidden" for="jumpdate">Jump to date</label><input id="jumpdate" type="date" aria-label="Jump to guide date" title="Jump to date"/>
    <span class="date" id="viewtime"></span>
   </div>
   <div class="guide-top-actions">
@@ -1054,34 +1052,58 @@ async function guide(only){
   persistGuideState();
  }catch(e){if(token===lastGuideToken){$("guide").removeAttribute("aria-busy");$("guide").textContent=e.message}}
 }
-// TV remote / keyboard: move between visible show cells with arrow keys.
+// EPG remote navigation follows logical rows, never a whole-screen proximity
+// search. Left/Right stays on one channel; Up/Down moves exactly one channel
+// with scheduled programs, choosing the slot overlapping the viewer's time.
+function guideProgramButtons(row){
+ return Array.from(row.querySelectorAll(".epg-program[data-program]"))
+  .filter(button=>!button.disabled)
+  .sort((a,b)=>a.offsetLeft-b.offsetLeft);
+}
+function guideProgramInterval(button){
+ return {start:button.offsetLeft,end:button.offsetLeft+button.offsetWidth};
+}
+function guideChooseByTime(programs,time){
+ let best=null,score=Infinity;
+ for(const program of programs){
+  const {start,end}=guideProgramInterval(program);
+  const distance=time<start?start-time:time>end?time-end:0;
+  const center=Math.abs((start+end)/2-time);
+  // Containing the same timeline point outranks merely close cell centers.
+  const nextScore=distance*10000+center;
+  if(nextScore<score){best=program;score=nextScore}
+ }
+ return best;
+}
 $("guide").addEventListener("keydown",event=>{
  if(!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key))return;
  const current=event.target.closest(".epg-program[data-program]");
  if(!current)return;
- const programs=Array.from($("guide").querySelectorAll(".epg-program[data-program]"));
- const here=current.getBoundingClientRect();
- const center={x:here.left+here.width/2,y:here.top+here.height/2};
- const direction=event.key;
- let best=null,bestScore=Infinity;
- for(const candidate of programs){
-  if(candidate===current)continue;
-  const rect=candidate.getBoundingClientRect();
-  const next={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
-  const dx=next.x-center.x,dy=next.y-center.y;
-  if(direction==="ArrowUp"&&dy>=-5||direction==="ArrowDown"&&dy<=5||
-     direction==="ArrowLeft"&&dx>=-5||direction==="ArrowRight"&&dx<=5)
-   continue;
-  const primary=direction==="ArrowUp"||direction==="ArrowDown"?Math.abs(dy):Math.abs(dx);
-  const secondary=direction==="ArrowUp"||direction==="ArrowDown"?Math.abs(dx):Math.abs(dy);
-  // Prefer the next channel for up/down; adjacent timeline show for left/right.
-  const score=primary+secondary*2;
-  if(score<bestScore){best=candidate;bestScore=score}
- }
- if(!best)return;
+ // Do not let the global TV remote handler choose a diagonally adjacent
+ // element when the requested row/column has no valid destination.
  event.preventDefault();
- best.focus({preventScroll:true});
- best.scrollIntoView({block:"nearest",inline:"nearest",behavior:"instant"});
+ event.stopPropagation();
+ const row=current.closest(".epg-row");
+ if(!row)return;
+ const programs=guideProgramButtons(row);
+ const here=programs.indexOf(current);
+ let target=null;
+ if(event.key==="ArrowRight")target=programs[here+1]||null;
+ else if(event.key==="ArrowLeft")target=programs[here-1]||null;
+ else{
+  const rows=Array.from($("guide").querySelectorAll(".epg-row"));
+  const rowIndex=rows.indexOf(row);
+  const adjacent=rows[rowIndex+(event.key==="ArrowDown"?1:-1)];
+  if(adjacent){
+   const nextPrograms=guideProgramButtons(adjacent);
+   const {start,end}=guideProgramInterval(current);
+   const timelineTime=(start+end)/2;
+   target=guideChooseByTime(nextPrograms,timelineTime);
+  }
+ }
+ if(!target)return;
+ target.focus({preventScroll:true});
+ target.scrollIntoView({block:"nearest",inline:"nearest"});
 });
 $("guide").addEventListener("scroll",()=>persistGuideState(),{passive:true});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")persistGuideState()});
@@ -1091,15 +1113,6 @@ for(const id of ["philoepisode","philoshow","philochannel"]){
 }
 $("earlier").onclick=()=>setGuideAnchor(guideAnchor()-2*60*60*1000);
 $("later").onclick=()=>setGuideAnchor(guideAnchor()+2*60*60*1000);
-$("nextday").onclick=()=>setGuideAnchor(guideAnchor()+24*60*60*1000);
-$("jumpdate").onchange=()=>{
- const value=$("jumpdate").value;
- if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;
- const [y,m,d]=value.split("-").map(Number);
- const today=new Date(guideAnchor());
- const chosen=new Date(y,m-1,d,today.getHours(),today.getMinutes(),0,0);
- setGuideAnchor(chosen.getTime());
-};
 async function findUpcoming(){
  const q=$("findshow").value.trim();
  if(q.length<2){$("findresults").textContent="Enter at least two letters.";return}
