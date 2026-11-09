@@ -105,6 +105,23 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertNotIn('" behind disk edge"',HTML)
         self.assertNotIn('"LIVE · buffered"',HTML)
 
+    def test_overlay_program_follows_recorded_playback_time(self):
+        self.assertIn("function tabloDvrPlaybackWallTime(video)",HTML)
+        self.assertIn("playerHls?.playingDate",HTML)
+        self.assertIn('typeof video.getStartDate==="function"',HTML)
+        self.assertIn("function tabloOverlayProgramAt(programs,when)",HTML)
+        self.assertIn("updateTabloOverlayProgram();",HTML)
+        self.assertIn("refreshTabloOverlaySchedule(generation,true)",HTML)
+        self.assertIn("/api/tablo/live/schedule?channel_id=",HTML)
+
+    def test_initial_dvr_playback_is_prebuffered(self):
+        self.assertIn("health.disk_dvr_playlist?.segment_count>=6",HTML)
+        self.assertIn("startTabloAfterPrebuffer(video,generation)",HTML)
+        self.assertIn("function tabloPlayableSecondsAhead(video)",HTML)
+        self.assertIn("ahead>=9",HTML)
+        self.assertIn("startFragPrefetch:true",HTML)
+        self.assertIn("liveSyncDurationCount:4",HTML)
+
     def test_old_diagnostics_preserved_as_advanced_tools(self):
         self.assertIn('id="tabloquickdiagnostics"',HTML)
         self.assertIn('id="tablopauseadjust"',HTML)
