@@ -476,3 +476,20 @@ the paused program scene. This result does not yet isolate whether the
 stored native Tablo marker, FFmpeg's selected input segment, or the iPhone
 browser's playback position is responsible. Do not label this problem fixed;
 collect the new diagnostics before changing resume offsets again.
+
+## Native Tablo segment identity check for inaccurate Pause Live resume
+
+Observed a 90-second Pause Live test in which two **different source media
+sequence numbers**, 1632 and 1647, both returned identical sampled first and
+last video PTS (1502.017 to 1502.284 seconds). That is unexpected and leaves
+open whether the playlist refers to repeated content, the Tablo server is
+serving identical bytes, or PTS sampling is misleading.
+
+The read-only Pause Live diagnostic now adds
+`native_entry_urls_distinct` and `native_segment_samples_match`, plus a
+20-character SHA-256 sample digest for each bounded 256-KiB native segment
+probe. These fields do not reveal the Tablo stream URLs or full media.
+Compare both hashes during a fresh short pause (no need to wait 90 seconds)
+before altering resume offsets or rewriting FFmpeg. If the URLs differ but
+their samples match, investigate Tablo's native playlist/segment addressing
+before attempting to calibrate Pause Live against source sequences.
