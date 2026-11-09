@@ -723,3 +723,40 @@ browser prebuffer threshold (target seven seconds, with bounded fallback).
 This aims for roughly 10–15 seconds on a healthy tuner, but tuning, encoding,
 and native Safari HLS buffering can still take longer. Recheck that the first
 few seconds do not stall; increasing warmup again may be preferable if they do.
+
+## Plex library player — full-screen overlay (November 2026)
+
+Plex now uses a full-screen player matching the Tablo DVR visual design, with
+**PLEX** branding and either movie title/year or show title, episode title,
+season and episode number. The transport uses 20-second rewind, Play/Pause,
+30-second fast-forward, and a full-duration scrubber (there is no Go Live).
+The overlay fades automatically during playback and is revealed by tapping
+video. Tablo's existing player and buffer are unchanged.
+
+The Chapters menu appears when Plex provides chapter metadata. Language and
+Subtitles menus appear only when the media has appropriate tracks. Changing
+tracks requests a new Plex HLS transcode and seeks to approximately the previous
+playback position; it may briefly load again. Language/subtitle switching needs
+real-device verification with multiple-track media.
+
+Scrubbing displays the seek time and, where Plex has generated its existing
+BIF video-preview index (media part `indexes=sd`), a JPEG thumbnail retrieved
+via the authenticated server-side proxy. Missing indexes gracefully show the
+time without an image. Enable **Generate video preview thumbnails** in Plex
+library settings if needed; indexing uses server CPU and storage.
+
+Plex remains the transcoder. The player requests **H.264/AAC HLS output** with
+up to 1080p resolution and a 12 Mbps video bitrate, so 1080p AVC, 1080p HEVC,
+and 4K HEVC sources can be converted by the Plex server. Actual performance
+for 4K HEVC/HDR depends on the server's decoding/encoding capabilities and,
+for HDR, optional tone mapping; accelerated video transcoding and tone mapping
+can require Plex Pass and supported hardware. The 4K source is not delivered as
+native 4K in this player.
+
+The Plex metadata and BIF image endpoints accept only active opaque player
+session IDs; upstream URLs and the Plex token stay server-side.
+
+Suggested test: play a 1080p H.264 episode, rewind/forward, seek with preview,
+select a chapter, switch audio/subtitle tracks and confirm the same scene
+resumes, then test a 1080p HEVC title and a 4K HEVC title. Check the Plex
+Dashboard for transcode speed and HDR mapping on 4K titles.
