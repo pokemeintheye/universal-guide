@@ -459,3 +459,20 @@ pause marker is also reported instead of guessing how many seconds to seek.
 For the next iPhone test, start live playback for several minutes, pause on
 a recognizable scene for 90 seconds, and check the scene at resume.
 The message displays the captured source segment number for diagnosis.
+
+## Accessible iPhone Pause Live diagnostics
+
+The player previously centered a large video in an unscrollable fullscreen
+overlay, leaving the diagnostic output and controls inaccessible on smaller
+iPhone screens. The overlay now scrolls vertically and the video height is
+bounded. A visible **Copy Tablo diagnostics** button in the top player bar
+collects the pause marker, current browser seekable position, and continuous
+source-session status. Results appear in a selectable text field with a
+**Copy diagnostics** action and fallback for Safari when the clipboard API
+is unavailable.
+
+The user's latest long-pause test resumed roughly 90 seconds earlier than
+the paused program scene. This result does not yet isolate whether the
+stored native Tablo marker, FFmpeg's selected input segment, or the iPhone
+browser's playback position is responsible. Do not label this problem fixed;
+collect the new diagnostics before changing resume offsets again.
