@@ -745,6 +745,112 @@ document.addEventListener("keydown",event=>{
  if(!$("searchdrawer").hidden||!$("settingsdrawer").hidden){closeGuideDrawer();return}
  if(!$("guidefiltermenu").hidden){closeGuideFilterMenu();$("openfilters").focus()}
 });
+// Keyboard simulation of a TV remote (also works with many Bluetooth remotes).
+// Arrow keys navigate; Enter/Space selects focused controls; Backspace is Back.
+function remoteTypingTarget(target){
+ return Boolean(target?.closest?.('input:not([type="range"]),textarea,select,[contenteditable="true"]'));
+}
+function remoteVisible(element){
+ if(!element||element.disabled||element.closest("[hidden],[inert]"))return false;
+ const style=getComputedStyle(element);
+ if(style.display==="none"||style.visibility==="hidden")return false;
+ const rect=element.getBoundingClientRect();
+ return rect.width>0&&rect.height>0;
+}
+function remoteGuideFocus(){
+ const selected=$("guide").querySelector(".epg-program.return-selected")||
+                $("guide").querySelector(".epg-program[data-program]");
+ if(selected){selected.focus({preventScroll:true});selected.scrollIntoView({block:"nearest",inline:"nearest"})}
+ else $("openfilters").focus();
+}
+function remoteBack(){
+ if(!$("playerbackdrop").hidden){
+  if(!$("plextrackpanel").hidden){$("plextrackcancel").click();return}
+  if(!$("tabloadvanced").hidden){
+   $("tabloadvanced").hidden=true;
+   $("tabloadvancedtoggle").setAttribute("aria-expanded","false");
+   return;
+  }
+  closePlexPlayer();remoteGuideFocus();return;
+ }
+ if(!$("detailsmodal").hidden){
+  const wasPlexChoice=$("detailsmodal").classList.contains("plex-pick-mode");
+  $("detailsmodal").hidden=true;
+  $("detailsmodal").classList.remove("plex-pick-mode");
+  (wasPlexChoice&&remoteVisible($("guidewatchplex"))?
+    $("guidewatchplex"):$("guidedetails")).focus();
+  return;
+ }
+ if(!$("searchdrawer").hidden||!$("settingsdrawer").hidden){
+  const wasSearch=!$("searchdrawer").hidden;
+  closeGuideDrawer();
+  $(wasSearch?"opensearch":"opensettings").focus();return;
+ }
+ if(!$("guidefiltermenu").hidden){
+  closeGuideFilterMenu();$("openfilters").focus();return;
+ }
+ if(document.activeElement?.closest(".guide-detail-actions,.guide-top-actions,.guide-navigation")){
+  remoteGuideFocus();return;
+ }
+ remoteGuideFocus();
+}
+function remoteFocusNext(direction){
+ const current=document.activeElement;
+ if(!remoteVisible(current)){
+  remoteGuideFocus();return;
+ }
+ const modal=!$("detailsmodal").hidden?$("detailsmodal"):null;
+ const drawer=!$("searchdrawer").hidden?$("searchdrawer"):
+              !$("settingsdrawer").hidden?$("settingsdrawer"):null;
+ const player=!$("playerbackdrop").hidden?$("playerbackdrop"):null;
+ const scope=modal||drawer||player||document;
+ const candidates=Array.from(scope.querySelectorAll(
+  'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),summary,[tabindex="0"]'
+ )).filter(el=>el!==current&&remoteVisible(el)&&!el.closest(".guide-legacy-controls"));
+ const from=current.getBoundingClientRect();
+ const cx=from.left+from.width/2,cy=from.top+from.height/2;
+ let winner=null,score=Infinity;
+ for(const el of candidates){
+  const rect=el.getBoundingClientRect();
+  // On the guide, don't select off-screen controls or programs far outside the viewport.
+  if(!modal&&!drawer&&!player&&(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight))continue;
+  const dx=rect.left+rect.width/2-cx,dy=rect.top+rect.height/2-cy;
+  const horizontal=direction==="ArrowLeft"||direction==="ArrowRight";
+  const along=horizontal?dx:dy,across=horizontal?dy:dx;
+  if((direction==="ArrowLeft"||direction==="ArrowUp")?along>=-5:along<=5)continue;
+  const distance=Math.abs(along)+2.5*Math.abs(across);
+  if(distance<score){winner=el;score=distance}
+ }
+ if(winner){
+  winner.focus({preventScroll:true});
+  winner.scrollIntoView({block:"nearest",inline:"nearest"});
+  return true;
+ }
+ return false;
+}
+document.addEventListener("keydown",event=>{
+ const key=event.key;
+ if(key==="Backspace"||key==="Escape"||key==="BrowserBack"){
+  if(remoteTypingTarget(event.target)&&key==="Backspace")return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(event.repeat)return;
+  remoteBack();
+  return;
+ }
+ if(remoteTypingTarget(event.target))return;
+ if(key==="Enter"||key===" "){
+  const target=document.activeElement;
+  if(target?.matches?.('button,a[href],summary,input,select'))return; // native OK behavior
+  if(target?.matches?.('[role="button"]')){
+   event.preventDefault();target.click();
+  }
+  return;
+ }
+ if(!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key))return;
+ if(event.target?.matches?.('input[type="range"],video'))return; // preserve seek
+ if(event.defaultPrevented)return; // guide grid and track-menu handle their own arrows
+ if(remoteFocusNext(key))event.preventDefault();
+},false);
 function openDetails(program){
  $("detailsmodal").classList.remove("plex-pick-mode");
  const {channel:p,entry:e}=program;
