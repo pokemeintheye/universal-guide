@@ -1545,9 +1545,8 @@ function updateTabloDvrUi(){
  live.disabled=false;
  const isLive=!historical&&playing&&lag!==null&&lag<=TABLO_DVR_EDGE_SECONDS+5;
  state.classList.toggle("live",isLive);
- if(isLive)state.textContent="LIVE · buffered";
- else if(video.paused)state.textContent="PAUSED"+(lag===null?"":" · "+tabloDvrTime(lag)+" behind disk edge");
- else state.textContent="DVR"+(lag===null?"":" · "+tabloDvrTime(lag)+" behind disk edge");
+ // The right-hand timeline already shows the delay; avoid duplicating it.
+ state.textContent=isLive?"LIVE":"DVR";
  if(!window){
   slider.disabled=true;slider.value="1000";
   slider.style.setProperty("--dvr-progress","0%");
