@@ -630,43 +630,39 @@ async function displayGuideArtwork(program,requestId){
  const artworkImage=$("guideartimage");
  const credit=$("guideartcredit");
  const valid=()=>selectedProgram===program&&requestId===guideArtworkRequestId;
- const external=async()=>{
-  // Do not return misleading TV-series art for explicitly labelled movies.
-  if(program.entry.program_kind==="movie")return;
-  try{
-   const entry=program.entry;
-   const params=new URLSearchParams({title:entry.title||""});
-   if(Number.isInteger(Number(entry.season))&&entry.season!==null&&entry.season!=="")
-    params.set("season",String(entry.season));
-   if(Number.isInteger(Number(entry.episode))&&entry.episode!==null&&entry.episode!=="")
-    params.set("episode",String(entry.episode));
-   const result=await req("/api/guide/artwork?"+params.toString(),{cache:"no-store"});
-   if(!valid()||!result.image_url)return;
-   const image=new Image();
-   image.onload=()=>{
-    if(!valid())return;
-    artworkImage.src=result.image_url;
-    artworkImage.hidden=false;
-    if(result.credit_url){
-     credit.href=result.credit_url;
-     credit.textContent="Artwork: TVmaze";
-     credit.hidden=false;
-    }
-   };
-   image.onerror=()=>{};
-   image.src=result.image_url;
-  }catch(error){/* Artwork is optional; never break the guide. */}
- };
- const key=Number(program.entry.plex?.rating_key);
- if(Number.isInteger(key)&&key>0){
+ const plexFallback=()=>{
+  const key=Number(program.entry.plex?.rating_key);
+  if(!Number.isInteger(key)||key<=0)return;
   const local=new Image();
   local.onload=()=>{
    if(!valid())return;
    artworkImage.src=local.src;artworkImage.hidden=false;
   };
-  local.onerror=()=>{if(valid())external()};
+  local.onerror=()=>{};
   local.src="/api/guide/art/"+encodeURIComponent(key);
- }else await external();
+ };
+ // Artwork was already cached on the Unraid server during the guide refresh.
+ // Prefer a single show's series image for all episodes, then available Plex art.
+ if(program.entry.program_kind==="movie"){plexFallback();return;}
+ try{
+  const params=new URLSearchParams({title:program.entry.title||""});
+  const result=await req("/api/guide/artwork?"+params.toString());
+  if(!valid())return;
+  if(!result.image_url){plexFallback();return;}
+  const img=new Image();
+  img.onload=()=>{
+   if(!valid())return;
+   artworkImage.src=img.src;
+   artworkImage.hidden=false;
+   if(result.credit_url){
+    credit.href=result.credit_url;
+    credit.textContent="Artwork: TVmaze";
+    credit.hidden=false;
+   }
+  };
+  img.onerror=()=>{if(valid())plexFallback()};
+  img.src=result.image_url;
+ }catch(error){if(valid())plexFallback()}
 }
 function showGuidePreview(program){
  if(!program)return;
