@@ -685,3 +685,30 @@ from the Tablo player.
 
 Note: source channel logos and a separate CC toggle are not yet integrated.
 The overlay displays the network name as text where a logo would appear.
+
+
+## Tablo overlay follows the actual DVR program (November 2026)
+
+When viewing Tablo, Universal Guide retrieves a small, channel-specific EPG
+schedule for the previous two hours and the next eight hours, refreshing it
+every four minutes. The displayed title and program duration follow the
+**recorded playback timestamp**, not simply the live station's current show.
+This also applies after pauses, rewinds, fast-forward seeks, and program
+boundaries without restarting the tuner. FFmpeg now stamps HLS segments with
+program-date-time, used by hls.js; native Safari's media start date is used
+when available. A fallback based on the rolling seekable edge is approximate
+and may briefly differ near a show boundary. Missing schedules show
+"Live TV" rather than inventing a program title.
+
+To avoid the short startup/play/stall sequence, first playback now waits for
+at least **six complete disk HLS segments**, then waits for the browser to
+buffer video before calling Play. Startup may take longer by design. Browser
+prebuffer target is nine seconds; a bounded fallback accommodates native
+HLS implementations that will not buffer further while paused.
+Once playing, the existing single-stream DVR controls are unchanged.
+
+Test by tuning a channel before a program transition, pausing across the
+boundary, resuming from the previous show, and then seeking forward across
+the boundary. The title should follow the show *on screen*, not live TV.
+On channel startup, the first picture should be stable rather than playing
+a few seconds and briefly stalling.
