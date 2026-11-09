@@ -342,3 +342,25 @@ has accumulated on the Tablo. Longer DVR playback without duplicate Unraid
 recording storage requires a dynamic playlist/transcoding session that can
 advance beyond the bounded clip, plus long-pause handling and seeking
 across clip boundaries.
+
+## Longer Tablo timeshift test (November 2026)
+
+After successful iPhone testing of 75-second native-buffer playback, pause/resume,
+10-second rewind, 30-second forward, and return-to-live, the experimental
+historical player now offers **75 seconds** or **up to 5 minutes** of playback.
+Choose the start offset (2, 5, 10, 15 or 20 minutes behind live) and the
+preview duration. The five-minute option works only when that amount of
+native Tablo history is available after the chosen start point; starting
+two minutes behind live cannot produce five minutes of historical content.
+
+The browser also pings the original live tuner every 30 seconds while the
+player is open. This refreshes the original tuner and linked historical
+preview leases so ordinary pausing does not prematurely clean up the session.
+iOS background suspension can still interrupt this heartbeat, so long
+background pauses are not yet guaranteed.
+
+**This remains a finite proof-of-concept clip, not unlimited DVR playback.**
+Video is still temporarily transcoded on Unraid for iPhone compatibility;
+Tablo itself remains the historical media store. A dynamic continuously
+growing timeshift playlist is needed before the 5-minute limit can be
+removed. The regular Watch Live path remains unchanged.
