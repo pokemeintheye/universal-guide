@@ -96,6 +96,11 @@ class TabloDvrControlsTests(unittest.TestCase):
         self.assertIn('function showTabloOverlay()',HTML)
         self.assertIn('overlay.classList.add("controls-hidden")',HTML)
 
+    def test_lower_left_status_only_shows_live_or_dvr(self):
+        self.assertIn('state.textContent=isLive?"LIVE":"DVR";',HTML)
+        self.assertNotIn('" behind disk edge"',HTML)
+        self.assertNotIn('"LIVE · buffered"',HTML)
+
     def test_old_diagnostics_preserved_as_advanced_tools(self):
         self.assertIn('id="tabloquickdiagnostics"',HTML)
         self.assertIn('id="tablopauseadjust"',HTML)
