@@ -784,3 +784,34 @@ need validation in the future native Apple TV application.
 If Plex playback cannot recover, ordinary viewing displays a concise
 error; detailed segment and HTTP diagnostics remain available with
 `?debug=1`.
+
+
+## Concept B guide-first interface (November 2026)
+
+The main screen now opens directly to the full-width TV schedule. The previous
+title banner, Library Connection dashboard, separate Plex Catalog section,
+Find pane, and Local/Plex filter buttons are removed from normal viewing.
+
+- **Top bar**: time navigation, a discreet Find/Search drawer, a floating
+  source/favorites/Plex filter menu, and Settings.
+- **Settings**: catalog refresh, EPG refresh, Tablo/Philo refresh, status
+  counters, and channel management. The existing API and handlers remain.
+- **Guide grid**: channel information and scrollable 8-hour timeline, purple
+  focus highlight, and directional arrow-key navigation for TV remote testing.
+- **Selected show strip**: title, episode/movie metadata, source badges,
+  description, and Plex library art where the Plex server supplies it. The
+  browser never receives a Plex token; non-Plex programs use a gradient
+  fallback image area.
+- **Playback hierarchy**: Plex matches show **Watch on Plex** as the primary
+  action. Selecting it displays **Start from Beginning** or **Watch From Now**
+  (previously "Join in Progress") when the current broadcast can be mapped
+  to a single Plex title. Multi-episode blocks and future shows only offer
+  beginning playback. Secondary actions independently open live Tablo or
+  verified Philo playback, where available. **Details** retains the full
+  fallback information.
+- **Small screens**: compact responsive detail strip; wide screens emphasize
+  the guide and TV-sized focus states. Actual Siri Remote navigation will need
+  follow-up testing in the Apple TV app.
+
+No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
+mechanism are required by this redesign.
