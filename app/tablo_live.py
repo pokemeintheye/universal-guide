@@ -547,7 +547,10 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120):
     # -re prevents transcoding far ahead of the viewer. A rolling 90-segment
     # cache bounds temporary files on Unraid; historical media stays on Tablo.
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
-          "-re","-protocol_whitelist","file,http,tcp,crypto",
+          # The HLS demuxer defaults to index -3 (near live), even if our
+          # native-buffer playlist begins much earlier. Begin at index 0.
+          "-re","-live_start_index","0",
+          "-protocol_whitelist","file,http,tcp,crypto",
           "-i",str(input_path),
           "-map","0:v:0","-map","0:a:0?","-vf","yadif",
           "-c:v","libx264","-preset","veryfast","-tune","zerolatency",
@@ -584,7 +587,8 @@ def continuous_timeshift(sid:str,seconds_behind_live:int=120):
             "playlist_url":"/api/tablo/live/"+child_id+"/index.m3u8",
             "experiment":"continuous_timeshift_beta",
             "start_seconds_behind_live":seconds_behind_live,
-            "note":"Rolling HLS output; source history remains on Tablo."}
+            "source_start_sequence":info["start_sequence"],
+            "note":"Rolling HLS output starts from selected Tablo historical segment."}
 
 
 @router.post("/{sid}/preview")
