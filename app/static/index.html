@@ -445,7 +445,7 @@ status();guide(view.plex);
  <div class="tablo-dvr-top">
   <div class="tablo-dvr-controls" role="group" aria-label="DVR transport">
    <button id="tablodvrpause" type="button">⏸ Pause</button>
-   <button id="tablodvrback" type="button">↶ 30s</button>
+   <button id="tablodvrback" type="button">↶ 20s</button>
    <button id="tablodvrforward" type="button">30s ↷</button>
    <button id="tablodvrlive" type="button">● Jump to Live</button>
   </div>
@@ -1338,7 +1338,7 @@ document.getElementById("tablodvrpause").onclick=function(){
 document.getElementById("tablodvrback").onclick=function(){
  if(!tabloSession)return;
  const video=document.getElementById("plexvideo");
- if(!tabloDvrSeekTo(video.currentTime-30,video))
+ if(!tabloDvrSeekTo(video.currentTime-20,video))
   playerMessage("DVR buffer isn't seekable yet. Try again after a few seconds.");
  updateTabloDvrUi();
 };
