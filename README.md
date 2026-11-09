@@ -580,3 +580,27 @@ After updating, click **Refresh Tablo** at least once to pick up any channel
 missing from the stored Tablo lineup (e.g. OTA 20.1). A channel missing from
 Tablo's own /guide/channels response cannot be tuned through this feature;
 check Tablo's channel scan/lineup in that case.
+
+## Tablo DVR transport (beta)
+
+The Tablo player now presents a dedicated DVR bar instead of requiring
+manual experiment buttons for everyday viewing. Pause/Resume delegates
+to the existing pause-marker logic, 30-second Rewind from live starts
+a new continuous-timeshift session from Tablo's native buffer, and
+30-second Forward seeks within the rolling historical player cache.
+While in DVR mode the timeline scrubs within the **currently seekable
+browser window**; it does not claim to seek the entire Tablo-owned
+history. A badge displays an **approximate** delay behind source live,
+based on the historical source offset and browser position.
+
+**Jump to Live** reconnects to the original continuously running live
+tuner without opening another tuner. During a paused live stream it
+reloads the current live HLS playlist, intentionally discarding the
+paused position. Technical tools, the historical offset picker,
+diagnostics, and the old controls remain available under
+**Advanced playback tools**. Plex playback remains unchanged.
+
+To test on iPhone: live pause/resume (short and 90-second pause), rewind
+30s from live, pause/rewind/forward and scrub in DVR, then Jump to Live.
+Observe the timeline growing as the HLS cache buffers. Native HLS and
+hls.js may expose different seekable windows, and live-lag is an estimate.
