@@ -324,3 +324,21 @@ existing FFmpeg live HLS window is not yet implemented. To support seamless
 hour-long timeshift next, we must serve a continuous indexed playback path
 from Tablo's native segments and handle relaying/transcoding at arbitrary
 positions without creating a separate Unraid recording buffer.
+
+## Native Tablo buffer: selectable historical playback starting points
+
+Following a successful iPhone test of the 75-second historical clip, its
+Pause/Resume, 10-second rewind, 30-second forward and Return-to-Live controls,
+the player now offers starting positions 2, 5, 10, 15 or 20 minutes behind
+live. Each choice reuses the same Tablo live tuner and creates a *new bounded
+75-second test clip* by transcoding native historical Tablo segments on demand.
+An existing preview is closed before requesting a new one.
+
+This **does not yet provide continuous multi-minute DVR playback** or a
+full timeline: it verifies starting/decoding from different positions in
+the Tablo buffer, retaining working live playback as fallback. Insufficient
+history is reported by the backend (HTTP 409); wait until enough history
+has accumulated on the Tablo. Longer DVR playback without duplicate Unraid
+recording storage requires a dynamic playlist/transcoding session that can
+advance beyond the bounded clip, plus long-pause handling and seeking
+across clip boundaries.
