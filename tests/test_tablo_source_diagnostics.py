@@ -80,6 +80,31 @@ seg_501.ts
             self.assertEqual(result["segment_duration_seconds"],6.1)
             self.assertEqual(result["streams"][0]["codec_name"],"h264")
 
+    def test_source_pts_uses_selected_native_sequence(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(20))
+        with patch.object(tablo_live,"_probe_native_segment_pts",
+                return_value={"status":"ok","first_video_pts_seconds":123.4}) as probe:
+            result=tablo_live._source_pts_for_sequence(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/abc/index.m3u8",
+                body,515)
+        self.assertEqual(result["source_sequence"],515)
+        self.assertEqual(result["first_video_pts_seconds"],123.4)
+        self.assertIn("seg_15.ts",probe.call_args.args[0])
+        self.assertNotIn("url",result)
+
+    def test_source_pts_rejects_missing_sequence_without_fetch(self):
+        body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n"+"".join(
+            "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(20))
+        with patch.object(tablo_live,"_probe_native_segment_pts") as probe:
+            result=tablo_live._source_pts_for_sequence(
+                "http://192.168.1.9:8885",
+                "http://192.168.1.9/stream/abc/index.m3u8",
+                body,499)
+        self.assertEqual(result["status"],"segment_not_available")
+        probe.assert_not_called()
+
     def test_pause_marker_captures_segment_near_live_not_buffer_start(self):
         body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:700\n"+"".join(
             "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(360))
