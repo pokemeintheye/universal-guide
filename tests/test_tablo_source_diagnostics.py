@@ -63,6 +63,23 @@ seg_501.ts
         self.assertTrue(r["mpeg_ts_sync"])
         self.assertNotIn("SECRET",str(r))
 
+    def test_transcoded_segment_probe_reports_timestamps(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import Mock
+        with TemporaryDirectory() as root:
+            target=Path(root)/"seg_00012.ts"
+            target.write_bytes(b"x"*188)
+            fake=Mock(returncode=0,stdout=(
+                '{"streams":[{"codec_type":"video","codec_name":"h264"}],'
+                '"format":{"start_time":"123.45","duration":"6.1"}}'),
+                stderr="")
+            with patch.object(tablo_live.subprocess,"run",return_value=fake):
+                result=tablo_live._probe_segment(Path(root))
+            self.assertEqual(result["segment_timestamp_seconds"],123.45)
+            self.assertEqual(result["segment_duration_seconds"],6.1)
+            self.assertEqual(result["streams"][0]["codec_name"],"h264")
+
     def test_pause_marker_captures_segment_near_live_not_buffer_start(self):
         body="#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:700\n"+"".join(
             "#EXTINF:1.000,\nseg_"+str(i)+".ts\n" for i in range(360))
