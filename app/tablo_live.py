@@ -224,6 +224,8 @@ def live_status(sid:str,probe:bool=False):
         item=ACTIVE.get(sid)
         if not item:raise HTTPException(404,"Tablo stream ended or was unavailable")
         item["last"]=time.monotonic()
+        if item.get("parent") in ACTIVE:
+            ACTIVE[item["parent"]]["last"]=time.monotonic()
         return _health(item,probe=probe)
 
 
@@ -371,6 +373,8 @@ def _probe_source_segment(url):
 
 
 def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_seconds=75):
+    if not isinstance(clip_seconds,int) or not 30<=clip_seconds<=300:
+        raise HTTPException(400,"Historical clip length must be 30 to 300 seconds")
     """Make a bounded, finite HLS timeline for a seek playback proof of concept.
 
     The original Tablo still holds the buffer; only a short clip is transcoded
@@ -419,8 +423,8 @@ def _historic_clip_manifest(origin,media_url,body,seconds_behind_live=120,clip_s
 
 
 @router.post("/{sid}/preview")
-def historical_preview(sid:str,seconds_behind_live:int=120):
-    """Experimental 75s clip from existing Tablo history; original live tuner untouched."""
+def historical_preview(sid:str,seconds_behind_live:int=120,clip_seconds:int=75):
+    """Experimental bounded clip from Tablo history; original live tuner untouched."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}",sid):
         raise HTTPException(404,"Invalid session")
     _cleanup()
@@ -435,7 +439,7 @@ def historical_preview(sid:str,seconds_behind_live:int=120):
         parent["last"]=time.monotonic()
         origin,source=parent["origin"],parent["source_playlist"]
     media_url,body,_=_source_media_playlist(origin,source)
-    manifest,info=_historic_clip_manifest(origin,media_url,body,seconds_behind_live)
+    manifest,info=_historic_clip_manifest(origin,media_url,body,seconds_behind_live,clip_seconds)
     child_id=secrets.token_urlsafe(20)
     directory=STORE/child_id
     directory.mkdir(mode=0o700,parents=True,exist_ok=False)
@@ -471,7 +475,7 @@ def historical_preview(sid:str,seconds_behind_live:int=120):
     return {"session_id":child_id,
             "playlist_url":"/api/tablo/live/"+child_id+"/index.m3u8",
             "experiment":"finite_historical_preview",**info,
-            "note":"Preview ends after the buffered test clip. Original live stream remains active."}
+            "note":"Bounded native-buffer preview; original live session remains active."}
 
 
 @router.get("/{sid}/segment-diagnostics")
