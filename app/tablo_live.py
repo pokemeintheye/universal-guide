@@ -278,6 +278,8 @@ def _summarize_source_playlist(body):
 
 
 def _read_source_playlist(url):
+    # Tablo native HLS playlists grow with the DVR buffer: allow a bounded
+    # 4 MiB text playlist for 20-minute seek tests, never media payloads.
     # Do not follow redirects. The URL was already restricted to the Tablo host
     # by _allowed_url when the tuner was created.
     try:
@@ -290,8 +292,8 @@ def _read_source_playlist(url):
             raw=bytearray()
             for part in response.iter_content(chunk_size=8192):
                 raw.extend(part)
-                if len(raw)>262144:
-                    raise HTTPException(502,"Tablo playlist exceeded diagnostic size limit")
+                if len(raw)>4*1024*1024:
+                    raise HTTPException(502,"Tablo playlist exceeded 4 MiB safety limit")
             return raw.decode("utf-8",errors="replace")
     except requests.RequestException as exc:
         # Never show exception text: it may contain a signed playlist URL.
