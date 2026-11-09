@@ -1142,25 +1142,84 @@ function showPlexTrackMenu(kind){
    kind==="audio"?plexTrackMetadata.audio:plexTrackMetadata.subtitles;
  const select=document.getElementById("plextrackselect");
  const label=document.getElementById("plextracklabel");
- select.replaceChildren();
- if(kind==="subtitles"){
-  const option=document.createElement("option");option.value="0";option.textContent="Off";
-  select.appendChild(option);
- }
- for(const [index,item] of entries.entries()){
+ const choices=document.getElementById("plextrackchoices");
+ select.replaceChildren();choices.replaceChildren();
+ const choicesData=kind==="subtitles"?
+  [{id:0,language:"Off",title:"No subtitles"},...entries]:entries;
+ const sid=playerSession;
+ const selectedId=kind==="audio"?plexSelectedAudio:
+   kind==="subtitles"?plexSelectedSubtitle??0:null;
+ for(const [index,item] of choicesData.entries()){
+  const id=kind==="chapters"?index:item.id;
   const option=document.createElement("option");
-  option.value=String(kind==="chapters"?index:item.id);
+  option.value=String(id);
   option.textContent=kind==="chapters"?
-    plexFormatTime(item.start_seconds)+" · "+item.title:plexTrackLabel(item);
+   plexFormatTime(item.start_seconds)+" · "+item.title:plexTrackLabel(item);
   select.appendChild(option);
+  const button=document.createElement("button");
+  button.type="button";
+  button.className="plex-option";
+  button.dataset.value=String(id);
+  button.setAttribute("aria-selected",String(id===selectedId));
+  if(kind==="chapters"&&plexTrackMetadata.preview_available&&sid){
+   const thumb=document.createElement("img");
+   thumb.className="plex-option-thumb";
+   thumb.alt="";
+   thumb.loading="lazy";
+   thumb.src="/api/player/"+encodeURIComponent(sid)+"/preview?at="+
+     encodeURIComponent(Math.floor(item.start_seconds));
+   thumb.onerror=()=>{thumb.hidden=true};
+   button.appendChild(thumb);
+  }
+  const details=document.createElement("span");
+  details.className="plex-option-details";
+  const primary=document.createElement("span");
+  primary.textContent=kind==="chapters"?item.title||"Chapter "+(index+1):
+    kind==="subtitles"&&id===0?"Off":
+    [item.language,item.forced?"Forced":null].filter(Boolean).join(" · ")||"Unknown language";
+  details.appendChild(primary);
+  const secondary=document.createElement("small");
+  secondary.textContent=kind==="chapters"?plexFormatTime(item.start_seconds):
+    kind==="subtitles"&&id===0?"No captions":
+    [item.title,item.codec?.toUpperCase()].filter(Boolean).join(" · ");
+  if(secondary.textContent)details.appendChild(secondary);
+  button.appendChild(details);
+  button.addEventListener("click",()=>{
+   select.value=String(id);
+   applyPlexTrackChoice();
+  });
+  choices.appendChild(button);
  }
- if(kind==="audio"&&plexSelectedAudio!==null)select.value=String(plexSelectedAudio);
- if(kind==="subtitles")select.value=String(plexSelectedSubtitle??0);
- label.textContent={chapters:"Jump to chapter",audio:"Audio language",subtitles:"Subtitles"}[kind];
+ if(kind==="audio"&&selectedId!==null)select.value=String(selectedId);
+ if(kind==="subtitles")select.value=String(selectedId);
+ label.textContent={chapters:"Chapters",audio:"Audio language",subtitles:"Subtitles"}[kind];
  plexTrackMenu=kind;
  document.getElementById("plextrackpanel").hidden=false;
  showPlexOverlay();
+ const selected=choices.querySelector('[aria-selected="true"]');
+ (selected||choices.querySelector("button")||
+  document.getElementById("plextrackcancel")).focus();
 }
+document.getElementById("plextrackpanel").addEventListener("keydown",event=>{
+ const panel=document.getElementById("plextrackpanel");
+ if(panel.hidden)return;
+ if(event.key==="Escape"||event.key==="Backspace"){
+  event.preventDefault();event.stopPropagation();
+  document.getElementById("plextrackcancel").click();return;
+ }
+ if(!["ArrowDown","ArrowUp","ArrowLeft","ArrowRight","Home","End"].includes(event.key))
+  return;
+ const buttons=Array.from(document.getElementById("plextrackchoices").querySelectorAll("button"));
+ if(!buttons.length)return;
+ event.preventDefault();
+ let i=buttons.indexOf(document.activeElement);
+ if(event.key==="Home")i=0;
+ else if(event.key==="End")i=buttons.length-1;
+ else i=Math.max(0,Math.min(buttons.length-1,
+   i+(event.key==="ArrowDown"||event.key==="ArrowRight"?1:-1)));
+ buttons[i].focus();
+ buttons[i].scrollIntoView({block:"nearest"});
+});
 async function applyPlexTrackChoice(){
  const kind=plexTrackMenu,select=document.getElementById("plextrackselect");
  const panel=document.getElementById("plextrackpanel");
@@ -1254,7 +1313,7 @@ function plexPreviewAt(seconds){
  const slider=document.getElementById("plexseek");
  const rect=slider.getBoundingClientRect();
  const fraction=Math.max(0,Math.min(1,Number(slider.value)/1000));
- const halfWidth=Math.min(136,window.innerWidth*.32);
+ const halfWidth=window.innerWidth>=900?Math.min(248,window.innerWidth*.25):Math.min(136,window.innerWidth*.32);
  const thumbX=Math.max(halfWidth+8,Math.min(window.innerWidth-halfWidth-8,
      rect.left+rect.width*fraction));
  box.style.setProperty("--plex-preview-x",thumbX+"px");
