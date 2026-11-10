@@ -73,7 +73,7 @@ enum PlexPlaybackService {
         guard info.playlist_url.hasPrefix("/api/player/"),
               info.playlist_url.hasSuffix("/master.m3u8"),
               let playlist = URL(string: info.playlist_url, relativeTo: base)?.absoluteURL,
-              let sessionID = info.playlist_url.split(separator: "/").dropFirst(3).first.map(String.init),
+              let sessionID = info.playlist_url.split(separator: "/").dropFirst(2).first.map(String.init),
               !sessionID.isEmpty else {
             throw PlexPlaybackError.invalidSession
         }
