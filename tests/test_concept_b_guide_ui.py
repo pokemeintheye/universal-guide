@@ -77,6 +77,13 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('guideNavigationTime=el.offsetLeft+el.offsetWidth/2',HTML)
         self.assertNotIn('const score=primary+secondary*2;',HTML)
 
+    def test_remote_can_reach_time_navigation(self):
+        self.assertIn('const timeControls=["earlier","now","later"]',HTML)
+        self.assertIn('timeControls[next].focus({preventScroll:true})',HTML)
+        self.assertIn('if(direction==="ArrowDown"){remoteGuideFocus();return true}',HTML)
+        self.assertIn('if(direction==="ArrowUp"&&railIndex===0)',HTML)
+        self.assertIn('if(event.key==="ArrowUp")$("now").focus({preventScroll:true})',HTML)
+
     def test_keyboard_remote_arrow_enter_and_back(self):
         self.assertIn('function remoteFocusNext(direction)',HTML)
         self.assertIn('function remoteGuideFocus()',HTML)
@@ -103,7 +110,7 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('$("guidenow").onclick=returnGuideToNow;',HTML)
         self.assertIn('const rail=["opensearch","openfilters","opensettings","guidenow"]',HTML)
         self.assertIn('if($("guide").scrollLeft>1)$("guide").scrollLeft=0;',HTML)
-        self.assertIn('if(event.key==="ArrowUp")$("opensearch").focus',HTML)
+        self.assertIn('if(event.key==="ArrowUp")$("now").focus',HTML)
 
     def test_details_are_inline_and_philo_watches_channel_only(self):
         self.assertNotIn('id="guidedetails"',HTML)
