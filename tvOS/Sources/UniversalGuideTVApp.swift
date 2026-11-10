@@ -299,6 +299,10 @@ struct ProgramSelection: Hashable {
 
 struct ProgramDetailView: View {
     let selection: ProgramSelection
+    @AppStorage("guide.serverURL") private var serverURL = ""
+    @State private var playback: PlexPlaybackSession?
+    @State private var isStarting = false
+    @State private var playbackError: String?
 
     var body: some View {
         ZStack {
@@ -316,12 +320,54 @@ struct ProgramDetailView: View {
                     Label("Available in Plex", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.yellow)
                 }
-                Text("Playback handoff is not yet enabled in this tvOS preview.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if let ratingKey = selection.program.plex?.ratingKey,
+                   let key = Int(ratingKey), key > 0 {
+                    HStack(spacing: 20) {
+                        Button("Watch from Beginning") {
+                            startPlexPlayback(ratingKey: key, mode: "beginning")
+                        }
+                        if selection.program.isOnNow {
+                            Button("Watch from Current Point") {
+                                startPlexPlayback(ratingKey: key, mode: "join")
+                            }
+                        }
+                    }
+                    .disabled(isStarting)
+                    if isStarting { ProgressView("Preparing Plex playback…") }
+                } else {
+                    Text("No playable Plex match is available for this program.")
+                        .foregroundStyle(.secondary)
+                }
+                if let playbackError {
+                    Text(playbackError).foregroundStyle(.red)
+                }
                 Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(70)
+        }
+        .fullScreenCover(item: $playback) { session in
+            PlexPlaybackScreen(session: session)
+        }
+    }
+
+    private func startPlexPlayback(ratingKey: Int, mode: String) {
+        guard !isStarting else { return }
+        isStarting = true
+        playbackError = nil
+        Task {
+            defer { isStarting = false }
+            do {
+                playback = try await PlexPlaybackService.start(
+                    serverURL: serverURL,
+                    ratingKey: ratingKey,
+                    mode: mode,
+                    airingStart: selection.program.start,
+                    airingEnd: selection.program.stop
+                )
+            } catch {
+                playbackError = error.localizedDescription
+            }
         }
     }
 }
