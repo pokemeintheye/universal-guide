@@ -17,6 +17,7 @@ targets:
       properties:
         CFBundleDisplayName: Universal Guide
         CFBundleIconName: AppIcon
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
