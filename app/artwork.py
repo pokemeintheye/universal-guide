@@ -96,3 +96,54 @@ def find_tvmaze_artwork(title,season=None,episode=None,subtitle=None):
         if url:
             return {"image_url":url,"credit_url":show_url,"match":"series"}
     return None
+
+
+TMDB_API="https://api.themoviedb.org/3/search/movie"
+TMDB_POSTER="https://image.tmdb.org/t/p/w342"
+def find_tmdb_movie_artwork(title,year=None,api_key=None):
+    """Conservative movie-only match, using a server-side TMDB v3 API key.
+
+    Reject ambiguous same-title results unless EPG supplies a release year.
+    Keep all credentials out of responses and image URLs.
+    """
+    title=clean_artwork_title(title)
+    if not api_key or not (2<=len(title)<=120):
+        return None
+    params={"query":title,"language":"en-US","include_adult":"false","page":1}
+    if isinstance(year,int) and 1880<=year<=2100:
+        params["year"]=year
+    response=requests.get(TMDB_API,params=params,
+        headers={"Authorization":"Bearer "+api_key,"Accept":"application/json"},
+        timeout=(3,7),allow_redirects=False)
+    try:
+        response.raise_for_status()
+        data=response.json()
+    finally:
+        response.close()
+    options=[]
+    for movie in (data.get("results",[]) if isinstance(data,dict) else [])[:20]:
+        if not isinstance(movie,dict) or movie.get("adult"):continue
+        names=(movie.get("title"),movie.get("original_title"))
+        if not any(normalize_title(name)==normalize_title(title) for name in names):
+            continue
+        poster=movie.get("poster_path")
+        if not isinstance(poster,str) or not re.fullmatch(r"/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",poster,re.I):
+            continue
+        release=movie.get("release_date") or ""
+        movie_year=int(release[:4]) if re.match(r"^\\d{4}-",release) else None
+        if isinstance(year,int) and 1880<=year<=2100 and movie_year!=year:
+            continue
+        movie_id=movie.get("id")
+        if not isinstance(movie_id,int) or movie_id<=0:continue
+        options.append((movie,movie_id,poster))
+    # No year? Avoid confusing remakes sharing the same name.
+    if len(options)!=1:return None
+    movie,movie_id,poster=options[0]
+    return {"image_url":TMDB_POSTER+poster,
+        "credit_url":"https://www.themoviedb.org/movie/"+str(movie_id),
+        "match":"movie","source":"TMDB"}
+
+
+def safe_tmdb_image_url(url):
+    return bool(isinstance(url,str) and re.fullmatch(
+        r"https://image\\.tmdb\\.org/t/p/w342/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",url,re.I))
