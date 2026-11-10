@@ -59,7 +59,8 @@ struct GuideProgram: Decodable, Identifiable {
 }
 
 struct PlexMatch: Decodable {
-    let ratingKey: Int?
+    // The Unraid API sends Plex rating_key as a numeric string.
+    let ratingKey: String?
     enum CodingKeys: String, CodingKey { case ratingKey = "rating_key" }
 }
 
