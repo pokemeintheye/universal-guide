@@ -120,6 +120,16 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown"))',HTML)
         self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
 
+    def test_preview_text_and_provider_choice_navigation(self):
+        self.assertIn('.guide-detail-content #guidepreviewdesc{',HTML)
+        self.assertIn('max-height:3.9em',HTML)
+        self.assertIn('white-space:normal',HTML)
+        self.assertIn('margin-top:auto',HTML)
+        self.assertIn('const plexChoice=$("guidewatchplex"),liveChoice=$("guidewatchsecondary")',HTML)
+        self.assertIn('current===plexChoice||current===liveChoice',HTML)
+        self.assertIn('direction==="ArrowRight"?liveChoice:plexChoice',HTML)
+        self.assertIn('target.focus({preventScroll:true})',HTML)
+
     def test_fixed_preview_artwork_and_horizontal_scroll(self):
         self.assertIn('height:clamp(190px,27dvh,275px)',HTML)
         self.assertIn('object-fit:contain!important',HTML)
