@@ -778,8 +778,10 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
    <p class="note">The guide uses your configured Plex library, legacy Tablo, and Philo schedule feeds. Keep this server on your trusted network.</p>
    </section>
    <section class="settings-group" aria-label="Artwork downloads">
-   <h3>Show artwork</h3>
-   <p class="note">Artwork is downloaded and cached on Unraid for upcoming TV shows, with one image per series.</p>
+   <h3>Show and movie artwork</h3>
+   <p class="note">TVmaze provides show posters. For movies airing on TV, add <code>TMDB_API_KEY</code> to your Unraid container environment to enable movie poster matching by title and release year. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">Get a TMDB API key</a>. After adding it and restarting, use Download missing artwork.</p>
+   <p class="note">This product uses the TMDB API but is not endorsed or certified by TMDB. <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">The Movie Database (TMDB)</a>.</p>
+   <p class="note">Artwork is downloaded and cached on Unraid for upcoming shows and, when TMDB is configured, movies.</p>
    <div class="bar"><span class="chip" id="artworkstatus" role="status">Checking artwork…</span><button id="artworkrefresh" type="button">Download missing artwork</button></div>
    <progress id="artworkprogress" max="100" value="0" style="width:100%;height:16px;margin:12px 0 3px" aria-label="Artwork download progress"></progress>
    <p id="artworkcounts" class="note" aria-live="polite">Checking artwork cache…</p>
@@ -926,9 +928,13 @@ async function displayGuideArtwork(program,requestId){
  };
  // Artwork was already cached on the Unraid server during the guide refresh.
  // Prefer a single show's series image for all episodes, then available Plex art.
- if(program.entry.program_kind==="movie"){plexFallback();return;}
+ const isMovie=program.entry.program_kind==="movie";
  try{
   const params=new URLSearchParams({title:program.entry.title||""});
+  if(isMovie){
+   params.set("kind","movie");
+   if(Number(program.entry.year)>1800)params.set("year",String(program.entry.year));
+  }
   const result=await req("/api/guide/artwork?"+params.toString());
   if(!valid())return;
   if(!result.image_url){plexFallback();return;}
@@ -939,7 +945,7 @@ async function displayGuideArtwork(program,requestId){
    artworkImage.hidden=false;
    if(result.credit_url){
     credit.href=result.credit_url;
-    credit.textContent="Artwork: TVmaze";
+    credit.textContent="Artwork: "+(result.source==="TMDB"?"TMDB":"TVmaze");
     credit.hidden=false;
    }
   };
