@@ -92,17 +92,31 @@ jobs:
         working-directory: tvOS
         shell: bash
         run: |
+          set -euo pipefail
+          # App Store Connect requires a strictly increasing CFBundleVersion.
+          # GitHub's workflow run number increments on every new publish;
+          # the attempt suffix also handles re-runs of the same workflow.
+          BUILD_NUMBER="$((GITHUB_RUN_NUMBER + 1)).${GITHUB_RUN_ATTEMPT}"
+          echo "Archiving Universal Guide build $BUILD_NUMBER"
           xcodebuild -project UniversalGuideTV.xcodeproj \
             -scheme UniversalGuideTV \
             -configuration Release \
             -sdk appletvos \
             -destination 'generic/platform=tvOS' \
             -archivePath "$RUNNER_TEMP/UniversalGuideTV.xcarchive" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY='Apple Distribution' \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             archive
+          ARCHIVE_INFO="$RUNNER_TEMP/UniversalGuideTV.xcarchive/Products/Applications/UniversalGuideTV.app/Info.plist"
+          ACTUAL_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ARCHIVE_INFO")
+          echo "Archived CFBundleVersion: $ACTUAL_BUILD"
+          if [ "$ACTUAL_BUILD" != "$BUILD_NUMBER" ]; then
+            echo "::error::Archive build version does not match expected $BUILD_NUMBER"
+            exit 1
+          fi
 
       - name: Export signed IPA
         shell: bash
