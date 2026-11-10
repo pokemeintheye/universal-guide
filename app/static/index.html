@@ -523,6 +523,17 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  .guide-app .guide-art{width:clamp(82px,24vw,125px);min-width:clamp(82px,24vw,125px)}
  .guide-detail-content .guide-source-tags{max-height:28px}
 }
+/* TVmaze series images are portrait posters rather than backdrops. */
+.guide-app .guide-art{flex:0 0 auto;width:auto;min-width:0;aspect-ratio:5 / 7;
+ height:100%;max-width:38%;border-radius:12px;background:#161b2a}
+.guide-app .guide-art img{object-fit:contain!important;width:100%;height:100%;
+ object-position:center center}
+.guide-top-actions{top:var(--guide-rail-top,100px);transform:none}
+.guide-main .epg-tracks .nowline{z-index:5;pointer-events:none;
+ box-shadow:0 0 5px #a35aff}
+@media(max-width:650px){
+ .guide-app .guide-art{width:auto;min-width:0;max-width:36%;height:100%;aspect-ratio:5 / 7}
+}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -971,6 +982,16 @@ function guideScrollToProgram(button){
  if(rect.top<topEdge) pane.scrollTop=Math.max(0,pane.scrollTop-(topEdge-rect.top));
  else if(rect.bottom>bottomEdge) pane.scrollTop+=rect.bottom-bottomEdge;
 }
+// Keep fixed controls aligned with the top of the guide viewport.
+function alignGuideRail(){
+ const pane=$("guide"),rail=document.querySelector(".guide-top-actions");
+ if(!pane||!rail)return;
+ const top=pane.getBoundingClientRect().top;
+ if(Number.isFinite(top))document.documentElement.style.setProperty(
+  "--guide-rail-top",Math.max(0,Math.round(top))+"px");
+}
+window.addEventListener("resize",alignGuideRail);
+requestAnimationFrame(alignGuideRail);
 function remoteGuideFocus(){
  const selected=$("guide").querySelector(".epg-program.return-selected")||
                 $("guide").querySelector(".epg-program[data-program]");
@@ -1252,6 +1273,7 @@ async function guide(only){
    rows+='<div class="epg-row"><div class="epg-station">'+label+'</div><div class="epg-tracks">'+nowLine+blocks+'</div></div>';
   }
   $("guide").innerHTML='<div class="epg">'+header+rows+'</div>';
+  requestAnimationFrame(alignGuideRail);
   guideNavigationTime=null;
   const highlighted=shownPrograms.findIndex(program=>
     sameGuideIdentity(guideIdentity(program),selectedGuideIdentity));
