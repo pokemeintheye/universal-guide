@@ -134,7 +134,7 @@ struct PhoneGuideView: View {
         }
         .onChange(of: store.channels.count) { _ in
             channelIndex = 0
-            programIndex = 0
+            programIndex = filteredChannels.first?.programs.firstIndex(where: { $0.onNow }) ?? 0
         }
     }
 
@@ -263,11 +263,11 @@ struct PhoneGuideView: View {
                         .frame(width: timelineWidth, alignment: .leading)
                     }
                     .scrollIndicators(.hidden)
-                    .onChange(of: programIndex) { index in
-                        horizontalProxy.scrollTo("program-\(channelIndex)-\(index)", anchor: .center)
+                    .onChange(of: programIndex) { _ in
+                        horizontalProxy.scrollTo("slot-\(selectedTimeSlot)", anchor: .leading)
                     }
-                    .onChange(of: channelIndex) { index in
-                        horizontalProxy.scrollTo("program-\(index)-\(programIndex)", anchor: .center)
+                    .onChange(of: channelIndex) { _ in
+                        horizontalProxy.scrollTo("slot-\(selectedTimeSlot)", anchor: .leading)
                     }
                     }
                 }
@@ -286,6 +286,11 @@ struct PhoneGuideView: View {
         }
     }
 
+    private var selectedTimeSlot: Int {
+        guard let begins = program?.begins else { return 0 }
+        return min(15, max(0, Int(begins.timeIntervalSince(anchor) / 1800)))
+    }
+
     private func timeHeader(start: Date) -> some View {
         HStack(spacing: 0) {
             ForEach(0..<16, id: \.self) { i in
@@ -295,6 +300,7 @@ struct PhoneGuideView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 30 * minuteWidth, height: 37, alignment: .leading)
                     .padding(.leading, 5)
+                    .id("slot-\(i)")
             }
         }
         .background(navyLight)
