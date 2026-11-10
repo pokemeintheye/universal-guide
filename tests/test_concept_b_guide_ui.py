@@ -102,13 +102,13 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn("function returnGuideToNow()",HTML)
         self.assertIn('$("guidenow").onclick=returnGuideToNow;',HTML)
         self.assertIn('const rail=["opensearch","openfilters","opensettings","guidenow"]',HTML)
-        self.assertIn('if(event.key==="ArrowLeft")$("openfilters").focus',HTML)
+        self.assertIn('if($("guide").scrollLeft>1)$("guide").scrollLeft=0;',HTML)
         self.assertIn('if(event.key==="ArrowUp")$("opensearch").focus',HTML)
 
     def test_details_are_inline_and_philo_watches_channel_only(self):
         self.assertNotIn('id="guidedetails"',HTML)
         self.assertIn('const channelUrl=verifiedPhiloPlaybackUrl(program)',HTML)
-        self.assertIn('player\\/channel\\/',HTML)
+        self.assertIn('www\\.philo\\.com\\/player\\/channel',HTML)
         self.assertIn('$("philoepisode").hidden=true',HTML)
         self.assertIn('$("philoshow").hidden=true',HTML)
 
@@ -120,10 +120,28 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown"))',HTML)
         self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
 
+    def test_fixed_preview_artwork_and_horizontal_scroll(self):
+        self.assertIn('height:clamp(190px,27dvh,275px)',HTML)
+        self.assertIn('object-fit:contain!important',HTML)
+        self.assertIn('function guideScrollToProgram(button)',HTML)
+        self.assertIn('guideScrollToProgram(target)',HTML)
+        self.assertIn('pane.scrollLeft=Math.max(0,pane.scrollLeft',HTML)
+
+    def test_single_action_plays_on_ok_without_bottom_buttons(self):
+        self.assertIn('function activateGuideProgram(program)',HTML)
+        self.assertIn('const chooseSource=Boolean(e.plex?.rating_key)',HTML)
+        self.assertIn('playPlex.hidden=!chooseSource;',HTML)
+        self.assertIn('secondary.hidden=!chooseSource;',HTML)
+        self.assertIn('if(hasTablo){launchTabloLive();return}',HTML)
+        self.assertIn('if(channelUrl){persistGuideState();window.location.href=channelUrl;return}',HTML)
+        self.assertIn('else launchPlex("beginning");',HTML)
+        self.assertIn('if(split||isLive)openGuidePlexChoices();',HTML)
+        self.assertIn('activateGuideProgram(shownPrograms[index]);',HTML)
+
     def test_focus_updates_program_strip_without_opening_modal(self):
         self.assertIn('el.onclick=event=>{',HTML)
         self.assertIn('showGuidePreview(shownPrograms[index]);',HTML)
-        self.assertIn('if(event.detail===0)',HTML)
+        self.assertIn('activateGuideProgram(shownPrograms[index]);',HTML)
         self.assertIn('el.addEventListener("focus",()=>showGuidePreview',HTML)
         self.assertIn('classList.toggle("return-selected"',HTML)
         self.assertIn('if(shownPrograms.length)showGuidePreview(',HTML)
