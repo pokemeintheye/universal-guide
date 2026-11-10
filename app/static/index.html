@@ -477,6 +477,11 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
 .guide-main .epg-program:focus-visible{z-index:2}
 .guide-drawer{width:min(590px,calc(100vw - 76px));padding:clamp(14px,2vw,28px)}
 .settings-sections{display:flex;flex-direction:column;gap:12px}
+.settings-group{padding:14px;border:1px solid #424761;border-radius:18px;background:#1e2539}
+.settings-group>button{display:block;width:100%;text-align:left;min-height:58px;padding:14px}
+.settings-group h3{margin:2px 0 12px;font-size:20px}
+.settings-group .bar{margin:6px 0}
+
 .settings-sections h3{margin:12px 0 0;font-size:20px}
 .settings-sections .bar{display:flex;flex-direction:column;align-items:stretch;margin:4px 0;gap:8px}
 .settings-sections .bar button,.settings-sections>button,.guide-drawer-heading button{
@@ -544,19 +549,25 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  <section id="settingsdrawer" class="guide-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsheading">
   <div class="guide-drawer-heading"><h2 id="settingsheading">Settings</h2><button type="button" id="closesettings" aria-label="Close settings">✕</button></div>
   <div class="settings-sections">
-   <h3>Library connection</h3>
+   <section class="settings-group" aria-label="Guide data sources">
+   <h3>Guide data and connections</h3>
    <span class="chip" id="status">Checking…</span>
    <div class="bar"><button id="sync">Refresh Plex catalog</button><button id="epg">Reload guide.xml</button><button id="tablo">Refresh Tablo</button><button id="philo">Refresh Philo EPG</button></div>
    <div class="bar"><span class="chip" id="plexcount">Plex items: —</span><span class="chip" id="epgcount">XMLTV entries: —</span><span class="chip" id="tablocount">Tablo entries: —</span><span class="chip" id="philocount">Philo programs: —</span></div>
    <div id="message" class="note" aria-live="polite"></div>
    <p class="note">The guide uses your configured Plex library, legacy Tablo, and Philo schedule feeds. Keep this server on your trusted network.</p>
+   </section>
+   <section class="settings-group" aria-label="Artwork downloads">
    <h3>Show artwork</h3>
    <p class="note">Artwork is downloaded and cached on Unraid for upcoming TV shows, with one image per series.</p>
    <div class="bar"><span class="chip" id="artworkstatus" role="status">Checking artwork…</span><button id="artworkrefresh" type="button">Download missing artwork</button></div>
    <progress id="artworkprogress" max="100" value="0" style="width:100%;height:16px;margin:12px 0 3px" aria-label="Artwork download progress"></progress>
    <p id="artworkcounts" class="note" aria-live="polite">Checking artwork cache…</p>
    <p id="artworkcurrent" class="note"></p>
-   <h3>Channel management</h3><button type="button" id="settingsmanage">Manage favorite and hidden channels</button>
+   </section>
+   <section class="settings-group" aria-label="Channel preferences">
+   <h3>Channel preferences</h3><button type="button" id="settingsmanage">Manage favorite and hidden channels</button>
+   </section>
   </div>
  </section>
  <section id="searchdrawer" class="guide-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="searchheading">
@@ -941,6 +952,20 @@ function remoteFocusNext(direction){
               !$("settingsdrawer").hidden?$("settingsdrawer"):null;
  const player=!$("playerbackdrop").hidden?$("playerbackdrop"):null;
  const scope=modal||drawer||player||document;
+ // Drawer Up/Down follows control order, avoiding spatial focus jumps.
+ if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown")){
+  const buttons=Array.from(drawer.querySelectorAll(
+   'button:not([disabled]),a[href],input:not([disabled]),summary,select:not([disabled])'
+  )).filter(remoteVisible);
+  const index=buttons.indexOf(current);
+  if(index>=0&&buttons.length){
+   const next=Math.max(0,Math.min(buttons.length-1,index+
+    (direction==="ArrowUp"?-1:1)));
+   buttons[next].focus({preventScroll:true});
+   buttons[next].scrollIntoView({block:"nearest",inline:"nearest"});
+   return true;
+  }
+ }
  const candidates=Array.from(scope.querySelectorAll(
   'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),summary,[tabindex="0"]'
  )).filter(el=>el!==current&&remoteVisible(el)&&!el.closest(".guide-legacy-controls"));
