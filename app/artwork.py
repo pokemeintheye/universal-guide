@@ -109,11 +109,12 @@ def find_tmdb_movie_artwork(title,year=None,api_key=None):
     title=clean_artwork_title(title)
     if not api_key or not (2<=len(title)<=120):
         return None
-    params={"query":title,"language":"en-US","include_adult":"false","page":1}
+    params={"query":title,"language":"en-US","include_adult":"false","page":1,
+            "api_key":api_key}
     if isinstance(year,int) and 1880<=year<=2100:
         params["year"]=year
     response=requests.get(TMDB_API,params=params,
-        headers={"Authorization":"Bearer "+api_key,"Accept":"application/json"},
+        headers={"Accept":"application/json"},
         timeout=(3,7),allow_redirects=False)
     try:
         response.raise_for_status()
