@@ -1,6 +1,10 @@
 import SwiftUI
 import AVKit
 
+extension Notification.Name {
+    static let phonePlaybackController = Notification.Name("UniversalGuidePhonePlaybackController")
+}
+
 private struct PlexMetadata: Decodable {
     let chapters: [PlexChapter]
     let audio: [PlexTrack]
@@ -126,6 +130,28 @@ struct PhoneVideoScreen: View {
                 .toolbar { Button("Done") { showTracks = false } }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .phonePlaybackController)) { event in
+            guard let action = event.object as? PadAction else { return }
+            switch action {
+            case .back: dismiss()
+            case .select:
+                if session.kind == "tablo" {
+                    toggleTabloPause()
+                } else {
+                    player.rate == 0 ? player.play() : player.pause()
+                }
+            case .left:
+                if session.kind == "tablo" { shiftTablo(-30) } else { seekRelative(-15) }
+            case .right:
+                if session.kind == "tablo" { shiftTablo(30) } else { seekRelative(15) }
+            case .options:
+                if session.kind == "plex" { showChapters = true }
+            case .now:
+                if session.kind == "tablo" { returnToLive() }
+                else { showTracks = true }
+            default: break
+            }
+        }
         .onAppear {
             startPlayer(session.playlist)
             if session.kind == "plex" { Task { await loadPlexMetadata() } }
@@ -157,6 +183,13 @@ struct PhoneVideoScreen: View {
         player.seek(to: CMTime(seconds: time, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
+    private func seekRelative(_ delta: Double) {
+        let current = player.currentTime().seconds
+        guard current.isFinite else { return }
+        let target = max(0, current + delta)
+        seek(to: target)
+    }
+
     private func plexURL(_ path: String) throws -> URL {
         try PhoneAPI.url(base, path)
     }
