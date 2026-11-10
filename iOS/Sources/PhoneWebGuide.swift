@@ -375,7 +375,12 @@ struct PhoneGuideWebView: UIViewRepresentable {
       function chooseDetailButton() {
         const panel=$('guidedetail');
         if(!panel)return false;
-        if(!panel.classList.contains('ug-expanded'))click('ug-phone-preview-toggle');
+        if(panel.classList.contains('ug-expanded')){
+          click('ug-phone-preview-toggle');
+          guideFocus();
+          return true;
+        }
+        click('ug-phone-preview-toggle');
         const choices=Array.from(panel.querySelectorAll('.guide-detail-actions button:not([disabled])'))
           .filter(shown);
         return focus(choices[0] || $('ug-phone-preview-toggle'));
