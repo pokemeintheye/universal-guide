@@ -120,6 +120,13 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown"))',HTML)
         self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
 
+    def test_preview_description_and_button_focus_do_not_overlap(self):
+        self.assertIn('-webkit-line-clamp:2',HTML)
+        self.assertIn('max-height:2.8em',HTML)
+        self.assertIn('min-height:66px',HTML)
+        self.assertIn('padding:6px 5px',HTML)
+        self.assertIn('outline-offset:2px',HTML)
+
     def test_preview_text_and_provider_choice_navigation(self):
         self.assertIn('.guide-detail-content #guidepreviewdesc{',HTML)
         self.assertIn('max-height:3.9em',HTML)
