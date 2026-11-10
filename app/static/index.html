@@ -506,7 +506,7 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
    <div class="guide-detail-actions">
     <button type="button" id="guidewatchplex" class="guide-action-primary" hidden>▶ Watch on Plex</button>
     <button type="button" id="guidewatchsecondary" hidden>Watch Live</button>
-    <button type="button" id="guidedetails">ⓘ Details</button>
+
    </div>
   </div>
  </section>
@@ -623,13 +623,9 @@ function setGuideAnchor(t){
 }
 function verifiedPhiloPlaybackUrl(program){
  if(program?.channel?.source!=="philo")return null;
- const links=program.entry?.philo_links||{};
- for(const type of ["episode","show","channel"]){
-  const link=links[type];
-  if(link?.url&&/^https:\/\/www\.philo\.com\/player\/(show|channel)\/[A-Za-z0-9_-]+(?:\?episode=[A-Za-z0-9_-]+)?$/.test(link.url))
-   return link.url;
- }
- return null;
+ const url=program.entry?.philo_links?.channel?.url||program.channel?.philo_channel_url;
+ return typeof url==="string"&&
+  /^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(url)?url:null;
 }
 let guideArtworkRequestId=0;
 async function displayGuideArtwork(program,requestId){
@@ -683,7 +679,7 @@ function showGuidePreview(program){
  secondary.hidden=!(canTablo||philoUrl);
  secondary.textContent=canTablo?"◉ Watch Live on Tablo":"▣ Watch on Philo";
  secondary.dataset.source=canTablo?"tablo":philoUrl?"philo":"";
- $("guidedetails").hidden=false;
+
  $("guidepreviewtitle").textContent=e.title||"Untitled";
  const episode=(e.season!=null&&e.episode!=null)?"S"+e.season+" E"+e.episode:"";
  $("guidepreviewepisode").textContent=[episode,e.subtitle,e.year,
@@ -691,7 +687,7 @@ function showGuidePreview(program){
    new Date(e.start).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+
    " – "+new Date(e.stop).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})]
    .filter(Boolean).join(" · ");
- $("guidepreviewdesc").textContent=e.description||"Select Details for more information.";
+ $("guidepreviewdesc").textContent=e.description||"No program description available.";
  const tags=$("guidepreviewsources");
  tags.replaceChildren();
  for(const [name,css] of [
@@ -838,9 +834,6 @@ $("guidewatchsecondary").onclick=()=>{
   if(url){persistGuideState();window.location.href=url}
  }
 };
-$("guidedetails").onclick=()=>{
- if(selectedProgram){$("detailsmodal").classList.remove("plex-pick-mode");openDetails(selectedProgram)}
-};
 document.addEventListener("keydown",event=>{
  if(event.key!=="Escape")return;
  if(!$("searchdrawer").hidden||!$("settingsdrawer").hidden){closeGuideDrawer();return}
@@ -879,7 +872,7 @@ function remoteBack(){
   $("detailsmodal").hidden=true;
   $("detailsmodal").classList.remove("plex-pick-mode");
   (wasPlexChoice&&remoteVisible($("guidewatchplex"))?
-    $("guidewatchplex"):$("guidedetails")).focus();
+    $("guidewatchplex"):$("guidewatchsecondary")).focus();
   return;
  }
  if(!$("searchdrawer").hidden||!$("settingsdrawer").hidden){
@@ -968,28 +961,15 @@ function openDetails(program){
  selectedProgram=program;
  selectedGuideIdentity=guideIdentity(program);
  persistGuideState();
- // Show only server-matched provider links, never a reused hard-coded URL.
- // Opening Philo is a handoff, not embedded playback or guaranteed autoplay.
- const options=p.source==="philo" ? (e.philo_links||{}) : {};
- let philoCount=0;
- for(const [kind,id] of [["episode","philoepisode"],["show","philoshow"],["channel","philochannel"]]){
-   const target=$(id),choice=options[kind];
-   const valid=Boolean(choice&&typeof choice.url==="string"&&
-     /^https:\/\/www\.philo\.com\/player\/(show|channel)\/[A-Za-z0-9_-]+(?:\?episode=[A-Za-z0-9_-]+)?$/.test(choice.url));
-   target.hidden=!valid;
-   if(valid){
-     target.href=choice.url;
-     target.textContent=(choice.level==="episode"?"▶ Open This Episode in Philo":
-       choice.level==="channel"?"▶ Open Live Channel in Philo":"▶ Open Show in Philo")+
-       (choice.verification==="iphone-tested"?"":" · Test Link");
-     philoCount++;
-   }else target.removeAttribute("href");
- }
- $("philohandoff").hidden=philoCount===0;
- const hasUntested=Object.values(options).some(choice=>choice&&choice.verification!=="iphone-tested");
- $("philonote").textContent=hasUntested
-   ?"Test Link means the URL is listed on Philo's public site but has not yet been verified on your iPhone. Check the destination; playback may require another tap."
-   :"Opens the Philo app when supported. The channel or episode may need you to press Play in Philo.";
+ // Only link to the correct live Philo channel.
+ const channelUrl=verifiedPhiloPlaybackUrl(program);
+ $("philoepisode").hidden=true;$("philoepisode").removeAttribute("href");
+ $("philoshow").hidden=true;$("philoshow").removeAttribute("href");
+ $("philochannel").hidden=!channelUrl;
+ if(channelUrl)$("philochannel").href=channelUrl;
+ else $("philochannel").removeAttribute("href");
+ $("philohandoff").hidden=!channelUrl;
+ $("philonote").textContent="Opens the live Philo channel. You may need to press Play in Philo.";
  $("tabloliveactions").hidden=!(p.source==="tablo"&&(e.no_guide_data||(Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop))));
  $("detailstation").textContent=(p.source==="tablo"?(p.network?p.network+" · ":"")+(p.number||p.label):p.label)+" · "+p.source.toUpperCase();
  $("detailtitle").textContent=e.title||"Untitled";
@@ -1135,7 +1115,7 @@ async function guide(only){
       showGuidePreview(shownPrograms[index]);
       // Enter/OK should expose the newly selected Watch actions immediately.
       if(event.detail===0){
-       const action=["guidewatchplex","guidewatchsecondary","guidedetails"]
+       const action=["guidewatchplex","guidewatchsecondary"]
          .map(id=>$(id)).find(button=>!button.hidden&&!button.disabled);
        if(action)action.focus({preventScroll:true});
       }
