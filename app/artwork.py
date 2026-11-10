@@ -127,10 +127,10 @@ def find_tmdb_movie_artwork(title,year=None,api_key=None):
         if not any(normalize_title(name)==normalize_title(title) for name in names):
             continue
         poster=movie.get("poster_path")
-        if not isinstance(poster,str) or not re.fullmatch(r"/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",poster,re.I):
+        if not isinstance(poster,str) or not re.fullmatch(r"/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)",poster,re.I):
             continue
         release=movie.get("release_date") or ""
-        movie_year=int(release[:4]) if re.match(r"^\\d{4}-",release) else None
+        movie_year=int(release[:4]) if re.match(r"^\d{4}-",release) else None
         if isinstance(year,int) and 1880<=year<=2100 and movie_year!=year:
             continue
         movie_id=movie.get("id")
@@ -146,4 +146,4 @@ def find_tmdb_movie_artwork(title,year=None,api_key=None):
 
 def safe_tmdb_image_url(url):
     return bool(isinstance(url,str) and re.fullmatch(
-        r"https://image\\.tmdb\\.org/t/p/w342/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",url,re.I))
+        r"https://image\.tmdb\.org/t/p/w342/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)",url,re.I))
