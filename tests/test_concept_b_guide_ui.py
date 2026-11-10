@@ -105,10 +105,10 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertNotIn("width:calc('+width+'% - 3px)",HTML)
 
     def test_remote_sidebar_and_back_to_now(self):
-        self.assertIn('id="guidenow"',HTML)
+        self.assertNotIn('id="guidenow"',HTML)
         self.assertIn("function returnGuideToNow()",HTML)
-        self.assertIn('$("guidenow").onclick=returnGuideToNow;',HTML)
-        self.assertIn('const rail=["opensearch","openfilters","opensettings","guidenow"]',HTML)
+        self.assertIn('$("now").onclick=returnGuideToNow;',HTML)
+        self.assertIn('const rail=["opensearch","openfilters","opensettings"]',HTML)
         self.assertIn('if($("guide").scrollLeft>1)$("guide").scrollLeft=0;',HTML)
         self.assertIn('if(event.key==="ArrowUp")$("now").focus',HTML)
 
