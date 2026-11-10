@@ -838,7 +838,8 @@ def artwork_snapshot():
 
 def refresh_show_artwork(manual=False):
     """Fetch upcoming show-level images, one title at a time, without blocking UI."""
-    from app.artwork import find_tvmaze_artwork,safe_image_url,find_tmdb_movie_artwork,safe_tmdb_image_url
+    from app.artwork import (find_tvmaze_artwork,safe_image_url,
+        find_tmdb_movie_artwork,find_tmdb_tv_artwork,safe_tmdb_image_url)
     import hashlib
     # The manual job reserves the same lock as the automatic job.
     if not artwork_refresh_lock.acquire(blocking=False):
@@ -875,8 +876,13 @@ def refresh_show_artwork(manual=False):
             image_url=None
             credit_url=None
             try:
-                result=(find_tmdb_movie_artwork(title,year,TMDB_API_KEY) if kind=="movie"
-                        else find_tvmaze_artwork(title))
+                if kind=="movie":
+                    result=find_tmdb_movie_artwork(title,year,TMDB_API_KEY)
+                else:
+                    result=find_tvmaze_artwork(title)
+                    # Only search TMDB TV when TVmaze has no usable poster.
+                    if not result or not safe_image_url(result.get("image_url")):
+                        result=find_tmdb_tv_artwork(title,TMDB_API_KEY)
                 if result and (safe_image_url(result.get("image_url")) or safe_tmdb_image_url(result.get("image_url"))):
                     response=requests.get(result["image_url"],timeout=(3,8),
                                           stream=True,allow_redirects=False)
@@ -960,7 +966,7 @@ def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
     if url and not (ARTWORK_DIR/url.rsplit("/",1)[-1]).is_file():
         url=None
     return {"image_url":url,"credit_url":row["credit_url"] if url else None,
-            "source":("TMDB" if row["credit_url"] and "themoviedb.org/movie/" in row["credit_url"] else "TVmaze") if url else None}
+            "source":("TMDB" if row["credit_url"] and "themoviedb.org/" in row["credit_url"] else "TVmaze") if url else None}
 
 @app.get("/api/guide/artwork/cached/{filename}")
 def guide_cached_artwork(filename:str):
