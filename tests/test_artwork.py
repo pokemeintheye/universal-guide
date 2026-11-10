@@ -22,6 +22,23 @@ class ArtworkTests(unittest.TestCase):
             image=artwork.find_tvmaze_artwork("Harbor Heights",1,3)
         self.assertEqual(image["match"],"series")
 
+    def test_broadcast_flags_are_removed_for_artwork_only(self):
+        for variant in ("Harbor Heights [NEW]","[NEW] Harbor Heights",
+                        "Harbor Heights (NEW)","Harbor Heights [NEW] [LIVE]",
+                        "Harbor Heights [Series Premiere]"):
+            with self.subTest(variant=variant):
+                self.assertEqual(artwork.clean_artwork_title(variant),"Harbor Heights")
+                self.assertEqual(artwork.normalize_title(variant),
+                                 artwork.normalize_title("Harbor Heights"))
+                with patch.object(artwork,"_get",return_value=[{"show":SHOW}]) as get:
+                    result=artwork.find_tvmaze_artwork(variant)
+                self.assertEqual(result["match"],"series")
+                get.assert_called_once_with("/search/shows",{"q":"Harbor Heights"})
+
+    def test_real_title_parts_remain_untouched(self):
+        for title in ("New Girl","The Office (US)","[NEW]"):
+            self.assertEqual(artwork.clean_artwork_title(title),title)
+
     def test_no_fuzzy_mismatch(self):
         with patch.object(artwork,"_get",return_value=[
             {"show":dict(SHOW,name="Harbor Other")}
