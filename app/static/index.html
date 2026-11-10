@@ -737,6 +737,28 @@ async function displayGuideArtwork(program,requestId){
   img.src=result.image_url;
  }catch(error){if(valid())plexFallback()}
 }
+function activateGuideProgram(program){
+ if(!program)return;
+ const e=program.entry,ch=program.channel;
+ const isLive=Date.now()>=Date.parse(e.start)&&Date.now()<Date.parse(e.stop);
+ const hasTablo=ch.source==="tablo"&&(e.no_guide_data||isLive);
+ const channelUrl=verifiedPhiloPlaybackUrl(program);
+ const hasPlex=Boolean(e.plex?.rating_key);
+ if(hasPlex&&(hasTablo||channelUrl)){
+  // The only case requiring source buttons in the bottom panel.
+  const action=["guidewatchplex","guidewatchsecondary"]
+   .map(id=>$(id)).find(button=>!button.hidden&&!button.disabled);
+  if(action)action.focus({preventScroll:true});
+  return;
+ }
+ if(hasTablo){launchTabloLive();return}
+ if(channelUrl){persistGuideState();window.location.href=channelUrl;return}
+ if(hasPlex){
+  const split=Array.isArray(e.plex.parts)&&e.plex.parts.length>1;
+  if(split||isLive)openGuidePlexChoices();
+  else launchPlex("beginning");
+ }
+}
 function showGuidePreview(program){
  if(!program)return;
  const e=program.entry,ch=program.channel;
@@ -746,8 +768,10 @@ function showGuidePreview(program){
  const canTablo=ch.source==="tablo"&&(e.no_guide_data||isLive);
  const philoUrl=verifiedPhiloPlaybackUrl(program);
  const playPlex=$("guidewatchplex"),secondary=$("guidewatchsecondary");
- playPlex.hidden=!e.plex?.rating_key;
- secondary.hidden=!(canTablo||philoUrl);
+ // The bottom panel only needs provider buttons when two sources are available.
+ const chooseSource=Boolean(e.plex?.rating_key)&&Boolean(canTablo||philoUrl);
+ playPlex.hidden=!chooseSource;
+ secondary.hidden=!chooseSource;
  secondary.textContent=canTablo?"◉ Watch Live on Tablo":"▣ Watch on Philo";
  secondary.dataset.source=canTablo?"tablo":philoUrl?"philo":"";
 
@@ -1237,12 +1261,8 @@ async function guide(only){
     el.onclick=event=>{
       guideNavigationTime=el.offsetLeft+el.offsetWidth/2;
       showGuidePreview(shownPrograms[index]);
-      // Enter/OK should expose the newly selected Watch actions immediately.
-      if(event.detail===0){
-       const action=["guidewatchplex","guidewatchsecondary"]
-         .map(id=>$(id)).find(button=>!button.hidden&&!button.disabled);
-       if(action)action.focus({preventScroll:true});
-      }
+      // Only an explicit OK/click activates playback; arrow focus only previews.
+      activateGuideProgram(shownPrograms[index]);
     };
     el.addEventListener("focus",()=>showGuidePreview(shownPrograms[index]));
   });
