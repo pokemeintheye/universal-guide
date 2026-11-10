@@ -13,7 +13,6 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
-        optional: true
     info:
       path: Info.plist
     settings:
