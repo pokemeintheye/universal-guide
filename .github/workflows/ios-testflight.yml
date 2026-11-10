@@ -119,7 +119,11 @@ jobs:
           set -euo pipefail
           IPA="$(find "$RUNNER_TEMP/Export" -maxdepth 1 -name '*.ipa' -print -quit)"
           test -n "$IPA"
-          xcrun altool --upload-app -f "$IPA" -t ios --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+          # Xcode 26's new altool can fail to resolve a valid iOS app record
+          # with "Cannot determine the Apple ID from Bundle ID ... (19)".
+          # The legacy uploader bypasses that provider-resolution regression.
+          xcrun altool --use-old-altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
       - name: Remove local signing materials
         if: always()
         shell: bash
