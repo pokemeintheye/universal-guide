@@ -961,14 +961,28 @@ def guide_plex_art(rating_key:int):
     """Optional guide artwork for indexed Plex titles only, without browser tokens."""
     if rating_key<=0:raise HTTPException(404,"No Plex artwork")
     with db() as connection:
-        item=connection.execute("SELECT id FROM media WHERE id IN (?,?)",
+        item=connection.execute("SELECT id,kind FROM media WHERE id IN (?,?)",
             ("movie:"+str(rating_key),"episode:"+str(rating_key))).fetchone()
     if not item:raise HTTPException(404,"Not in Plex library index")
     try:
         root=plex_xml("/library/metadata/"+str(rating_key))
         video=root.find("Video")
         if video is None:raise HTTPException(404,"No Plex image")
-        image_path=video.get("art") or video.get("thumb") or video.get("grandparentThumb")
+        if item["kind"]=="episode":
+            # Plex episode "thumb"/"art" is commonly a landscape still.
+            # Use the series poster so all episodes share portrait artwork.
+            image_path=video.get("grandparentThumb")
+            show_key=video.get("grandparentRatingKey")
+            if not image_path and show_key and re.fullmatch(r"\\d+",show_key):
+                show_root=plex_xml("/library/metadata/"+show_key)
+                show=show_root.find("Directory")
+                if show is not None:
+                    image_path=show.get("thumb")
+            # Last resort: a season/show poster, never episode artwork first.
+            image_path=image_path or video.get("parentThumb") or video.get("thumb")
+        else:
+            # Movies use their portrait cover, not a wide background.
+            image_path=video.get("thumb") or video.get("art")
         if not image_path or not re.fullmatch(
             r"/library/metadata/\d+/(?:art|thumb)/\d+",image_path):
             raise HTTPException(404,"Plex artwork unavailable")
