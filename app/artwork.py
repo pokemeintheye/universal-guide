@@ -14,8 +14,20 @@ HEADERS={"User-Agent":"UniversalGuide/0.1 (personal local television guide)",
          "Accept":"application/json"}
 
 
+# Broadcast networks append flags that are not part of program names.
+BROADCAST_FLAGS=r"(?:new|live|repeat|rerun|premiere|series premiere|season premiere|season finale|finale)"
+
+def clean_artwork_title(value):
+    title=str(value or "").strip()
+    marker=rf"\s*[\[(]\s*{BROADCAST_FLAGS}\s*[\])]\s*"
+    while True:
+        cleaned=re.sub(rf"^{marker}|{marker}$"," ",title,flags=re.I).strip()
+        if cleaned==title or not cleaned:
+            return title
+        title=cleaned
+
 def normalize_title(value):
-    value=unicodedata.normalize("NFKD",str(value or ""))
+    value=unicodedata.normalize("NFKD",clean_artwork_title(value))
     value="".join(ch for ch in value if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+"," ",value.casefold()).strip()
 
@@ -53,6 +65,8 @@ def find_tvmaze_artwork(title,season=None,episode=None,subtitle=None):
     """
     if not isinstance(title,str) or not (2<=len(title.strip())<=120):
         return None
+    title=clean_artwork_title(title)
+    if len(title)<2:return None
     search=_get("/search/shows",{"q":title})
     if not isinstance(search,list):return None
     matches=[item.get("show") for item in search[:12] if isinstance(item,dict)]
