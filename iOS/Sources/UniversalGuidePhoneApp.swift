@@ -243,6 +243,6 @@ enum PadAction: String {
 
 @main struct UniversalGuidePhoneApp: App {
     var body: some Scene {
-        WindowGroup { PhoneGuideView() }
+        WindowGroup { PhoneWebGuide() }
     }
 }
