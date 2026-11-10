@@ -5,6 +5,10 @@ on:
     paths:
       - 'tvOS/**'
       - '.github/workflows/tvos-build.yml'
+  pull_request:
+    paths:
+      - 'tvOS/**'
+      - '.github/workflows/tvos-build.yml'
   workflow_dispatch:
 permissions:
   contents: read
