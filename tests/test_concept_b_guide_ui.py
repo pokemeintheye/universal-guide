@@ -90,6 +90,36 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('if(!$("plextrackpanel").hidden)',HTML)
         self.assertIn('closePlexPlayer();remoteGuideFocus()',HTML)
 
+    def test_overlapping_airings_are_clipped_before_rendering(self):
+        self.assertIn("const airings=ch.programs.map",HTML)
+        self.assertIn("const a=Math.max(airings[n].a,previousEnd)",HTML)
+        self.assertIn("const b=Math.min(airings[n].b",HTML)
+        self.assertIn("if(b<=a)continue;",HTML)
+        self.assertNotIn("width:calc('+width+'% - 3px)",HTML)
+
+    def test_remote_sidebar_and_back_to_now(self):
+        self.assertIn('id="guidenow"',HTML)
+        self.assertIn("function returnGuideToNow()",HTML)
+        self.assertIn('$("guidenow").onclick=returnGuideToNow;',HTML)
+        self.assertIn('const rail=["opensearch","openfilters","opensettings","guidenow"]',HTML)
+        self.assertIn('if(event.key==="ArrowLeft")$("openfilters").focus',HTML)
+        self.assertIn('if(event.key==="ArrowUp")$("opensearch").focus',HTML)
+
+    def test_details_are_inline_and_philo_watches_channel_only(self):
+        self.assertNotIn('id="guidedetails"',HTML)
+        self.assertIn('const channelUrl=verifiedPhiloPlaybackUrl(program)',HTML)
+        self.assertIn('player\\/channel\\/',HTML)
+        self.assertIn('$("philoepisode").hidden=true',HTML)
+        self.assertIn('$("philoshow").hidden=true',HTML)
+
+    def test_settings_does_not_replace_the_guide(self):
+        self.assertIn('id="channelsettings"',HTML)
+        self.assertIn('id="channelsettingsback"',HTML)
+        self.assertIn('id="channelsettingslist"',HTML)
+        self.assertIn('target.innerHTML=output',HTML)
+        self.assertIn('if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown"))',HTML)
+        self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
+
     def test_focus_updates_program_strip_without_opening_modal(self):
         self.assertIn('el.onclick=event=>{',HTML)
         self.assertIn('showGuidePreview(shownPrograms[index]);',HTML)
