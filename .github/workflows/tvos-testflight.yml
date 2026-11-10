@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     env:
       BUNDLE_ID: co.thejonesfamily.universalguide
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
