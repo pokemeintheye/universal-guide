@@ -534,6 +534,17 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
 @media(max-width:650px){
  .guide-app .guide-art{width:auto;min-width:0;max-width:36%;height:100%;aspect-ratio:5 / 7}
 }
+/* The preview has a fixed footprint; let descriptions wrap without
+   stretching or hiding underneath the playback actions. */
+.guide-detail-content #guidepreviewdesc{
+ flex:0 1 auto; min-height:0; max-height:3.9em;
+ margin:8px 0 4px; line-height:1.3; white-space:normal;
+ overflow-wrap:break-word; overflow:hidden;
+ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3;
+}
+.guide-detail-content .guide-detail-actions{flex-shrink:0;margin-top:auto;
+ align-self:stretch}
+.guide-detail-actions button{white-space:nowrap}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -1029,6 +1040,21 @@ function remoteBack(){
 }
 function remoteFocusNext(direction){
  const current=document.activeElement;
+ // Provider choices are a single horizontal remote-navigation group.
+ // Never let global spatial search move Right from Plex back to the EPG.
+ const plexChoice=$("guidewatchplex"),liveChoice=$("guidewatchsecondary");
+ if((current===plexChoice||current===liveChoice)&&
+    remoteVisible(plexChoice)&&remoteVisible(liveChoice)){
+  if(direction==="ArrowRight"||direction==="ArrowLeft"){
+   const target=direction==="ArrowRight"?liveChoice:plexChoice;
+   target.focus({preventScroll:true});
+   return true;
+  }
+  if(direction==="ArrowUp"){
+   remoteGuideFocus();return true;
+  }
+  return true;
+ }
  const rail=["opensearch","openfilters","opensettings","guidenow"].map(id=>$(id));
  const railIndex=rail.indexOf(current);
  if(railIndex>=0&&$("guidefiltermenu").hidden&&
