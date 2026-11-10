@@ -7,7 +7,7 @@ Native iOS companion for the existing Universal Guide Docker backend and tvOS ap
 - Landscape, dark timeline grid modeled on the existing web EPG (sticky station column, time header, current-time marker, green Plex-owned programs).
 - Backbone / Game Controller D-pad to move between channel rows and programs; A to open details, B to go back, X to show playback options, Y to jump to a current airing, shoulder buttons to move a page. An on-screen input/focus diagnostic is available.
 - Touch remains available for initial URL entry and troubleshooting.
-- Uses existing `/api/guide`, Plex `/api/player/start`, and Tablo `/api/tablo/live/start?channel_id=...` routes. Tablo playback uses the existing HLS session and native AVPlayer; pause/resume, 15-second player seeks and a Return to Live option are available for testing, with limitations of the live DVR window.
+- Uses existing `/api/guide`, Plex `/api/player/start`, and Tablo `/api/tablo/live/start?channel_id=...` routes. Tablo playback uses the existing HLS session and native AVPlayer; native player pause/resume and a reconnect-to-live button are available for initial testing. Advanced Tablo DVR rewind/fast-forward using the backend's timeshift API is a follow-up, not yet implemented.
 - Philo uses only curated HTTPS URLs provided by the backend and attempts normal iOS Universal Link launch to Philo. It cannot guarantee launch, autoplay or tvOS equivalence.
 - The app does **not** store or need Plex/Philo/Tablo passwords.
 
