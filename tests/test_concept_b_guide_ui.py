@@ -42,6 +42,14 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('verifiedPhiloPlaybackUrl(program)',HTML)
         self.assertIn('if(selectedProgram.channel.source==="tablo")launchTabloLive()',HTML)
 
+    def test_movie_artwork_uses_cached_tmdb_before_plex_fallback(self):
+        self.assertIn('const isMovie=program.entry.program_kind==="movie"',HTML)
+        self.assertIn('params.set("kind","movie")',HTML)
+        self.assertIn('params.set("year",String(program.entry.year))',HTML)
+        self.assertIn('result.source==="TMDB"?"TMDB":"TVmaze"',HTML)
+        self.assertIn('if(!result.image_url){plexFallback();return;}',HTML)
+        self.assertIn('TMDB_API_KEY',HTML)
+
     def test_selected_plex_program_artwork_is_token_isolated(self):
         self.assertIn('id="guideartimage"',HTML)
         self.assertIn('local.src="/api/guide/art/"',HTML)
