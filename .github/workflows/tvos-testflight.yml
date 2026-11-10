@@ -56,10 +56,27 @@ jobs:
           fi
           BUILD_NUMBER="$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
-          # Make the actual app Info.plist authoritative, rather than
-          # relying on expansion of XcodeGen's build setting.
+          export BUILD_NUMBER
+          # XcodeGen regenerates the Xcode project from project.yml. Its
+          # CURRENT_PROJECT_VERSION was hard-coded to 1, so update it BEFORE
+          # generating the project, not only on the xcodebuild command line.
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          number = os.environ["BUILD_NUMBER"] if "BUILD_NUMBER" in os.environ else None
+          if number is None:
+              raise SystemExit("BUILD_NUMBER must be exported")
+          config = Path("project.yml")
+          content = config.read_text()
+          updated, count = re.subn(r"(?m)^(\\s*CURRENT_PROJECT_VERSION:\\s*)[^\\n]+$",
+                                   lambda m: m.group(1) + number, content)
+          if count != 1:
+              raise SystemExit(f"Expected one CURRENT_PROJECT_VERSION entry; got {count}")
+          config.write_text(updated)
+          print("XcodeGen version:", number)
+          PY
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Info.plist
+          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)"
       - name: Generate tvOS Xcode project
         working-directory: tvOS
         run: xcodegen generate
