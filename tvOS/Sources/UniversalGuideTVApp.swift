@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct UniversalGuideTVApp: App {
@@ -38,12 +39,14 @@ struct GuideProgram: Decodable, Identifiable {
     let year: Int?
     let programKind: String?
     let plex: PlexMatch?
+    let philoLinks: PhiloLinks?
 
     var id: String { "\(title)|\(start)|\(stop)" }
 
     enum CodingKeys: String, CodingKey {
         case title, subtitle, start, stop, description, year, plex
         case programKind = "program_kind"
+        case philoLinks = "philo_links"
     }
 
     var startDate: Date? { GuideDate.parse(start) }
@@ -56,6 +59,19 @@ struct GuideProgram: Decodable, Identifiable {
         guard let startDate, let endDate else { return "" }
         return "\(startDate.formatted(date: .omitted, time: .shortened)) – \(endDate.formatted(date: .omitted, time: .shortened))"
     }
+}
+
+struct PhiloLinks: Decodable {
+    let channel: PhiloHandoffLink?
+    let show: PhiloHandoffLink?
+    let episode: PhiloHandoffLink?
+}
+
+struct PhiloHandoffLink: Decodable {
+    let url: String
+    let label: String?
+    let verification: String?
+    let autoplay: Bool?
 }
 
 struct PlexMatch: Decodable {
@@ -303,6 +319,8 @@ struct ProgramDetailView: View {
     @State private var playback: PlexPlaybackSession?
     @State private var isStarting = false
     @State private var playbackError: String?
+    @State private var philoError: String?
+    @State private var isOpeningPhilo = false
 
     var body: some View {
         ZStack {
@@ -338,6 +356,28 @@ struct ProgramDetailView: View {
                     Text("No playable Plex match is available for this program.")
                         .foregroundStyle(.secondary)
                 }
+                if selection.source == "philo", let links = selection.program.philoLinks {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let episode = links.episode {
+                            Button("Open Episode in Philo") { openPhilo(episode) }
+                        }
+                        if let channel = links.channel {
+                            Button("Open Channel in Philo") { openPhilo(channel) }
+                        }
+                        if let show = links.show {
+                            Button("Open Series in Philo") { openPhilo(show) }
+                        }
+                        if links.episode != nil || links.channel != nil || links.show != nil {
+                            Text("Tests direct Philo app handoff. Philo may still require selecting Watch Live or Play.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(isOpeningPhilo)
+                }
+                if let philoError {
+                    Text(philoError).foregroundStyle(.orange)
+                        .font(.footnote)
+                }
                 if let playbackError {
                     Text(playbackError).foregroundStyle(.red)
                 }
@@ -348,6 +388,28 @@ struct ProgramDetailView: View {
         }
         .fullScreenCover(item: $playback) { session in
             PlexPlaybackScreen(session: session)
+        }
+    }
+
+    private func openPhilo(_ link: PhiloHandoffLink) {
+        guard !isOpeningPhilo else { return }
+        philoError = nil
+        guard let url = URL(string: link.url),
+              url.scheme == "https", url.host == "www.philo.com",
+              url.path.hasPrefix("/player/") else {
+            philoError = "This Philo destination is invalid. No app was launched."
+            return
+        }
+        isOpeningPhilo = true
+        // Universal Links only: do NOT fall back to a browser if tvOS does not
+        // associate this URL with the installed Philo application.
+        UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
+            DispatchQueue.main.async {
+                isOpeningPhilo = false
+                if !opened {
+                    philoError = "Apple TV did not hand this link to Philo. The guide remains open; no browser fallback was attempted."
+                }
+            }
         }
     }
 
