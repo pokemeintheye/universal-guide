@@ -43,8 +43,10 @@ struct PhoneVideoScreen: View {
     @State private var behindLive = 0
 
     private var base: URL {
-        session.stopURL.deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent()
+        var components = URLComponents(url: session.stopURL, resolvingAgainstBaseURL: false)!
+        components.path = ""
+        components.query = nil
+        return components.url!
     }
     var body: some View {
         ZStack(alignment: .top) {
@@ -133,7 +135,9 @@ struct PhoneVideoScreen: View {
             player.replaceCurrentItem(with: nil)
             Task {
                 if let childSession {
-                    await PhoneAPI.delete(try! PhoneAPI.url(base, "/api/tablo/live/\(childSession)"))
+                    if let url = try? PhoneAPI.url(base, "/api/tablo/live/\(childSession)") {
+                        await PhoneAPI.delete(url)
+                    }
                 }
                 await PhoneAPI.delete(session.stopURL)
             }
