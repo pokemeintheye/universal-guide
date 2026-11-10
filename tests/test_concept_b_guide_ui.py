@@ -128,7 +128,8 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
 
     def test_tvmaze_credit_does_not_steal_synopsis_line(self):
-        self.assertIn('tags.appendChild($("guideartcredit"))',HTML)
+        self.assertIn('tags.querySelectorAll(":scope > span").forEach(badge=>badge.remove())',HTML)
+        self.assertNotIn('tags.replaceChildren()',HTML)
         self.assertIn('class="guide-source-tags">',HTML)
         self.assertIn('guide-detail-content .guide-image-credit',HTML)
         self.assertIn('guide-detail-content #guidepreviewdesc{flex-shrink:0}',HTML)
