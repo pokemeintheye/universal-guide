@@ -250,6 +250,10 @@ struct PhoneGuideWebView: UIViewRepresentable {
         flex: 1 1 0 !important; min-height: 0 !important;
         overflow: hidden !important;
       }
+      html.ug-phone .player-backdrop .tablo-dvr.ug-pad-visible {
+        opacity: 1 !important; visibility: visible !important;
+        pointer-events: auto !important;
+      }
       html.ug-phone .guide-app .guide-main .timeline {
         height: 100% !important; max-height: 100% !important;
         overflow: auto !important;
@@ -294,8 +298,11 @@ struct PhoneGuideWebView: UIViewRepresentable {
           {key:value,bubbles:true,cancelable:true}));
       };
       const player = () => shown($('playerbackdrop'));
-      const tablo = () => player() && shown($('tablodvr'));
-      const plex = () => player() && shown($('plexoverlay'));
+      // Native web player overlays auto-hide via visibility:hidden.
+      // Determine the active media by the panel's hidden attribute instead
+      // of visual visibility, or an invisible Tablo overlay is mistaken for Plex.
+      const tablo = () => player() && !$('tablodvr')?.hidden;
+      const plex = () => player() && !$('plexoverlay')?.hidden;
       const trackPanel = () => player() && shown($('plextrackpanel'));
       const playerOverlay = () => tablo() ? $('tablodvr') : $('plexoverlay');
       let overlayVisible = false;
@@ -314,7 +321,10 @@ struct PhoneGuideWebView: UIViewRepresentable {
         if(!video)return false;
         const target=tablo()?'tablodvrpause':'plexpause';
         // The existing player's play/pause handler also refreshes its UI.
-        return click(target);
+        const button=$(target);
+        if(!button || button.disabled)return false;
+        button.click();
+        return true;
       }
       function clearOverlayTimer() {
         if(overlayTimer!==null)clearTimeout(overlayTimer);
@@ -324,6 +334,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
         if(!player() || trackPanel())return;
         overlayVisible=false;
         clearOverlayTimer();
+        playerOverlay()?.classList.remove('ug-pad-visible');
         playerOverlay()?.classList.add('controls-hidden');
         if(playerOverlay()?.contains(active()))active()?.blur();
       }
@@ -333,6 +344,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
         clearOverlayTimer();
         const overlay=playerOverlay();
         overlay?.classList.remove('controls-hidden');
+        overlay?.classList.add('ug-pad-visible');
         // Existing web player has a 4.5 second pointer timer, but a controller
         // overlay must persist until input stops. Reset that timer on each press.
         if(typeof showTabloOverlay==='function' && tablo())showTabloOverlay();
