@@ -469,7 +469,6 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  margin:0!important;z-index:24;display:flex;flex-direction:column;gap:10px;
  padding:8px 5px;border:1px solid #484766;border-radius:23px;background:#141a2bf5}
 .guide-top-actions .guide-icon-button{width:56px;height:56px;min-width:56px;border-radius:16px}
-.guide-top-actions #guidenow{font-size:14px;font-weight:750}
 .guide-popover{position:fixed!important;top:50%;left:85px;right:auto;transform:translateY(-50%);
  z-index:25;max-height:80dvh}
 .guide-main .epg-tracks{isolation:isolate}
@@ -603,7 +602,6 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18l-7 8v6l-4-2v-4L3 5Z"/></svg>
    </button>
    <button id="opensettings" class="guide-icon-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">⚙</button>
-    <button id="guidenow" class="guide-icon-button" type="button" title="Return to live TV" aria-label="Return to what is on now">NOW</button>
   </div>
   <div id="guidefiltermenu" class="guide-popover" role="menu" aria-label="Guide filters" hidden>
    <button type="button" data-guide-filter="all" role="menuitemradio">All Channels</button>
@@ -1111,7 +1109,7 @@ function remoteFocusNext(direction){
   if(direction==="ArrowDown"){remoteGuideFocus();return true}
   if(direction==="ArrowUp"){$("opensearch").focus({preventScroll:true});return true}
  }
- const rail=["opensearch","openfilters","opensettings","guidenow"].map(id=>$(id));
+ const rail=["opensearch","openfilters","opensettings"].map(id=>$(id));
  const railIndex=rail.indexOf(current);
  if(railIndex>=0&&$("guidefiltermenu").hidden&&
     $("settingsdrawer").hidden&&$("searchdrawer").hidden){
@@ -1498,7 +1496,6 @@ function returnGuideToNow(){
  });
 }
 $("now").onclick=returnGuideToNow;
-$("guidenow").onclick=returnGuideToNow;
 $("tablofilter").onclick=()=>{view.source=view.source==="tablo"?"all":"tablo";guide(view.plex)};
 $("philofilter").onclick=()=>{view.source=view.source==="philo"?"all":"philo";guide(view.plex)};
 $("all").onclick=()=>{view={plex:false,favorites:false,source:"all",anchor:null};guide(false)};
