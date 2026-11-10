@@ -973,7 +973,7 @@ def guide_plex_art(rating_key:int):
             # Use the series poster so all episodes share portrait artwork.
             image_path=video.get("grandparentThumb")
             show_key=video.get("grandparentRatingKey")
-            if not image_path and show_key and re.fullmatch(r"\\d+",show_key):
+            if not image_path and show_key and re.fullmatch(r"\d+",show_key):
                 show_root=plex_xml("/library/metadata/"+show_key)
                 show=show_root.find("Directory")
                 if show is not None:
