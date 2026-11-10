@@ -48,7 +48,7 @@ def _get(path,params=None):
 def find_tvmaze_artwork(title,season=None,episode=None,subtitle=None):
     """Return image, attribution, and match level or None for no reliable hit.
 
-    Prefer episode stills; fall back to series poster. Only select a TVmaze
+    Prefer compact artwork for faster cached image downloads; fall back to original. Only select a TVmaze
     show with an exact normalized title match, not a fuzzy suggestion.
     """
     if not isinstance(title,str) or not (2<=len(title.strip())<=120):
@@ -73,12 +73,12 @@ def find_tvmaze_artwork(title,season=None,episode=None,subtitle=None):
                 # Episode-number match is specific enough even if EPG subtitle
                 # is abbreviated or missing.
                 image=detail.get("image")
-                url=safe_image_url(image.get("original") or image.get("medium")) if isinstance(image,dict) else None
+                url=safe_image_url(image.get("medium") or image.get("original")) if isinstance(image,dict) else None
                 if url:
                     return {"image_url":url,"credit_url":show_url,"match":"episode"}
         # Fallback: show image rather than incorrectly suggesting another episode.
         image=show.get("image")
-        url=safe_image_url(image.get("original") or image.get("medium")) if isinstance(image,dict) else None
+        url=safe_image_url(image.get("medium") or image.get("original")) if isinstance(image,dict) else None
         if url:
             return {"image_url":url,"credit_url":show_url,"match":"series"}
     return None
