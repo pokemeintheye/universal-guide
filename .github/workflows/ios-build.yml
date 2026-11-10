@@ -19,6 +19,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate iPhone app icons
+        working-directory: iOS
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ios-icon-venv"
+          "$RUNNER_TEMP/ios-icon-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/ios-icon-venv/bin/python" scripts/generate_app_icons.py
       - name: Generate iPhone Xcode project
         working-directory: iOS
         run: xcodegen generate
