@@ -783,11 +783,31 @@ function verifiedPhiloPlaybackUrl(program){
  return typeof url==="string"&&
   /^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(url)?url:null;
 }
+function guideGenericArtwork(program){
+ const e=program?.entry||{};
+ const text=[e.title,e.subtitle,Array.isArray(e.categories)?e.categories.join(" "):e.category]
+  .filter(Boolean).join(" ").toLowerCase();
+ if(!text||e.no_guide_data)return null;
+ // Use specific terms, not just "tonight" or the network name: a sitcom
+ // on a news station should not accidentally receive a news poster.
+ if(/\b(news|newscast|headlines|breaking news|weather forecast|world report|evening report|morning report|press conference|political coverage|election coverage)\b/i.test(text))
+  return "/artwork/news.svg";
+ if(/\b(sports|sportsc[e]?nter|nfl|nba|wnba|mlb|nhl|nascar|formula 1|f1 racing|ufc|mma|wwe|football|basketball|baseball|softball|hockey|soccer|tennis|golf|boxing|wrestling|motorsport|racing|olympic|pregame|postgame|game highlights|sports highlights)\b/i.test(text))
+  return "/artwork/sports.svg";
+ return null;
+}
 let guideArtworkRequestId=0;
 async function displayGuideArtwork(program,requestId){
  const artworkImage=$("guideartimage");
  const credit=$("guideartcredit");
  const valid=()=>selectedProgram===program&&requestId===guideArtworkRequestId;
+ // Local fallback displays instantly, then gets replaced by genuine artwork
+ // when either Plex or TVmaze supplies a valid image.
+ const genericPoster=guideGenericArtwork(program);
+ if(genericPoster){
+  artworkImage.src=genericPoster;
+  artworkImage.hidden=false;
+ }
  const plexFallback=()=>{
   const key=Number(program.entry.plex?.rating_key);
   if(!Number.isInteger(key)||key<=0)return;
