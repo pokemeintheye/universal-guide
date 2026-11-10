@@ -597,6 +597,22 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  white-space:nowrap;
 }
 .guide-detail-content #guidepreviewdesc{flex-shrink:0}
+/* Missing Philo schedule: a proper remote-focusable EPG tile. */
+.guide-main .epg-tracks .epg-no-schedule{
+ display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+ gap:4px;top:4px;bottom:4px;right:auto;min-height:0;margin:0;
+ padding:8px 12px;font-size:13px;line-height:1.2;text-align:left;
+ white-space:nowrap;color:#f5f4ff;cursor:pointer;overflow:hidden;
+ box-sizing:border-box;
+}
+.guide-main .epg-tracks .epg-no-schedule span{font-size:12px;color:#c4d7ff}
+.guide-main .epg-tracks .epg-no-schedule:focus-visible{
+ outline:3px solid #cf9dff;outline-offset:-3px;z-index:2;background:#4f337f;
+}
+.guide-main .epg-no-schedule-message{
+ position:absolute;left:10px;top:50%;transform:translateY(-50%);
+ color:#c3cee0;font-size:13px;white-space:nowrap;
+}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -1351,10 +1367,11 @@ async function guide(only){
    }
    if(ch.schedule_unavailable && ch.source==="philo" && ch.philo_channel_url){
      const verified=/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(ch.philo_channel_url);
-     blocks=verified?'<div class="epg-no-schedule"><span>Schedule unavailable</span><a href="'+
-        esc(ch.philo_channel_url)+'" rel="noopener">Open channel in Philo'+
-        (ch.philo_verification==="iphone-tested"?"":" · Test Link")+'</a></div>'
-       :'<div class="epg-no-schedule">Schedule unavailable</div>';
+     blocks=verified?'<button type="button" class="epg-program epg-no-schedule" data-philo-url="'+
+        esc(ch.philo_channel_url)+'" style="left:0;width:360px;max-width:360px" aria-label="Open '+esc(ch.label)+' on Philo">'+
+        '<strong>Schedule unavailable</strong><span>▶ Watch on Philo'+
+        (ch.philo_verification==="iphone-tested"?"":" · Test Link")+'</span></button>'
+       :'<div class="epg-no-schedule-message">Schedule unavailable</div>';
    }
    const label=ch.source==="tablo"
      ?'<div class="net">'+esc(ch.network||ch.label)+'</div><div class="num">'+esc(ch.number||ch.label)+'</div>'
@@ -1379,6 +1396,15 @@ async function guide(only){
     };
     el.addEventListener("focus",()=>showGuidePreview(shownPrograms[index]));
   });
+  // Schedule-unavailable Philo tiles are focusable and activated with OK.
+  $("guide").querySelectorAll(".epg-program[data-philo-url]").forEach(button=>{
+   button.onclick=()=>{
+    const url=button.dataset.philoUrl;
+    if(/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(url)){
+     persistGuideState();window.location.href=url;
+    }
+   };
+  });
   if(restorePending){
     restorePending=false;
     $("guide").scrollTop=Math.max(0,Number(returnState?.top)||0);
@@ -1395,7 +1421,7 @@ let guideNavigationTime=null;
 // search. Left/Right stays on one channel; Up/Down moves exactly one channel
 // with scheduled programs, choosing the slot overlapping the viewer's time.
 function guideProgramButtons(row){
- return Array.from(row.querySelectorAll(".epg-program[data-program]"))
+ return Array.from(row.querySelectorAll(".epg-program[data-program],.epg-program[data-philo-url]"))
   .filter(button=>!button.disabled)
   .sort((a,b)=>a.offsetLeft-b.offsetLeft);
 }
@@ -1416,7 +1442,7 @@ function guideChooseByTime(programs,time){
 }
 $("guide").addEventListener("keydown",event=>{
  if(!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key))return;
- const current=event.target.closest(".epg-program[data-program]");
+ const current=event.target.closest(".epg-program[data-program],.epg-program[data-philo-url]");
  if(!current)return;
  // Do not let the global TV remote handler choose a diagonally adjacent
  // element when the requested row/column has no valid destination.
