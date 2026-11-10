@@ -188,6 +188,88 @@ struct PhoneGuideWebView: UIViewRepresentable {
     private static let controllerScript = #"""
     (() => {
       const $ = id => document.getElementById(id);
+      // The TV browser layout has a 190–275px detail strip, which consumes
+      // most of the available landscape height on an iPhone. Compact only in
+      // this native iPhone shell; never change the web or Apple TV layout.
+      document.documentElement.classList.add('ug-phone');
+      const compactStyle = document.createElement('style');
+      compactStyle.textContent = `
+      html.ug-phone .guide-app .guide-detail {
+        height: 84px !important; min-height: 0 !important;
+        max-height: 84px !important; flex: 0 0 84px !important;
+        overflow: hidden !important; padding: 7px 12px !important;
+        gap: 9px !important; border-radius: 12px !important;
+      }
+      html.ug-phone .guide-app .guide-detail .guide-art {
+        display: none !important;
+      }
+      html.ug-phone .guide-app .guide-detail .guide-detail-content {
+        padding: 0 90px 0 0 !important; overflow: hidden !important;
+      }
+      html.ug-phone .guide-app .guide-detail .guide-detail-content h2 {
+        font-size: 17px !important; line-height: 1.15 !important;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      html.ug-phone .guide-app .guide-detail :is(
+        #guidepreviewdesc,#guidepreviewsources,.guide-detail-actions) {
+        display: none !important;
+      }
+      html.ug-phone .guide-app .guide-detail #guidepreviewepisode {
+        font-size: 11px !important; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
+      }
+      html.ug-phone .guide-app .guide-detail.ug-expanded {
+        height: min(218px, 40dvh) !important;
+        max-height: min(218px, 40dvh) !important;
+        flex: 0 0 min(218px, 40dvh) !important;
+        padding: 10px 12px !important;
+        overflow: auto !important;
+      }
+      html.ug-phone .guide-app .guide-detail.ug-expanded .guide-art {
+        display: grid !important; height: 100% !important;
+        max-width: 110px !important; flex: 0 0 100px !important;
+      }
+      html.ug-phone .guide-app .guide-detail.ug-expanded .guide-detail-content {
+        padding: 0 65px 0 0 !important;
+      }
+      html.ug-phone .guide-app .guide-detail.ug-expanded :is(
+        #guidepreviewdesc,#guidepreviewsources,.guide-detail-actions) {
+        display: flex !important;
+      }
+      html.ug-phone #ug-phone-preview-toggle {
+        position: absolute; right: 8px; top: 8px;
+        z-index: 4; min-width: 69px; min-height: 35px;
+        border: 1px solid #70628b; border-radius: 9px;
+        padding: 5px; background: #292943; color: #f7f4ff;
+        font: 600 12px system-ui;
+      }
+      html.ug-phone .guide-app .guide-detail {
+        position: relative !important;
+      }
+      html.ug-phone .guide-app .guide-main {
+        flex: 1 1 0 !important; min-height: 0 !important;
+        overflow: hidden !important;
+      }
+      html.ug-phone .guide-app .guide-main .timeline {
+        height: 100% !important; max-height: 100% !important;
+        overflow: auto !important;
+      }
+      `;
+      document.head.appendChild(compactStyle);
+      const panel = $('guidedetail');
+      const detailToggle = document.createElement('button');
+      detailToggle.id = 'ug-phone-preview-toggle';
+      detailToggle.type = 'button';
+      detailToggle.textContent = 'X · Details';
+      detailToggle.setAttribute('aria-label','Expand program details');
+      detailToggle.addEventListener('click', () => {
+        const expanded = panel?.classList.toggle('ug-expanded');
+        detailToggle.textContent = expanded ? 'X · Minimize' : 'X · Details';
+        detailToggle.setAttribute('aria-label',expanded?'Minimize program details':'Expand program details');
+        // Return focus to the selected guide program after collapsing.
+        if(!expanded && typeof remoteGuideFocus === 'function') remoteGuideFocus();
+      });
+      panel?.appendChild(detailToggle);
       const active = () => document.activeElement;
       const shown = node => !!node && !node.hidden &&
         !node.closest('[hidden]') && node.getClientRects().length > 0;
@@ -292,7 +374,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
           return;
         }
         if(command==='options') {
-          focus($('openfilters'));click('openfilters');return;
+          click('ug-phone-preview-toggle');return;
         }
         if(command==='select') {
           const el=active();
