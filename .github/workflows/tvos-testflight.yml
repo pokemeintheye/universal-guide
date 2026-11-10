@@ -75,11 +75,26 @@ jobs:
           config.write_text(updated)
           print("XcodeGen version:", number)
           PY
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
-          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)"
       - name: Generate tvOS Xcode project
         working-directory: tvOS
         run: xcodegen generate
+      - name: Verify generated app version
+        working-directory: tvOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # XcodeGen's target info:path generates/replaces Info.plist.
+          # Update the actual generated file AFTER running xcodegen.
+          echo "Info.plist version produced by XcodeGen:"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
+          SOURCE_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
+          echo "Final generated Info.plist CFBundleVersion: $SOURCE_BUILD"
+          test "$SOURCE_BUILD" = "$BUILD_NUMBER"
+          # Also show the build system's actual resolved version before signing.
+          xcodebuild -project UniversalGuideTV.xcodeproj \
+            -scheme UniversalGuideTV -configuration Release -sdk appletvos \
+            -showBuildSettings | grep -E '^[[:space:]]*(CURRENT_PROJECT_VERSION|GENERATE_INFOPLIST_FILE|INFOPLIST_FILE|INFOPLIST_KEY_CFBundleVersion) =' || true
 
       - name: Import distribution certificate and tvOS profile
         shell: bash
