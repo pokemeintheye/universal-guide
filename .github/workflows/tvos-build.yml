@@ -1,0 +1,36 @@
+name: Build Apple TV preview
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tvOS/**'
+      - '.github/workflows/tvos-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: tvOS
+        run: xcodegen generate
+      - name: Build unsigned Apple TV Simulator app
+        working-directory: tvOS
+        run: |
+          xcodebuild -project UniversalGuideTV.xcodeproj \
+            -scheme UniversalGuideTV \
+            -configuration Debug \
+            -sdk appletvsimulator \
+            -destination 'generic/platform=tvOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalGuideTV-simulator
+          path: tvOS/build/Build/Products/Debug-appletvsimulator/UniversalGuideTV.app
+          if-no-files-found: error
