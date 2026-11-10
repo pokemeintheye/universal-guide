@@ -229,10 +229,10 @@ struct PhoneGuideWebView: UIViewRepresentable {
       function revealPlayer() {
         if(tablo()) {
           $('tablodvr').classList.remove('controls-hidden');
-          focus($('tablodvrpause'));
+          if(!controls().includes(active()))focus($('tablodvrpause'));
         } else if(plex()) {
           $('plexoverlay').classList.remove('controls-hidden');
-          focus($('plexpause'));
+          if(!controls().includes(active()))focus($('plexpause'));
         }
       }
       window.universalGuideGamepad = function(command) {
