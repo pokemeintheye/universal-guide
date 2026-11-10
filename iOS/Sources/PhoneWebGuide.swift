@@ -315,6 +315,15 @@ struct PhoneGuideWebView: UIViewRepresentable {
           .filter(shown);
       };
       const media = () => $('plexvideo');
+      function transportClick(id) {
+        // Transport buttons may be visibility:hidden while the overlay is
+        // collapsed. Their original web click handlers still seek the
+        // recording; direct click bypasses only the UI visibility check.
+        const target=$(id);
+        if(!target || target.disabled)return false;
+        target.click();
+        return true;
+      }
       function playPause() {
         if(!player())return false;
         const video=media();
@@ -441,7 +450,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
           }
           if(command==='left'||command==='right'){
             if(!overlayVisible){
-              click(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
+              transportClick(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
                 (command==='left'?'plexback':'plexforward'));
             }else if(active()?.matches('input[type="range"]')){
               const input=active(),direction=command==='right'?1:-1;
