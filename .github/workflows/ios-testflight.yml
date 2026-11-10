@@ -31,6 +31,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate required iPhone app icons
+        working-directory: iOS
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ios-icon-venv"
+          "$RUNNER_TEMP/ios-icon-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/ios-icon-venv/bin/python" scripts/generate_app_icons.py
       - name: Generate version and iOS project
         working-directory: iOS
         shell: bash
@@ -95,6 +101,14 @@ jobs:
           ACTUAL=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
           echo "Archived CFBundleVersion: $ACTUAL"
           test "$ACTUAL" = "$BUILD_NUMBER"
+          # Fail locally before the upload if required icon registration is missing.
+          ICON=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$INFO" || true)
+          if [ "$ICON" != "AppIcon" ]; then
+            echo "::error::Expected CFBundleIconName=AppIcon; found '$ICON'"
+            exit 1
+          fi
+          test -s "$RUNNER_TEMP/UniversalGuidePhone.xcarchive/Products/Applications/UniversalGuidePhone.app/Assets.car"
+          echo "Validated compiled AppIcon asset catalog and CFBundleIconName"
       - name: Export signed IPA
         shell: bash
         run: |
