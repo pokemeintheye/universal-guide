@@ -480,6 +480,12 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
 .settings-group{padding:14px;border:1px solid #424761;border-radius:18px;background:#1e2539}
 .settings-group>button{display:block;width:100%;text-align:left;min-height:58px;padding:14px}
 .settings-group h3{margin:2px 0 12px;font-size:20px}
+#channelsettingsback{width:100%;min-height:58px;text-align:left;font-size:18px}
+.channel-settings-item{display:grid;grid-template-columns:1fr;gap:10px;padding:14px;
+ margin:8px 0;border:1px solid #414765;border-radius:13px;background:#252a3f}
+.channel-settings-item label{display:flex;align-items:center;gap:12px;min-height:45px;
+ font-size:17px}
+.channel-settings-item input{height:24px;width:24px;accent-color:#ab7aea}
 .settings-group .bar{margin:6px 0}
 
 .settings-sections h3{margin:12px 0 0;font-size:20px}
@@ -568,6 +574,10 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
    <section class="settings-group" aria-label="Channel preferences">
    <h3>Channel preferences</h3><button type="button" id="settingsmanage">Manage favorite and hidden channels</button>
    </section>
+  </div>
+  <div id="channelsettings" hidden>
+   <button type="button" id="channelsettingsback">← Back to Settings</button>
+   <div id="channelsettingslist" aria-live="polite"></div>
   </div>
  </section>
  <section id="searchdrawer" class="guide-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="searchheading">
@@ -758,6 +768,8 @@ function openGuidePlexChoices(){
  $("playbegin").focus();
 }
 function closeGuideDrawer(){
+ $("channelsettings").hidden=true;
+ $("settingsdrawer").querySelector(".settings-sections").hidden=false;
  if(artworkPolling){clearInterval(artworkPolling);artworkPolling=null}
  $("searchdrawer").hidden=true;$("settingsdrawer").hidden=true;
  $("guideshade").hidden=true;
@@ -884,7 +896,7 @@ document.addEventListener("keydown",event=>{
 // Keyboard simulation of a TV remote (also works with many Bluetooth remotes).
 // Arrow keys navigate; Enter/Space selects focused controls; Backspace is Back.
 function remoteTypingTarget(target){
- return Boolean(target?.closest?.('input:not([type="range"]),textarea,select,[contenteditable="true"]'));
+ return Boolean(target?.closest?.('input:not([type="range"]):not([type="checkbox"]),textarea,select,[contenteditable="true"]'));
 }
 function remoteVisible(element){
  if(!element||element.disabled||element.closest("[hidden],[inert]"))return false;
@@ -900,6 +912,9 @@ function remoteGuideFocus(){
  else $("openfilters").focus();
 }
 function remoteBack(){
+ if(!$("settingsdrawer").hidden&&!$("channelsettings").hidden){
+  $("channelsettingsback").click();return;
+ }
  if(!$("playerbackdrop").hidden){
   if(!$("plextrackpanel").hidden){$("plextrackcancel").click();return}
   if(!$("tabloadvanced").hidden){
@@ -1324,32 +1339,51 @@ $("inplex").onclick=()=>{view.favorites=false;guide(true)};
 $("favorites").onclick=()=>{view.favorites=!view.favorites;guide(view.plex)};
 $("manage").onclick=()=>{$("guidecontrols").hidden=true;manageChannels()};
 async function manageChannels(){
+ openGuideDrawer("settings");
+ $("settingsdrawer").querySelector(".settings-sections").hidden=true;
+ $("channelsettings").hidden=false;
+ $("channelsettingsback").focus();
+ const target=$("channelsettingslist");
+ target.textContent="Loading channel preferences…";
  try{
- const list=await req("/api/channels");
- const roots=["tablo","philo","xmltv"];
- let output='<h2>Channel manager</h2><p class="note">Favorites and hidden channels are saved to Unraid. All available channels remain selectable here.</p>';
- for(const root of roots){
- const entries=list.filter(x=>x.source===root);
- if(!entries.length)continue;
- output+='<h3>'+esc(root.toUpperCase())+' ('+entries.length+')</h3>';
- for(const x of entries){
- const key=encodeURIComponent(x.source)+"/"+encodeURIComponent(x.channel_id);
- output+='<div class="bar result" data-key="'+esc(key)+'"><b style="min-width:175px">'+esc(x.channel_label)+'</b><label><input type="checkbox" class="fav" '+(x.favorite?"checked":"")+'> Favorite</label><label><input type="checkbox" class="hidden" '+(x.hidden?"checked":"")+'> Hide</label></div>';
- }
- }
- $("guide").innerHTML='<div style="padding:14px">'+output+'</div>';
- $("guide").querySelectorAll("[data-key]").forEach(row=>{
- row.querySelectorAll("input").forEach(input=>input.onchange=async()=>{
- const [source,id]=row.dataset.key.split("/");
- const favorite=row.querySelector(".fav").checked;
- const hidden=row.querySelector(".hidden").checked;
- try{
- await req("/api/channels/"+source+"/"+id+"?favorite="+favorite+"&hidden="+hidden,{method:"PUT"});
- }catch(e){alert("Could not save channel preference: "+e.message)}
- });
- });
- }catch(e){$("guide").textContent=e.message}
+  const entries=await req("/api/channels");
+  const roots=["tablo","philo","xmltv"];
+  let output='<h3>Channel preferences</h3><p class="note">Use OK to toggle a favorite or hide a channel. Changes save automatically.</p>';
+  for(const root of roots){
+   const list=entries.filter(x=>x.source===root);
+   if(!list.length)continue;
+   output+='<h3>'+esc(root.toUpperCase())+' ('+list.length+')</h3>';
+   for(const item of list){
+    const key=encodeURIComponent(item.source)+"/"+encodeURIComponent(item.channel_id);
+    output+='<div class="channel-settings-item" data-key="'+esc(key)+'">'+
+      '<strong>'+esc(item.channel_label)+'</strong>'+
+      '<label><input type="checkbox" class="fav" '+(item.favorite?"checked":"")+'> Favorite</label>'+
+      '<label><input type="checkbox" class="hidden" '+(item.hidden?"checked":"")+'> Hide</label></div>';
+   }
+  }
+  target.innerHTML=output;
+  target.querySelectorAll("[data-key]").forEach(row=>{
+   row.querySelectorAll("input").forEach(input=>input.onchange=async()=>{
+    const [source,id]=row.dataset.key.split("/");
+    const favorite=row.querySelector(".fav").checked;
+    const hidden=row.querySelector(".hidden").checked;
+    try{
+     await req("/api/channels/"+source+"/"+id+"?favorite="+favorite+"&hidden="+hidden,{method:"PUT"});
+    }catch(error){
+     row.title="Unable to save: "+error.message;
+     input.checked=!input.checked;
+    }
+   });
+  });
+ }catch(error){target.textContent="Channel preferences unavailable: "+error.message}
 }
+$("channelsettingsback").onclick=()=>{
+ $("channelsettings").hidden=true;
+ $("settingsdrawer").querySelector(".settings-sections").hidden=false;
+ $("settingsmanage").focus({preventScroll:true});
+ guide(view.plex);
+};
+
 status();guide(view.plex);
 </script>
 <div class="player-backdrop" id="playerbackdrop" hidden role="dialog" aria-modal="true" aria-label="Plex video player">
