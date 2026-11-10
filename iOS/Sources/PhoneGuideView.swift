@@ -26,9 +26,21 @@ struct PhoneGuideView: View {
     @State private var detailChoice = 0
     // Scroll only when crossing a viewport-sized batch, not on every D-pad tap.
     @State private var lastScrolledChannel = 0
+    @State private var showSidebar = false
+    @State private var searchText = ""
+    @State private var sourceFilter = "All"
+    @State private var plexOnly = false
 
+    private var filteredChannels: [PhoneChannel] {
+        store.channels.filter { item in
+            (sourceFilter == "All" || item.source.caseInsensitiveCompare(sourceFilter) == .orderedSame)
+            && (!plexOnly || item.programs.contains { $0.plex?.ratingKey != nil })
+            && (searchText.isEmpty || item.station.localizedCaseInsensitiveContains(searchText)
+                || item.programs.contains { $0.title.localizedCaseInsensitiveContains(searchText) })
+        }
+    }
     private var channel: PhoneChannel? {
-        store.channels.indices.contains(channelIndex) ? store.channels[channelIndex] : nil
+        filteredChannels.indices.contains(channelIndex) ? filteredChannels[channelIndex] : nil
     }
     private var program: PhoneProgram? {
         guard let channel, channel.programs.indices.contains(programIndex) else { return nil }
@@ -65,7 +77,7 @@ struct PhoneGuideView: View {
                     HStack(spacing: 15) {
                         Text(controller.connected ? "Backbone connected" : "Backbone not detected")
                         Text("Input: \(controller.lastInput)")
-                        Text("Channel: \(channelIndex + 1)/\(store.channels.count)")
+                        Text("Channel: \(channelIndex + 1)/\(filteredChannels.count)")
                         Text("Program: \(programIndex + 1)")
                         Spacer()
                         Text("A Select  ·  B Back  ·  X Options  ·  Y Now")
@@ -79,6 +91,16 @@ struct PhoneGuideView: View {
             .background(navy.ignoresSafeArea())
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showSidebar) {
+            PhoneSidebar(searchText: $searchText, sourceFilter: $sourceFilter,
+                         plexOnly: $plexOnly, onSettings: {
+                showSidebar = false
+                showingSettings = true
+            }, onClose: { showSidebar = false })
+        }
+        .onChange(of: sourceFilter) { _ in channelIndex = 0; programIndex = 0 }
+        .onChange(of: plexOnly) { _ in channelIndex = 0; programIndex = 0 }
+        .onChange(of: searchText) { _ in channelIndex = 0; programIndex = 0 }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await store.refresh(server: serverURL) } }) {
             NavigationStack {
                 Form {
@@ -126,6 +148,7 @@ struct PhoneGuideView: View {
             Spacer()
             Text("LIVE  ·  PLEX  ·  PHILO  ·  TABLO")
                 .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+            Button { showSidebar = true } label: { Image(systemName: "sidebar.left") }
             Button { diagnostics.toggle() } label: { Image(systemName: "gamecontroller") }
             Button { Task { await store.refresh(server: serverURL) } } label: {
                 Image(systemName: "arrow.clockwise")
@@ -150,7 +173,7 @@ struct PhoneGuideView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: stationWidth, height: 37, alignment: .leading)
                             .padding(.leading, 8)
-                        ForEach(Array(store.channels.enumerated()), id: \.element.id) { i, channel in
+                        ForEach(Array(filteredChannels.enumerated()), id: \.element.id) { i, channel in
                             Button {
                                 channelIndex = i
                                 programIndex = 0
@@ -176,10 +199,11 @@ struct PhoneGuideView: View {
                         }
                     }
                     .frame(width: stationWidth)
+                    ScrollViewReader { horizontalProxy in
                     ScrollView(.horizontal) {
                         VStack(spacing: 0) {
                             timeHeader(start: start)
-                            ForEach(Array(store.channels.enumerated()), id: \.element.id) { c, channel in
+                            ForEach(Array(filteredChannels.enumerated()), id: \.element.id) { c, channel in
                                 ZStack(alignment: .leading) {
                                     Canvas(opaque: true) { context, size in
                                         context.fill(Path(CGRect(origin: .zero, size: size)),
@@ -224,6 +248,7 @@ struct PhoneGuideView: View {
                                             .frame(width: max(1, interval.width - 4), height: guideHeight - 6)
                                             .offset(x: interval.x + 2)
                                             .accessibilityIdentifier("program-\(c)-\(p)")
+                                            .id("program-\(c)-\(p)")
                                         }
                                     }
                                     if start <= Date() && Date() < start.addingTimeInterval(duration) {
@@ -238,6 +263,13 @@ struct PhoneGuideView: View {
                         .frame(width: timelineWidth, alignment: .leading)
                     }
                     .scrollIndicators(.hidden)
+                    .onChange(of: programIndex) { index in
+                        horizontalProxy.scrollTo("program-\(channelIndex)-\(index)", anchor: .center)
+                    }
+                    .onChange(of: channelIndex) { index in
+                        horizontalProxy.scrollTo("program-\(index)-\(programIndex)", anchor: .center)
+                    }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -246,10 +278,10 @@ struct PhoneGuideView: View {
                 // Re-centring every row adds an animation queue and makes rapid
                 // D-pad input feel ~1 second behind. Only scroll when the focus
                 // has travelled several rows; never animate controller scrolling.
-                if abs(index - lastScrolledChannel) >= 4 {
-                    lastScrolledChannel = index
-                    verticalProxy.scrollTo("ch-\(index)", anchor: .center)
-                }
+                // Keep the selected row visible after every move. No animation
+                // means the view cannot lag behind a queued sequence of inputs.
+                lastScrolledChannel = index
+                verticalProxy.scrollTo("ch-\(index)", anchor: .center)
             }
         }
     }
@@ -292,7 +324,7 @@ struct PhoneGuideView: View {
             }
             return
         }
-        let count = store.channels.count
+        let count = filteredChannels.count
         guard count > 0 else { return }
         switch action {
         case .up, .previousPage:
@@ -310,30 +342,14 @@ struct PhoneGuideView: View {
     }
 
     private func moveChannel(to target: Int) {
-        guard target != channelIndex, store.channels.indices.contains(target) else { return }
-        // Program indices aren't aligned across channels. Preserve the selected
-        // point on the timeline instead of selecting an arbitrary program number.
-        let time = program?.begins.map { begins -> Date in
-            if let ends = program?.ends {
-                return begins.addingTimeInterval(ends.timeIntervalSince(begins) / 2)
-            }
-            return begins
-        } ?? Date()
+        guard target != channelIndex, filteredChannels.indices.contains(target) else { return }
+        // Vertical navigation means “same live clock position” rather than
+        // “same episode ordinal.” A future episode in another row is not selected.
         channelIndex = target
-        let programs = store.channels[target].programs
-        if let sameTime = programs.firstIndex(where: { item in
-            guard let a = item.begins, let b = item.ends else { return false }
-            return a <= time && time < b
-        }) {
-            programIndex = sameTime
-        } else if let nearest = programs.enumerated().min(by: {
-            abs(($0.element.begins ?? .distantPast).timeIntervalSince(time)) <
-            abs(($1.element.begins ?? .distantPast).timeIntervalSince(time))
-        }) {
-            programIndex = nearest.offset
-        } else {
-            programIndex = 0
-        }
+        let programs = filteredChannels[target].programs
+        programIndex = programs.firstIndex(where: { $0.onNow })
+            ?? programs.firstIndex(where: { ($0.ends ?? .distantPast) > Date() })
+            ?? 0
     }
 
     private var detailSheet: some View {
