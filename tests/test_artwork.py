@@ -45,6 +45,38 @@ class ArtworkTests(unittest.TestCase):
         ]):
             self.assertIsNone(artwork.find_tvmaze_artwork("Harbor Heights"))
 
+    def test_tmdb_movie_poster_exact_title_and_year(self):
+        movie={"id":77,"title":"Cast Away","original_title":"Cast Away",
+               "release_date":"2000-12-22","poster_path":"/poster_77.jpg"}
+        response=unittest.mock.Mock()
+        response.json.return_value={"results":[movie]}
+        with patch.object(artwork.requests,"get",return_value=response) as get:
+            result=artwork.find_tmdb_movie_artwork("Cast Away [NEW]",2000,"test-key")
+        self.assertEqual(result["source"],"TMDB")
+        self.assertEqual(result["image_url"],
+                         "https://image.tmdb.org/t/p/w342/poster_77.jpg")
+        self.assertEqual(get.call_args.kwargs["params"]["year"],2000)
+        self.assertEqual(get.call_args.kwargs["params"]["api_key"],"test-key")
+        self.assertNotIn("test-key",str(result))
+
+    def test_tmdb_rejects_mismatch_ambiguous_releases_and_unsafe_images(self):
+        movies=[
+            {"id":10,"title":"Cast Away","release_date":"1999-01-01",
+             "poster_path":"/wrong.jpg"},
+            {"id":11,"title":"Cast Away","release_date":"2000-01-01",
+             "poster_path":"/ok.jpg"},
+            {"id":12,"title":"Another Film","release_date":"2000-01-01",
+             "poster_path":"/other.jpg"}]
+        response=unittest.mock.Mock()
+        response.json.return_value={"results":movies}
+        with patch.object(artwork.requests,"get",return_value=response):
+            self.assertEqual(artwork.find_tmdb_movie_artwork("Cast Away",2000,"key")["credit_url"],
+                             "https://www.themoviedb.org/movie/11")
+            self.assertIsNone(artwork.find_tmdb_movie_artwork("Cast Away",None,"key"))
+        self.assertIsNone(artwork.find_tmdb_movie_artwork("Cast Away",2000,None))
+        self.assertFalse(artwork.safe_tmdb_image_url("https://evil.com/poster.jpg"))
+        self.assertTrue(artwork.safe_tmdb_image_url("https://image.tmdb.org/t/p/w342/a.jpg"))
+
     def test_reject_untrusted_image_hosts(self):
         self.assertIsNone(artwork.safe_image_url("https://example.com/uploads/images/original/3/4.jpg"))
         self.assertIsNone(artwork.safe_image_url("http://static.tvmaze.com/uploads/images/original/3/4.jpg"))
