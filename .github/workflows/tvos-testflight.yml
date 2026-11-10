@@ -43,6 +43,23 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/brand-venv"
           "$RUNNER_TEMP/brand-venv/bin/pip" install pillow
           "$RUNNER_TEMP/brand-venv/bin/python" scripts/generate_brand_assets.py
+      - name: Set and verify unique TestFlight build version
+        working-directory: tvOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use an increasing numeric version for each newly dispatched run.
+          # Reserve two digits for retry attempts (1-99).
+          if [ "$GITHUB_RUN_ATTEMPT" -gt 99 ]; then
+            echo "::error::More than 99 attempts for one publishing run"
+            exit 1
+          fi
+          BUILD_NUMBER="$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          # Make the actual app Info.plist authoritative, rather than
+          # relying on expansion of XcodeGen's build setting.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Info.plist
       - name: Generate tvOS Xcode project
         working-directory: tvOS
         run: xcodegen generate
@@ -93,10 +110,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # App Store Connect requires a strictly increasing CFBundleVersion.
-          # GitHub's workflow run number increments on every new publish;
-          # the attempt suffix also handles re-runs of the same workflow.
-          BUILD_NUMBER="$((GITHUB_RUN_NUMBER + 1)).${GITHUB_RUN_ATTEMPT}"
           echo "Archiving Universal Guide build $BUILD_NUMBER"
           xcodebuild -project UniversalGuideTV.xcodeproj \
             -scheme UniversalGuideTV \
