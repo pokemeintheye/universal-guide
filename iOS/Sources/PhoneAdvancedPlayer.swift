@@ -45,6 +45,7 @@ struct PhoneVideoScreen: View {
     @State private var pausedOnTablo = false
     @State private var childSession: String?
     @State private var behindLive = 0
+    @State private var scrubBehind = 0.0
 
     private var base: URL {
         var components = URLComponents(url: session.stopURL, resolvingAgainstBaseURL: false)!
@@ -77,6 +78,22 @@ struct PhoneVideoScreen: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .padding(.horizontal, 8)
+                if session.kind == "tablo" {
+                    HStack(spacing: 7) {
+                        Text("LIVE").foregroundStyle(.red).font(.caption2.bold())
+                        Slider(value: $scrubBehind, in: 0...1200, step: 15) { isEditing in
+                            if !isEditing && !working {
+                                shiftTablo(behindLive - Int(scrubBehind))
+                            }
+                        }
+                        .tint(.cyan)
+                        .disabled(working)
+                        Text(scrubBehind == 0 ? "LIVE" : "-\(timeText(scrubBehind))")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                }
                 if let error {
                     Text(error).foregroundStyle(.orange).font(.footnote)
                         .padding(8).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 7))
@@ -262,6 +279,7 @@ struct PhoneVideoScreen: View {
             }
             childSession = result.session_id
             behindLive = max(behindLive, 18)
+            scrubBehind = Double(behindLive)
             startPlayer(try PhoneAPI.url(base, result.playlist_url))
             pausedOnTablo = false
             message = "Resumed near saved pause point"
@@ -286,6 +304,7 @@ struct PhoneVideoScreen: View {
                 }
                 childSession = result.session_id
                 behindLive = requested
+                scrubBehind = Double(behindLive)
                 startPlayer(try PhoneAPI.url(base, result.playlist_url))
                 pausedOnTablo = false
                 message = "Approximately \(requested)s behind live (beta)"
@@ -300,6 +319,7 @@ struct PhoneVideoScreen: View {
     private func goLive() async {
         await closeChild()
         behindLive = 0
+        scrubBehind = 0
         pausedOnTablo = false
         startPlayer(session.playlist)
         message = "Playing live"
