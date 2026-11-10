@@ -77,6 +77,14 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('guideNavigationTime=el.offsetLeft+el.offsetWidth/2',HTML)
         self.assertNotIn('const score=primary+secondary*2;',HTML)
 
+    def test_missing_philo_schedule_is_a_remote_navigable_tile(self):
+        self.assertIn('class="epg-program epg-no-schedule"',HTML)
+        self.assertIn('data-philo-url=',HTML)
+        self.assertIn('".epg-program[data-program],.epg-program[data-philo-url]"',HTML)
+        self.assertIn('button.onclick=()=>{',HTML)
+        self.assertIn('window.location.href=url',HTML)
+        self.assertIn('.guide-main .epg-tracks .epg-no-schedule:focus-visible',HTML)
+
     def test_remote_can_reach_time_navigation(self):
         self.assertIn('const timeControls=["earlier","now","later"]',HTML)
         self.assertIn('timeControls[next].focus({preventScroll:true})',HTML)
