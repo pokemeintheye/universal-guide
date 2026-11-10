@@ -586,6 +586,17 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  }
  .guide-detail-content #guidepreviewdesc{-webkit-line-clamp:2;line-clamp:2}
 }
+/* TVmaze credit uses the same line as provider badges, never its own row. */
+.guide-detail-content .guide-source-tags{
+ flex-wrap:nowrap;align-items:center;overflow:hidden;white-space:nowrap;
+ max-height:32px;min-height:24px;
+}
+.guide-detail-content .guide-image-credit{
+ display:inline-block;flex:0 0 auto;align-self:center;
+ margin:0 0 0 auto;padding:2px 3px;font-size:11px;line-height:1.2;
+ white-space:nowrap;
+}
+.guide-detail-content #guidepreviewdesc{flex-shrink:0}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -623,8 +634,9 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
   <div class="guide-detail-content">
    <h2 id="guidepreviewtitle">Select a program</h2>
    <div id="guidepreviewepisode" class="guide-preview-episode"></div>
-   <div id="guidepreviewsources" class="guide-source-tags"></div>
-   <a id="guideartcredit" hidden href="https://www.tvmaze.com/" target="_blank" rel="noopener noreferrer" class="guide-image-credit">Artwork: TVmaze</a>
+   <div id="guidepreviewsources" class="guide-source-tags">
+    <a id="guideartcredit" hidden href="https://www.tvmaze.com/" target="_blank" rel="noopener noreferrer" class="guide-image-credit">Artwork: TVmaze</a>
+   </div>
    <p id="guidepreviewdesc">Choose a show or movie in the guide to see playback options.</p>
    <div class="guide-detail-actions">
     <button type="button" id="guidewatchplex" class="guide-action-primary" hidden>▶ Watch on Plex</button>
@@ -848,6 +860,8 @@ function showGuidePreview(program){
   const tag=document.createElement("span");
   tag.textContent=name;tag.className=css;tags.appendChild(tag);
  }
+ // Keep attribution in the existing badges row, preserving summary space.
+ tags.appendChild($("guideartcredit"));
  const artwork=$("guideart");
  artwork.querySelector("span").textContent=(e.title||"TV").slice(0,2).toUpperCase();
  const artworkImage=$("guideartimage");
