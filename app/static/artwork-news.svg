@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700" viewBox="0 0 500 700" role="img" aria-label="News artwork">
+<defs><linearGradient id="bg" x2=".8" y2="1"><stop stop-color="#203766"/><stop offset=".55" stop-color="#102342"/><stop offset="1" stop-color="#0b1229"/></linearGradient><radialGradient id="light"><stop stop-color="#5bafff" stop-opacity=".52"/><stop offset="1" stop-color="#5bafff" stop-opacity="0"/></radialGradient></defs>
+<rect width="500" height="700" fill="url(#bg)"/><circle cx="250" cy="322" r="275" fill="url(#light)"/>
+<g stroke="#75b9fa" stroke-opacity=".5" fill="none"><circle cx="250" cy="332" r="165" stroke-width="4"/><ellipse cx="250" cy="332" rx="90" ry="165" stroke-width="3"/><ellipse cx="250" cy="332" rx="34" ry="165" stroke-width="2"/><path d="M87 332h326M105 263h290M105 401h290" stroke-width="3"/></g>
+<g fill="#8bc8fc" opacity=".27"><path d="m123 232 60-35 52 17-10 25-30 10-10 34-43-10zM250 270l60-23 51 26-10 45-46 13-12 46-50-28zM177 358l40 20 12 70-40 52-26-69zM318 412l46 4-12 49-38 28-22-30z"/></g>
+<path d="M-10 521 500 447v27L0 548z" fill="#f65a72"/><path d="M0 554 500 482v12L0 566z" fill="#a8d8ff" opacity=".85"/>
+<text x="250" y="109" font-family="Arial,sans-serif" font-size="22" font-weight="bold" letter-spacing="7" text-anchor="middle" fill="#b1d7ff">LATEST HEADLINES</text>
+<rect x="25" y="563" width="450" height="104" rx="15" fill="#e9f5ff"/><text x="250" y="639" font-family="Arial,sans-serif" font-size="79" font-weight="900" text-anchor="middle" letter-spacing="5" fill="#14294d">NEWS</text>
+</svg>
