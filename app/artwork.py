@@ -145,6 +145,48 @@ def find_tmdb_movie_artwork(title,year=None,api_key=None):
         "match":"movie","source":"TMDB"}
 
 
+TMDB_TV_API="https://api.themoviedb.org/3/search/tv"
+
+
+def find_tmdb_tv_artwork(title,api_key=None):
+    """Find a series poster only when TMDB has one unambiguous exact-title hit.
+
+    Called after TVmaze has no valid artwork. Never accepts fuzzy candidates,
+    and avoids randomly choosing between series sharing the same title.
+    """
+    title=clean_artwork_title(title)
+    if not api_key or not (2<=len(title)<=120):
+        return None
+    response=requests.get(TMDB_TV_API,params={
+        "query":title,"language":"en-US","include_adult":"false","page":1,
+        "api_key":api_key
+    },headers={"Accept":"application/json"},timeout=(3,7),
+        allow_redirects=False)
+    try:
+        response.raise_for_status()
+        data=response.json()
+    finally:
+        response.close()
+    candidates=[]
+    for show in (data.get("results",[]) if isinstance(data,dict) else [])[:20]:
+        if not isinstance(show,dict) or show.get("adult"):continue
+        if not any(normalize_title(name)==normalize_title(title)
+                   for name in (show.get("name"),show.get("original_name"))):
+            continue
+        poster=show.get("poster_path")
+        if not isinstance(poster,str) or not re.fullmatch(
+                r"/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",poster,re.I):
+            continue
+        show_id=show.get("id")
+        if not isinstance(show_id,int) or show_id<=0:continue
+        candidates.append((show_id,poster))
+    if len(candidates)!=1:return None
+    show_id,poster=candidates[0]
+    return {"image_url":TMDB_POSTER+poster,
+            "credit_url":"https://www.themoviedb.org/tv/"+str(show_id),
+            "match":"series","source":"TMDB"}
+
+
 def safe_tmdb_image_url(url):
     return bool(isinstance(url,str) and re.fullmatch(
         r"https://image\.tmdb\.org/t/p/w342/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)",url,re.I))
