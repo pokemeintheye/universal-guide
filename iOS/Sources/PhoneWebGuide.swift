@@ -56,12 +56,12 @@ struct PhoneWebGuide: View {
                     }
                     Section("Backbone controls") {
                         Text("D-pad — Guide selection / player controls")
-                        Text("A — Select / Play or Pause")
+                        Text("A / OK — Reveal playback controls, then activate selection")
+                        Text("Y — Play / Pause (temporary test mapping)")
                         Text("B — Back / Close")
                         Text("LB — Focus sidebar: Search, Filter, Settings")
                         Text("RB — Return focus to guide")
-                        Text("X — Plex Chapters or options")
-                        Text("Y — Go Live on Tablo")
+                        Text("X — Expand/collapse details and focus playback choices")
                     }
                     Button("Save and Open") {
                         loadError = nil
@@ -108,7 +108,7 @@ struct PhoneWebGuide: View {
         pad.buttonA.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("select") } }
         pad.buttonB.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("back") } }
         pad.buttonX.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("options") } }
-        pad.buttonY.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("live") } }
+        pad.buttonY.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("playpause") } }
         pad.leftShoulder.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("rail") } }
         pad.rightShoulder.pressedChangedHandler = { [weak self] _, _, down in if down { self?.send("guide") } }
     }
@@ -116,7 +116,7 @@ struct PhoneWebGuide: View {
         Task { @MainActor [weak self] in
             guard let view = self?.view else { return }
             // Fixed command whitelist; never interpolate arbitrary network data.
-            let commands = ["up","down","left","right","select","back","options","live","rail","guide"]
+            let commands = ["up","down","left","right","select","back","options","live","rail","guide","playpause"]
             guard commands.contains(command) else { return }
             view.evaluateJavaScript("window.universalGuideGamepad?.('\(command)')") { _, error in
                 if let error { print("Backbone web command error: \(error.localizedDescription)") }
@@ -250,6 +250,10 @@ struct PhoneGuideWebView: UIViewRepresentable {
         flex: 1 1 0 !important; min-height: 0 !important;
         overflow: hidden !important;
       }
+      html.ug-phone .player-backdrop .tablo-dvr.ug-pad-visible {
+        opacity: 1 !important; visibility: visible !important;
+        pointer-events: auto !important;
+      }
       html.ug-phone .guide-app .guide-main .timeline {
         height: 100% !important; max-height: 100% !important;
         overflow: auto !important;
@@ -271,129 +275,229 @@ struct PhoneGuideWebView: UIViewRepresentable {
       });
       panel?.appendChild(detailToggle);
       const active = () => document.activeElement;
-      const shown = node => !!node && !node.hidden &&
-        !node.closest('[hidden]') && node.getClientRects().length > 0;
+      const shown = node => !!node && !node.disabled &&
+        !node.hidden && !node.closest('[hidden]') &&
+        node.getClientRects().length > 0 &&
+        getComputedStyle(node).visibility !== 'hidden' &&
+        getComputedStyle(node).display !== 'none';
       const focus = node => {
-        if (!shown(node) || node.disabled) return false;
+        if(!shown(node))return false;
         node.focus({preventScroll:true});
         node.scrollIntoView({block:'nearest',inline:'nearest'});
         return true;
       };
       const click = id => {
-        const node = $(id);
-        if(!shown(node) || node.disabled) return false;
+        const node=$(id);
+        if(!shown(node))return false;
         node.click();
         return true;
       };
       const key = value => {
-        const node = active() || document.body;
+        const node=active() || document.body;
         node.dispatchEvent(new KeyboardEvent('keydown',
           {key:value,bubbles:true,cancelable:true}));
       };
       const player = () => shown($('playerbackdrop'));
-      const tablo = () => player() && shown($('tablodvr'));
-      const plex = () => player() && shown($('plexoverlay'));
-      const trackPanel = () => shown($('plextrackpanel'));
+      // Native web player overlays auto-hide via visibility:hidden.
+      // Determine the active media by the panel's hidden attribute instead
+      // of visual visibility, or an invisible Tablo overlay is mistaken for Plex.
+      const tablo = () => player() && !$('tablodvr')?.hidden;
+      const plex = () => player() && !$('plexoverlay')?.hidden;
+      const trackPanel = () => player() && shown($('plextrackpanel'));
+      const playerOverlay = () => tablo() ? $('tablodvr') : $('plexoverlay');
+      let overlayVisible = false;
+      let overlayTimer = null;
+      let guideFocusBeforeDetails = null;
       const controls = () => {
-        const panel=trackPanel() ? $('plextrackpanel') :
-                    tablo() ? $('tablodvr') : $('plexoverlay');
+        let panel = trackPanel() ? $('plextrackpanel') : playerOverlay();
         return Array.from(panel?.querySelectorAll(
-          'button:not([disabled]),input[type="range"]:not([disabled])') || []).filter(shown);
+          'button:not([disabled]),input[type="range"]:not([disabled])') || [])
+          .filter(shown);
       };
-      function movePlayerFocus(direction) {
+      const media = () => $('plexvideo');
+      function transportClick(id) {
+        // Transport buttons may be visibility:hidden while the overlay is
+        // collapsed. Their original web click handlers still seek the
+        // recording; direct click bypasses only the UI visibility check.
+        const target=$(id);
+        if(!target || target.disabled)return false;
+        target.click();
+        return true;
+      }
+      function playPause() {
+        if(!player())return false;
+        const video=media();
+        if(!video)return false;
+        const target=tablo()?'tablodvrpause':'plexpause';
+        // The existing player's play/pause handler also refreshes its UI.
+        const button=$(target);
+        if(!button || button.disabled)return false;
+        button.click();
+        return true;
+      }
+      function clearOverlayTimer() {
+        if(overlayTimer!==null)clearTimeout(overlayTimer);
+        overlayTimer=null;
+      }
+      function hideOverlay() {
+        if(!player() || trackPanel())return;
+        overlayVisible=false;
+        clearOverlayTimer();
+        playerOverlay()?.classList.remove('ug-pad-visible');
+        playerOverlay()?.classList.add('controls-hidden');
+        if(playerOverlay()?.contains(active()))active()?.blur();
+      }
+      function revealOverlay(first=true) {
+        if(!player())return;
+        overlayVisible=true;
+        clearOverlayTimer();
+        const overlay=playerOverlay();
+        overlay?.classList.remove('controls-hidden');
+        overlay?.classList.add('ug-pad-visible');
+        // Existing web player has a 4.5 second pointer timer, but a controller
+        // overlay must persist until input stops. Reset that timer on each press.
+        if(typeof showTabloOverlay==='function' && tablo())showTabloOverlay();
+        if(typeof showPlexOverlay==='function' && plex())showPlexOverlay();
+        if(first || !controls().includes(active()))
+          focus($(tablo()?'tablodvrpause':'plexpause'));
+        overlayTimer=setTimeout(hideOverlay,6000);
+      }
+      function moveControls(direction) {
+        if(!overlayVisible){revealOverlay(true);return}
         const items=controls();
         if(!items.length)return;
         const current=items.indexOf(active());
-        const delta=direction==='up'||direction==='left'?-1:1;
-        focus(items[Math.max(0,Math.min(items.length-1,
-          current<0 ? 0 : current+delta))]);
+        const delta=(direction==='up'||direction==='left')?-1:1;
+        const next=current<0?0:Math.max(0,Math.min(items.length-1,current+delta));
+        focus(items[next]);
+        revealOverlay(false);
       }
-      function revealPlayer() {
-        if(tablo()) {
-          $('tablodvr').classList.remove('controls-hidden');
-          if(!controls().includes(active()))focus($('tablodvrpause'));
-        } else if(plex()) {
-          $('plexoverlay').classList.remove('controls-hidden');
-          if(!controls().includes(active()))focus($('plexpause'));
+      function chooseDetailButton() {
+        const panel=$('guidedetail');
+        if(!panel)return false;
+        if(panel.classList.contains('ug-expanded')){
+          click('ug-phone-preview-toggle');
+          guideFocus();
+          return true;
         }
+        click('ug-phone-preview-toggle');
+        const choices=Array.from(panel.querySelectorAll('.guide-detail-actions button:not([disabled])'))
+          .filter(shown);
+        return focus(choices[0] || $('ug-phone-preview-toggle'));
       }
-      window.universalGuideGamepad = function(command) {
-        const directions={up:'ArrowUp',down:'ArrowDown',
-                          left:'ArrowLeft',right:'ArrowRight'};
-        if(command==='back') { key('Escape'); return; }
-        if(player()) {
-          if(trackPanel()) {
-            if(directions[command]) key(directions[command]);
-            else if(command==='select') {
-              const el=active(); if(shown(el))el.click();
+      function guideFocus() {
+        const selected=$('guide')?.querySelector('.epg-program.return-selected') ||
+                       $('guide')?.querySelector('.epg-program[data-program]');
+        if(selected)focus(selected);
+        else focus($('openfilters'));
+      }
+      function guideDirection(command) {
+        const directions={up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight'};
+        const focused=active();
+        if(!shown(focused))guideFocus();
+        // Explicitly handle rail focus because keyboard dispatch on WKWebView
+        // does not always behave exactly like physical keyboard input.
+        const rail=['opensearch','openfilters','opensettings'];
+        const i=rail.indexOf(active()?.id);
+        if(i>=0){
+          if(command==='up'||command==='down'){
+            focus($(rail[Math.max(0,Math.min(2,i+(command==='down'?1:-1)))]));
+            return;
+          }
+          if(command==='right'){guideFocus();return}
+        }
+        if($('guidedetail')?.contains(active())){
+          const actions=Array.from($('guidedetail').querySelectorAll(
+            '.guide-detail-actions button:not([disabled])')).filter(shown);
+          let at=actions.indexOf(active());
+          if(command==='right'||command==='left'){
+            if(actions.length)focus(actions[Math.max(0,Math.min(actions.length-1,
+                 at+(command==='right'?1:-1)))]);return;
+          }
+          if(command==='up'){guideFocus();return}
+          if(command==='down'){if(at<0)focus(actions[0]);return}
+        }
+        // Use the existing web guide's keyboard algorithm for EPG navigation.
+        key(directions[command]);
+      }
+      // Reliable controller targets, without touching the backend or redefining
+      // the web HLS playback implementation.
+      window.universalGuideGamepad=function(command){
+        if(command==='playpause'){playPause();return}
+        if(player()){
+          if(command==='back'){
+            if(trackPanel())click('plextrackcancel');
+            else {hideOverlay();key('Escape')}
+            return;
+          }
+          if(trackPanel()){
+            if(command==='select'){
+              if(shown(active()) && active().matches('button'))active().click();
+              else focus($('plextrackchoices')?.querySelector('button'));
+            } else if(['up','down','left','right'].includes(command)){
+              const choices=Array.from($('plextrackchoices')?.querySelectorAll('button')||[]).filter(shown);
+              const at=choices.indexOf(active());
+              if(choices.length)focus(choices[Math.max(0,Math.min(choices.length-1,
+                (at<0?0:at)+(command==='up'||command==='left'?-1:1)))]);
             } else if(command==='options')click('plextrackcancel');
             return;
           }
-          if(command==='live' && tablo()) { click('tablodvrlive'); return; }
-          if(command==='options' && plex()) {
-            if(!click('plexchaptersbutton')) click('plexaudiobutton');
+          if(command==='select'){
+            if(!overlayVisible){revealOverlay(true);return}
+            if(shown(active()) && active().matches('button'))active().click();
+            else revealOverlay(true);
+            revealOverlay(false);return;
+          }
+          if(command==='up'||command==='down'){
+            if(!overlayVisible)revealOverlay(true);
+            else moveControls(command);
             return;
           }
-          if(command==='select') {
-            const el=active();
-            if(el && el.matches('button,input') && shown(el))el.click();
-            else click(tablo()?'tablodvrpause':'plexpause');
-            return;
-          }
-          if(command==='left'||command==='right') {
-            if(active()?.matches('input[type="range"]')) {
-              const el=active();
-              el.value=String(Math.max(0,Math.min(1000,
-                Number(el.value)+(command==='right'?50:-50))));
-              el.dispatchEvent(new Event('change',{bubbles:true}));
-            } else {
-              click(tablo() ?
-                (command==='left'?'tablodvrback':'tablodvrforward') :
+          if(command==='left'||command==='right'){
+            if(!overlayVisible){
+              transportClick(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
                 (command==='left'?'plexback':'plexforward'));
-            }
+            }else if(active()?.matches('input[type="range"]')){
+              const input=active(),direction=command==='right'?1:-1;
+              input.value=String(Math.max(0,Math.min(1000,Number(input.value)+direction*40)));
+              input.dispatchEvent(new Event('change',{bubbles:true}));
+              revealOverlay(false);
+            }else moveControls(command);
             return;
           }
-          if(command==='up'||command==='down') {
-            revealPlayer();
-            movePlayerFocus(command);
-          } else if(command==='rail'||command==='guide') {
-            revealPlayer();
+          if(command==='options' && plex()){
+            revealOverlay(false);
+            if(!click('plexchaptersbutton'))click('plexaudiobutton');
+            return;
           }
+          if(command==='live' && tablo()){click('tablodvrlive');return}
+          if(command==='rail'||command==='guide'){revealOverlay(true);return}
           return;
         }
-        if(command==='rail') {
-          // Persistent LEFT SIDE rail, just as in the web interface.
+        overlayVisible=false;
+        clearOverlayTimer();
+        if(command==='rail'){
           const rail=['opensearch','openfilters','opensettings'];
-          const current=rail.indexOf(active()?.id);
-          focus($(rail[current<0?0:(current+1)%rail.length]));
+          const index=rail.indexOf(active()?.id);
+          focus($(rail[index<0?0:(index+1)%3]));return;
+        }
+        if(command==='guide'){guideFocus();return}
+        if(command==='options'){chooseDetailButton();return}
+        if(command==='back'){key('Escape');return}
+        if(command==='live'){click('now');return}
+        if(command==='select'){
+          if(shown(active()) &&
+             active().matches('button,a[href],[role="button"],summary'))active().click();
+          else guideFocus();
           return;
         }
-        if(command==='guide') {
-          if(typeof remoteGuideFocus==='function')remoteGuideFocus();
-          else focus($('guide')?.querySelector('.epg-program[data-program]'));
-          return;
-        }
-        if(command==='options') {
-          click('ug-phone-preview-toggle');return;
-        }
-        if(command==='select') {
-          const el=active();
-          if(shown(el) && (el.matches('button,a[href],[role="button"],summary')))el.click();
-          else if(typeof remoteGuideFocus==='function')remoteGuideFocus();
-          return;
-        }
-        if(command==='live') { click('now'); return; }
-        if(directions[command]) {
-          if(!active() || active()===document.body) {
-            if(typeof remoteGuideFocus==='function')remoteGuideFocus();
-          }
-          key(directions[command]);
-        }
+        if(['up','down','left','right'].includes(command))guideDirection(command);
       };
-      // Make guide ready without requiring an initial touchscreen tap.
-      document.addEventListener('DOMContentLoaded',()=>{
-        if(typeof remoteGuideFocus==='function')remoteGuideFocus();
-      },{once:true});
+      // If focus is stolen by the video element, don't get stuck pressing
+      // the D-pad repeatedly. Restore a guide target on next controller press.
+      document.addEventListener('DOMContentLoaded',()=>guideFocus(),{once:true});
+      window.addEventListener('pageshow',()=>guideFocus());
+
     })();
     """#
 }
