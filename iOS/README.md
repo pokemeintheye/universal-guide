@@ -2,6 +2,19 @@
 
 Native iOS companion for the existing Universal Guide Docker backend and tvOS app.
 
+## Backbone controller behavior (iPhone test build)
+
+- **Y**: temporary Play/Pause shortcut, even if the playback controls are hidden. Later replace with the remote's media button after identifying its input.
+- **A / OK**: while watching, reveal the web player's control overlay with Play/Pause focused; a subsequent A activates the focused button.
+- **D-pad Up/Down**: reveal the overlay if hidden, or navigate among its controls when visible.
+- **D-pad Left/Right**: skip back 20 seconds or forward 30 seconds while the overlay is hidden; when visible, navigate controls (or adjust the focused slider).
+- **X**: in the guide, expand/minimize the program preview. On expansion, focus the first visible playback action. In Plex playback, X opens Chapters (or Audio if chapters are unavailable).
+- **LB**: cycle focus through the persistent left rail (Search, Filters, Settings); Up/Down then select its entries, A opens them.
+- **RB**: return focus to the guide; **B** goes back/closes.
+- **Go Live**: reachable on the Tablo overlay (formerly Y, reassigned to temporary Play/Pause).
+
+These commands work through the native GameController-to-WKWebView bridge. The original Unraid web player still owns the buffered/disk-backed HLS stream and DVR timeline; this patch changes only iPhone controller behavior.
+
 ## Current playback architecture
 
 **The TestFlight app now launches the actual Unraid web guide in a full-screen WKWebView.** This intentionally replaces the divergent native Swift Plex/Tablo player. The web app continues to own the live file-backed Tablo stream, DVR seek window, pause/resume, Go Live, Plex chapters, subtitles, audio, and matching. The Backbone maps buttons to those **existing** web controls. The web page's fixed left rail provides Search, Filters and Settings; LB selects/cycles that rail, RB returns to the guide. A uses the focused control and B goes back.
