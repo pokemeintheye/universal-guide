@@ -2,6 +2,14 @@
 
 Native iOS companion for the existing Universal Guide Docker backend and tvOS app.
 
+## Current playback architecture
+
+**The TestFlight app now launches the actual Unraid web guide in a full-screen WKWebView.** This intentionally replaces the divergent native Swift Plex/Tablo player. The web app continues to own the live file-backed Tablo stream, DVR seek window, pause/resume, Go Live, Plex chapters, subtitles, audio, and matching. The Backbone maps buttons to those **existing** web controls. The web page's fixed left rail provides Search, Filters and Settings; LB selects/cycles that rail, RB returns to the guide. A uses the focused control and B goes back.
+
+This requires the latest web guide to be running on Unraid. The iPhone app must reach the server over your LAN or trusted private network. Philo handoff via Universal Links still needs validation, and WKWebView/controller playback needs a physical iPhone test. The old native Swift playback views remain in the codebase temporarily as non-active code, not as the app's player.
+
+## Historical first-pass native prototype
+
 ## What it does
 
 - Landscape, dark timeline grid modeled on the existing web EPG (sticky station column, time header, current-time marker, green Plex-owned programs).
