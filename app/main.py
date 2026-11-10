@@ -706,6 +706,14 @@ def iphone_manifest():
     return FileResponse(Path(__file__).parent/"static"/"manifest.webmanifest",
                         media_type="application/manifest+json")
 
+@app.get("/artwork/{category}.svg")
+def built_in_artwork(category:str):
+    """Local category art; only allow the two bundled images."""
+    if category not in ("sports","news"):
+        raise HTTPException(404,"Artwork not found")
+    return FileResponse(Path(__file__).parent/"static"/("artwork-"+category+".svg"),
+        media_type="image/svg+xml",headers={"Cache-Control":"public, max-age=86400"})
+
 @app.get("/")
 def home():
     return FileResponse(Path(__file__).parent/"static"/"index.html")
