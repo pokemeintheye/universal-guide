@@ -14,6 +14,7 @@ Unified TV guide prototype for Plex, local OTA listings and Philo schedules, now
 6. Add environment variables:
    - `PLEX_URL`: `http://YOUR-UNRAID-IP:32400` (if Plex uses host networking).
    - `PLEX_TOKEN`: your Plex API token (secret; **never commit it**).
+   - `TMDB_API_KEY`: optional [TMDB v3 API key](https://www.themoviedb.org/settings/api) for posters of movies airing on TV, even when they are not in Plex. For noncommercial use, follow TMDB attribution requirements. Keep the key in Unraid settings, not GitHub.
    - `PLEX_ALLOWED_LABEL`: optional exact Plex sharing label; leave empty to index all Plex media (e.g. `Family Approved`).
    - `PLEX_LABEL_MODE`: `allow` (default) or `exclude`.
    - `REFRESH_MINUTES`: `30`
@@ -36,6 +37,12 @@ The app reads Plex API metadata without mounting media directories. When playbac
 ## Optional Docker Compose
 
 Copy `.env.example` to `.env` locally and set the Plex URL and token. Run `docker compose up -d` from a checkout. `.env` is gitignored. The compose file uses the published GHCR image, not a local build.
+
+## TV and movie posters
+
+TVmaze supplies artwork for TV shows automatically. To enable movie posters, obtain a **TMDB API key (v3)** from [TMDB settings](https://www.themoviedb.org/settings/api), add `TMDB_API_KEY` as an environment variable in the Unraid Docker template, and restart the container. In Universal Guide, choose **Settings → Show and movie artwork → Download missing artwork**. Movies are matched by title and, where EPG data provides it, release year; uncertain matches are skipped instead of assigning a potentially incorrect poster. The key stays server-side. Without a key, the existing Plex movie posters still work.
+
+TMDB is a third-party metadata service. Noncommercial API usage is free with attribution; commercial usage requires separate licensing. This product uses the TMDB API but is not endorsed or certified by TMDB. See [TMDB attribution requirements](https://developer.themoviedb.org/docs/faq).
 
 ## Optional live guide data
 
