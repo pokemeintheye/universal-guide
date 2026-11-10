@@ -24,6 +24,8 @@ struct PhoneGuideView: View {
     @State private var philoResult: String?
     @State private var philoBusy = false
     @State private var detailChoice = 0
+    // Scroll only when crossing a viewport-sized batch, not on every D-pad tap.
+    @State private var lastScrolledChannel = 0
 
     private var channel: PhoneChannel? {
         store.channels.indices.contains(channelIndex) ? store.channels[channelIndex] : nil
@@ -179,13 +181,16 @@ struct PhoneGuideView: View {
                             timeHeader(start: start)
                             ForEach(Array(store.channels.enumerated()), id: \.element.id) { c, channel in
                                 ZStack(alignment: .leading) {
-                                    HStack(spacing: 0) {
-                                        ForEach(0..<16, id: \.self) { _ in
-                                            Rectangle().fill(navyLight.opacity(0.4))
-                                                .frame(width: 30 * minuteWidth - 1, height: guideHeight)
-                                                .overlay(alignment: .trailing) { gridLine.frame(width: 1) }
+                                    Canvas(opaque: true) { context, size in
+                                        context.fill(Path(CGRect(origin: .zero, size: size)),
+                                                     with: .color(navyLight))
+                                        for column in 1..<16 {
+                                            let x = CGFloat(column * 30) * minuteWidth
+                                            context.fill(Path(CGRect(x: x - 1, y: 0, width: 1, height: size.height)),
+                                                         with: .color(gridLine))
                                         }
                                     }
+                                    .frame(width: timelineWidth, height: guideHeight)
                                     ForEach(Array(channel.programs.enumerated()), id: \.element.id) { p, program in
                                         if let interval = visibleInterval(program, start: start) {
                                             Button {
@@ -238,7 +243,13 @@ struct PhoneGuideView: View {
             }
             .frame(height: max(100, height - (diagnostics ? 25 : 0)))
             .onChange(of: channelIndex) { index in
-                withAnimation(.easeOut(duration: 0.15)) { verticalProxy.scrollTo("ch-\(index)", anchor: .center) }
+                // Re-centring every row adds an animation queue and makes rapid
+                // D-pad input feel ~1 second behind. Only scroll when the focus
+                // has travelled several rows; never animate controller scrolling.
+                if abs(index - lastScrolledChannel) >= 4 {
+                    lastScrolledChannel = index
+                    verticalProxy.scrollTo("ch-\(index)", anchor: .center)
+                }
             }
         }
     }
@@ -285,11 +296,9 @@ struct PhoneGuideView: View {
         guard count > 0 else { return }
         switch action {
         case .up, .previousPage:
-            channelIndex = max(0, channelIndex - (action == .up ? 1 : 5))
-            programIndex = min(programIndex, max(0, (channel?.programs.count ?? 1) - 1))
+            moveChannel(to: max(0, channelIndex - (action == .up ? 1 : 5)))
         case .down, .nextPage:
-            channelIndex = min(count - 1, channelIndex + (action == .down ? 1 : 5))
-            programIndex = min(programIndex, max(0, (channel?.programs.count ?? 1) - 1))
+            moveChannel(to: min(count - 1, channelIndex + (action == .down ? 1 : 5)))
         case .left: programIndex = max(0, programIndex - 1)
         case .right: programIndex = min(max(0, (channel?.programs.count ?? 1) - 1), programIndex + 1)
         case .now:
@@ -297,6 +306,33 @@ struct PhoneGuideView: View {
         case .select, .options:
             if program != nil { detailChoice = 0; details = true }
         case .back: break
+        }
+    }
+
+    private func moveChannel(to target: Int) {
+        guard target != channelIndex, store.channels.indices.contains(target) else { return }
+        // Program indices aren't aligned across channels. Preserve the selected
+        // point on the timeline instead of selecting an arbitrary program number.
+        let time = program?.begins.map { begins -> Date in
+            if let ends = program?.ends {
+                return begins.addingTimeInterval(ends.timeIntervalSince(begins) / 2)
+            }
+            return begins
+        } ?? Date()
+        channelIndex = target
+        let programs = store.channels[target].programs
+        if let sameTime = programs.firstIndex(where: { item in
+            guard let a = item.begins, let b = item.ends else { return false }
+            return a <= time && time < b
+        }) {
+            programIndex = sameTime
+        } else if let nearest = programs.enumerated().min(by: {
+            abs(($0.element.begins ?? .distantPast).timeIntervalSince(time)) <
+            abs(($1.element.begins ?? .distantPast).timeIntervalSince(time))
+        }) {
+            programIndex = nearest.offset
+        } else {
+            programIndex = 0
         }
     }
 
