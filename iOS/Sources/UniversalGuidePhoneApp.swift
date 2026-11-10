@@ -47,12 +47,26 @@ struct PhonePhiloLinks: Decodable {
 }
 struct PhonePhiloLink: Decodable { let url: String; let label: String? }
 enum DateParser {
+    // A program's times are read thousands of times while controller selection
+    // updates. Formatting each ISO timestamp on *every* redraw was expensive.
+    private static let cache: NSCache<NSString, NSDate> = {
+        let result = NSCache<NSString, NSDate>()
+        result.countLimit = 20000
+        return result
+    }()
     static func parse(_ raw: String) -> Date? {
+        let key = raw as NSString
+        if let existing = cache.object(forKey: key) { return existing as Date }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let parsed = formatter.date(from: raw) { return parsed }
+        if let parsed = formatter.date(from: raw) {
+            cache.setObject(parsed as NSDate, forKey: key)
+            return parsed
+        }
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: raw)
+        guard let parsed = formatter.date(from: raw) else { return nil }
+        cache.setObject(parsed as NSDate, forKey: key)
+        return parsed
     }
 }
 enum PhoneAPI {
