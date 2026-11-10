@@ -45,6 +45,37 @@ class ArtworkTests(unittest.TestCase):
         ]):
             self.assertIsNone(artwork.find_tvmaze_artwork("Harbor Heights"))
 
+    def test_tmdb_tv_exact_title_poster_and_broadcast_tags(self):
+        show={"id":124,"name":"Family Feud","original_name":"Family Feud",
+              "poster_path":"/family_feud.jpg"}
+        response=unittest.mock.Mock()
+        response.json.return_value={"results":[show]}
+        with patch.object(artwork.requests,"get",return_value=response) as get:
+            result=artwork.find_tmdb_tv_artwork("Family Feud [NEW]","test-key")
+        self.assertEqual(result["source"],"TMDB")
+        self.assertEqual(result["match"],"series")
+        self.assertEqual(result["image_url"],
+                         "https://image.tmdb.org/t/p/w342/family_feud.jpg")
+        self.assertEqual(result["credit_url"],"https://www.themoviedb.org/tv/124")
+        self.assertEqual(get.call_args.args[0],artwork.TMDB_TV_API)
+        self.assertEqual(get.call_args.kwargs["params"]["query"],"Family Feud")
+        self.assertEqual(get.call_args.kwargs["params"]["api_key"],"test-key")
+
+    def test_tmdb_tv_skips_ambiguous_or_unrelated_shows(self):
+        exact={"id":124,"name":"Family Feud","poster_path":"/family_feud.jpg"}
+        near={"id":125,"name":"Family Feud UK","poster_path":"/other.jpg"}
+        response=unittest.mock.Mock()
+        with patch.object(artwork.requests,"get",return_value=response):
+            response.json.return_value={"results":[near]}
+            self.assertIsNone(artwork.find_tmdb_tv_artwork("Family Feud","key"))
+            response.json.return_value={"results":[exact,dict(exact,id=126)]}
+            self.assertIsNone(artwork.find_tmdb_tv_artwork("Family Feud","key"))
+            response.json.return_value={"results":[near,exact]}
+            self.assertEqual(artwork.find_tmdb_tv_artwork("Family Feud","key")["match"],"series")
+            response.json.return_value={"results":[dict(exact,poster_path="//bad.jpg")]}
+            self.assertIsNone(artwork.find_tmdb_tv_artwork("Family Feud","key"))
+        self.assertIsNone(artwork.find_tmdb_tv_artwork("Family Feud",None))
+
     def test_tmdb_movie_poster_exact_title_and_year(self):
         movie={"id":77,"title":"Cast Away","original_title":"Cast Away",
                "release_date":"2000-12-22","poster_path":"/poster_77.jpg"}
