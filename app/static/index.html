@@ -337,6 +337,36 @@ input[type="checkbox"]{width:auto;max-width:none;accent-color:#65c5a0;cursor:poi
  .player-backdrop.plex-mode .plex-option-thumb{width:100px}
 }
 
+/* Persistent remote-friendly control rail and standardized settings controls. */
+.guide-app{padding-left:clamp(78px,8vw,100px)!important}
+.guide-top-actions{position:fixed;left:10px;top:50%;transform:translateY(-50%);
+ margin:0!important;z-index:24;display:flex;flex-direction:column;gap:10px;
+ padding:8px 5px;border:1px solid #484766;border-radius:23px;background:#141a2bf5}
+.guide-top-actions .guide-icon-button{width:56px;height:56px;min-width:56px;border-radius:16px}
+.guide-top-actions #guidenow{font-size:14px;font-weight:750}
+.guide-popover{position:fixed;top:50%;left:85px;right:auto;transform:translateY(-50%);
+ z-index:25;max-height:80dvh}
+.guide-main .epg-tracks{isolation:isolate}
+.guide-main .epg-program{box-sizing:border-box;min-width:0;z-index:1}
+.guide-main .epg-program:focus-visible{z-index:2}
+.guide-drawer{width:min(590px,calc(100vw - 76px));padding:clamp(14px,2vw,28px)}
+.settings-sections{display:flex;flex-direction:column;gap:12px}
+.settings-sections h3{margin:12px 0 0;font-size:20px}
+.settings-sections .bar{display:flex;flex-direction:column;align-items:stretch;margin:4px 0;gap:8px}
+.settings-sections .bar button,.settings-sections>button,.guide-drawer-heading button{
+ display:block;width:100%;text-align:left;min-height:58px;padding:13px 17px;
+ font-size:17px;border-radius:14px;border:1px solid #53506e;background:#2a3048}
+.settings-sections button:focus-visible,.guide-drawer button:focus-visible{
+ outline:4px solid #d9adff;outline-offset:2px;background:#5b3a82}
+.settings-sections .chip{display:block;padding:10px}
+.settings-sections #artworkprogress{height:20px!important}
+.guide-drawer-heading button{width:auto!important;min-width:95px;text-align:center}
+@media(max-width:650px){
+ .guide-app{padding-left:67px!important}
+ .guide-top-actions{left:3px;padding:6px 3px;gap:8px}
+ .guide-top-actions .guide-icon-button{width:49px;height:49px;min-width:49px;font-size:23px}
+ .guide-popover{left:61px;width:min(310px,calc(100vw - 70px))}
+}
 /* Concept B: the EPG is the home screen, not an admin dashboard. */
 /* Keep the program detail strip on-screen. Previously min-height alone let
    the guide grid expand the page and push the selected show below the fold. */
@@ -479,6 +509,7 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18l-7 8v6l-4-2v-4L3 5Z"/></svg>
    </button>
    <button id="opensettings" class="guide-icon-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">⚙</button>
+    <button id="guidenow" class="guide-icon-button" type="button" title="Return to live TV" aria-label="Return to what is on now">NOW</button>
   </div>
   <div id="guidefiltermenu" class="guide-popover" role="menu" aria-label="Guide filters" hidden>
    <button type="button" data-guide-filter="all" role="menuitemradio">All Channels</button>
@@ -890,6 +921,17 @@ function remoteBack(){
 }
 function remoteFocusNext(direction){
  const current=document.activeElement;
+ const rail=["opensearch","openfilters","opensettings","guidenow"].map(id=>$(id));
+ const railIndex=rail.indexOf(current);
+ if(railIndex>=0&&$("guidefiltermenu").hidden&&
+    $("settingsdrawer").hidden&&$("searchdrawer").hidden){
+  if(direction==="ArrowRight"){remoteGuideFocus();return true}
+  if(direction==="ArrowUp"||direction==="ArrowDown"){
+   const next=Math.max(0,Math.min(rail.length-1,railIndex+(direction==="ArrowUp"?-1:1)));
+   rail[next].focus();return true;
+  }
+  return true;
+ }
  if(!current||current===document.body||current===document.documentElement||
     !remoteVisible(current)){
   remoteGuideFocus();return true;
@@ -1189,7 +1231,11 @@ $("guide").addEventListener("keydown",event=>{
    }
   }
  }
- if(!target)return;
+ if(!target){
+  if(event.key==="ArrowLeft")$("openfilters").focus({preventScroll:true});
+  else if(event.key==="ArrowUp")$("opensearch").focus({preventScroll:true});
+  return;
+ }
  if(event.key==="ArrowLeft"||event.key==="ArrowRight"){
   const next=guideProgramInterval(target);
   guideNavigationTime=(next.start+next.end)/2;
@@ -1230,7 +1276,22 @@ async function findUpcoming(){
 $("findbutton").onclick=findUpcoming;
 $("findshow").onkeydown=e=>{if(e.key==="Enter")findUpcoming()};
 
-$("now").onclick=()=>{view.anchor=null;guide(view.plex)};
+function returnGuideToNow(){
+ view.anchor=null;
+ const pane=$("guide");
+ pane.scrollLeft=0;pane.scrollTop=0;
+ guide(view.plex).then(()=>{
+  pane.scrollLeft=0;pane.scrollTop=0;
+  const current=Array.from(pane.querySelectorAll(".epg-program[data-program]"))
+   .find(el=>{
+    const entry=shownPrograms[Number(el.dataset.program)]?.entry;
+    return entry&&Date.now()>=Date.parse(entry.start)&&Date.now()<Date.parse(entry.stop);
+   });
+  if(current)current.focus({preventScroll:true});
+ });
+}
+$("now").onclick=returnGuideToNow;
+$("guidenow").onclick=returnGuideToNow;
 $("tablofilter").onclick=()=>{view.source=view.source==="tablo"?"all":"tablo";guide(view.plex)};
 $("philofilter").onclick=()=>{view.source=view.source==="philo"?"all":"philo";guide(view.plex)};
 $("all").onclick=()=>{view={plex:false,favorites:false,source:"all",anchor:null};guide(false)};
