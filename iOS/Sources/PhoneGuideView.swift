@@ -310,6 +310,7 @@ struct PhoneGuideView: View {
 
     private func handle(_ action: PadAction) {
         if playback != nil {
+            NotificationCenter.default.post(name: .phonePlaybackController, object: action)
             if action == .back { playback = nil }
             return
         }
