@@ -128,11 +128,17 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/UniversalGuidePhone.xcarchive" \
             -exportPath "$RUNNER_TEMP/Export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
       - name: Upload to App Store Connect
+        # Stop indefinitely stalled altool uploads. A new workflow_dispatch
+        # gets a unique build number if Apple received the previous binary.
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
           IPA="$(find "$RUNNER_TEMP/Export" -maxdepth 1 -name '*.ipa' -print -quit)"
           test -n "$IPA"
+          echo "IPA prepared: $(du -h "$IPA" | cut -f1)"
+          echo "Starting App Store Connect upload at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Check TestFlight Build Uploads before retrying after a timeout."
           # Xcode 26's new altool can fail to resolve a valid iOS app record
           # with "Cannot determine the Apple ID from Bundle ID ... (19)".
           # The legacy uploader bypasses that provider-resolution regression.
