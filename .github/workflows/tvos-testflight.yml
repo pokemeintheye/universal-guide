@@ -68,7 +68,7 @@ jobs:
               raise SystemExit("BUILD_NUMBER must be exported")
           config = Path("project.yml")
           content = config.read_text()
-          updated, count = re.subn(r"(?m)^(\\s*CURRENT_PROJECT_VERSION:\\s*)[^\\n]+$",
+          updated, count = re.subn(r"(?m)^([ \t]*CURRENT_PROJECT_VERSION:[ \t]*)[^\n]+$",
                                    lambda m: m.group(1) + number, content)
           if count != 1:
               raise SystemExit(f"Expected one CURRENT_PROJECT_VERSION entry; got {count}")
