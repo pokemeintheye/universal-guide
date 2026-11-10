@@ -504,6 +504,25 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  .guide-top-actions .guide-icon-button{width:49px;height:49px;min-width:49px;font-size:23px}
  .guide-popover{left:61px;width:min(310px,calc(100vw - 70px))}
 }
+
+/* Stable preview: selecting another show never resizes the timeline. */
+.guide-app .guide-detail{height:clamp(190px,27dvh,275px);min-height:0;max-height:none;
+ flex:0 0 clamp(190px,27dvh,275px);overflow:hidden;align-items:stretch}
+.guide-detail-content{min-height:0;overflow:hidden}
+.guide-detail-content h2,.guide-preview-episode{flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.guide-detail-content .guide-source-tags{flex-shrink:0;max-height:36px;overflow:hidden}
+.guide-detail-content #guidepreviewdesc{min-height:0;overflow:hidden;flex:1 1 auto;
+ display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.guide-detail-actions{flex:0 0 auto;margin-top:6px}
+.guide-app .guide-art{height:100%;max-height:100%;min-height:0;align-self:stretch}
+.guide-art img{object-fit:contain!important;object-position:center center;
+ background:#161b2a}
+@media(max-width:650px){
+ .guide-app .guide-detail{height:clamp(185px,34dvh,255px);max-height:none;
+  flex:0 0 clamp(185px,34dvh,255px)}
+ .guide-app .guide-art{width:clamp(82px,24vw,125px);min-width:clamp(82px,24vw,125px)}
+ .guide-detail-content .guide-source-tags{max-height:28px}
+}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -905,10 +924,28 @@ function remoteVisible(element){
  const rect=element.getBoundingClientRect();
  return rect.width>0&&rect.height>0;
 }
+function guideScrollToProgram(button){
+ const pane=$("guide");
+ if(!button||!pane)return;
+ const paneRect=pane.getBoundingClientRect();
+ const rect=button.getBoundingClientRect();
+ const station=pane.querySelector(".epg-station");
+ // Sticky channel labels and timeline headers reduce the visible viewport.
+ const stickyWidth=station?.getBoundingClientRect().width||0;
+ const leftEdge=paneRect.left+stickyWidth+8;
+ const rightEdge=paneRect.right-12;
+ const heading=pane.querySelector(".epg-time");
+ const topEdge=paneRect.top+(heading?.getBoundingClientRect().height||0)+5;
+ const bottomEdge=paneRect.bottom-8;
+ if(rect.left<leftEdge) pane.scrollLeft=Math.max(0,pane.scrollLeft-(leftEdge-rect.left));
+ else if(rect.right>rightEdge) pane.scrollLeft+=rect.right-rightEdge;
+ if(rect.top<topEdge) pane.scrollTop=Math.max(0,pane.scrollTop-(topEdge-rect.top));
+ else if(rect.bottom>bottomEdge) pane.scrollTop+=rect.bottom-bottomEdge;
+}
 function remoteGuideFocus(){
  const selected=$("guide").querySelector(".epg-program.return-selected")||
                 $("guide").querySelector(".epg-program[data-program]");
- if(selected){selected.focus({preventScroll:true});selected.scrollIntoView({block:"nearest",inline:"nearest"})}
+ if(selected){selected.focus({preventScroll:true});guideScrollToProgram(selected)}
  else $("openfilters").focus();
 }
 function remoteBack(){
@@ -1272,8 +1309,11 @@ $("guide").addEventListener("keydown",event=>{
   }
  }
  if(!target){
-  if(event.key==="ArrowLeft")$("openfilters").focus({preventScroll:true});
-  else if(event.key==="ArrowUp")$("opensearch").focus({preventScroll:true});
+  if(event.key==="ArrowLeft"){
+   // Reach the true start of the timeline without resetting the day or guide.
+   if($("guide").scrollLeft>1)$("guide").scrollLeft=0;
+   else $("openfilters").focus({preventScroll:true});
+  }else if(event.key==="ArrowUp")$("opensearch").focus({preventScroll:true});
   return;
  }
  if(event.key==="ArrowLeft"||event.key==="ArrowRight"){
@@ -1281,7 +1321,7 @@ $("guide").addEventListener("keydown",event=>{
   guideNavigationTime=(next.start+next.end)/2;
  }
  target.focus({preventScroll:true});
- target.scrollIntoView({block:"nearest",inline:"nearest"});
+ guideScrollToProgram(target);
 });
 $("guide").addEventListener("scroll",()=>persistGuideState(),{passive:true});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")persistGuideState()});
