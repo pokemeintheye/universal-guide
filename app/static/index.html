@@ -545,6 +545,48 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
 .guide-detail-content .guide-detail-actions{flex-shrink:0;margin-top:auto;
  align-self:stretch}
 .guide-detail-actions button{white-space:nowrap}
+
+/* Preview layout: text has a bounded lane, playback controls their own lane.
+   Padding leaves room for the focus outline without changing panel height. */
+.guide-detail-content{
+ min-width:0;min-height:0;overflow:hidden;
+ padding:4px 7px 7px;
+ box-sizing:border-box;
+}
+.guide-detail-content #guidepreviewdesc{
+ display:-webkit-box;
+ -webkit-box-orient:vertical;
+ -webkit-line-clamp:2;
+ line-clamp:2;
+ flex:0 1 auto;
+ max-height:2.8em;
+ min-height:0;
+ line-height:1.35;
+ margin:7px 0 8px;
+ overflow:hidden;
+ overflow-wrap:anywhere;
+}
+.guide-detail-content .guide-detail-actions{
+ flex:0 0 auto;
+ min-height:66px;
+ padding:6px 5px;
+ margin-top:auto;
+ margin-bottom:0;
+ box-sizing:border-box;
+ overflow:visible;
+ align-items:center;
+}
+.guide-detail-content .guide-detail-actions button:focus-visible{
+ outline:3px solid #d3adff;
+ outline-offset:2px;
+}
+@media(max-width:650px){
+ .guide-detail-content .guide-detail-actions{
+  min-height:54px;
+  padding:5px;
+ }
+ .guide-detail-content #guidepreviewdesc{-webkit-line-clamp:2;line-clamp:2}
+}
 </style></head>
 <body>
 <main class="container guide-app">
