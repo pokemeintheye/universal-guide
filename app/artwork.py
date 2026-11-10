@@ -175,7 +175,7 @@ def find_tmdb_tv_artwork(title,api_key=None):
             continue
         poster=show.get("poster_path")
         if not isinstance(poster,str) or not re.fullmatch(
-                r"/[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)",poster,re.I):
+                r"/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)",poster,re.I):
             continue
         show_id=show.get("id")
         if not isinstance(show_id,int) or show_id<=0:continue
