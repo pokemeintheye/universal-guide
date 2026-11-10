@@ -20,14 +20,24 @@ jobs:
         run: xcodegen generate
       - name: Build unsigned Apple TV Simulator app
         working-directory: tvOS
+        shell: bash
         run: |
+          set -o pipefail
+          xcodebuild -version
           xcodebuild -project UniversalGuideTV.xcodeproj \
             -scheme UniversalGuideTV \
             -configuration Debug \
             -sdk appletvsimulator \
             -destination 'generic/platform=tvOS Simulator' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+      - name: Upload build diagnostics if compilation fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalGuideTV-build-log
+          path: tvOS/xcodebuild.log
+          if-no-files-found: ignore
       - name: Upload simulator build
         uses: actions/upload-artifact@v4
         with:
