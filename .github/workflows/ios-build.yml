@@ -1,0 +1,49 @@
+name: Build iPhone Backbone preview
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'iOS/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    paths:
+      - 'iOS/**'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate iPhone Xcode project
+        working-directory: iOS
+        run: xcodegen generate
+      - name: Build unsigned iPhone Simulator app
+        working-directory: iOS
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project UniversalGuidePhone.xcodeproj \
+            -scheme UniversalGuidePhone \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalGuidePhone-build-log
+          path: iOS/xcodebuild.log
+          if-no-files-found: ignore
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalGuidePhone-simulator
+          path: iOS/build/Build/Products/Debug-iphonesimulator/UniversalGuidePhone.app
+          if-no-files-found: error

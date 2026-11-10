@@ -1,0 +1,128 @@
+name: Publish iPhone TestFlight build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: universal-guide-ios-testflight
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: macos-26-intel
+    env:
+      BUNDLE_ID: co.thejonesfamily.universalguide.iphone
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_P12_BASE64 }}
+      CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+      PROFILE_BASE64: ${{ secrets.APPLE_IOS_PROVISIONING_PROFILE_BASE64 }}
+      API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+    steps:
+      - name: Verify signing secrets
+        shell: bash
+        run: |
+          for name in APPLE_TEAM_ID CERTIFICATE_P12_BASE64 CERTIFICATE_PASSWORD PROFILE_BASE64 API_KEY_ID API_ISSUER_ID API_KEY_BASE64; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: $name"
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate version and iOS project
+        working-directory: iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER="$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          export BUILD_NUMBER
+          python3 - <<'PY'
+          import os,re
+          from pathlib import Path
+          p=Path('project.yml')
+          source=p.read_text()
+          source,count=re.subn(r'(?m)^([ \t]*CURRENT_PROJECT_VERSION:[ \t]*)[^\n]+$',
+                               lambda m:m.group(1)+os.environ['BUILD_NUMBER'],source)
+          if count!=1:raise SystemExit('Cannot locate unique project build number')
+          p.write_text(source)
+          PY
+          xcodegen generate
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)" = "$BUILD_NUMBER"
+      - name: Import certificate and iPhone profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/ug-iphone.keychain-db"
+          PASSWORD="$(openssl rand -base64 32)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN" >> "$GITHUB_ENV"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          printf '%s' "$CERTIFICATE_P12_BASE64" | base64 -D > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASSWORD" "$KEYCHAIN"
+          PROFILE="$RUNNER_TEMP/ios-appstore.mobileprovision"
+          printf '%s' "$PROFILE_BASE64" | base64 -D > "$PROFILE"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
+          PROFILE_APP=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          test "$PROFILE_TEAM" = "$APPLE_TEAM_ID"
+          test "$PROFILE_APP" = "$APPLE_TEAM_ID.$BUNDLE_ID"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/.private_keys"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          printf '%s' "$API_KEY_BASE64" | base64 -D > "$HOME/.private_keys/AuthKey_${API_KEY_ID}.p8"
+          chmod 600 "$HOME/.private_keys/AuthKey_${API_KEY_ID}.p8"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+      - name: Archive signed iPhone app
+        working-directory: iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project UniversalGuidePhone.xcodeproj -scheme UniversalGuidePhone -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/UniversalGuidePhone.xcarchive" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" archive
+          INFO="$RUNNER_TEMP/UniversalGuidePhone.xcarchive/Products/Applications/UniversalGuidePhone.app/Info.plist"
+          ACTUAL=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
+          echo "Archived CFBundleVersion: $ACTUAL"
+          test "$ACTUAL" = "$BUILD_NUMBER"
+      - name: Export signed IPA
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key>
+            <dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/UniversalGuidePhone.xcarchive" \
+            -exportPath "$RUNNER_TEMP/Export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+      - name: Upload to App Store Connect
+        shell: bash
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/Export" -maxdepth 1 -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          xcrun altool --upload-app -f "$IPA" -t ios --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+      - name: Remove local signing materials
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+          rm -f "$HOME/.private_keys/AuthKey_${API_KEY_ID}.p8" || true
