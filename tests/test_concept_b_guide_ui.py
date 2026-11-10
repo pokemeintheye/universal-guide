@@ -77,6 +77,14 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('guideNavigationTime=el.offsetLeft+el.offsetWidth/2',HTML)
         self.assertNotIn('const score=primary+secondary*2;',HTML)
 
+    def test_philo_fallback_label_and_bottom_panel_alignment(self):
+        self.assertIn('<strong>Schedule unavailable</strong><span>▶ Watch on Philo</span>',HTML)
+        self.assertNotIn(' · Test Link',HTML)
+        self.assertIn('tags.insertBefore(tag,$("guideartcredit"))',HTML)
+        self.assertIn('flex:0 0 clamp(108px,12vw,175px)',HTML)
+        self.assertIn('justify-content:flex-start;align-content:center;gap:7px',HTML)
+        self.assertIn('flex:0 0 auto;margin:0;align-self:center',HTML)
+
     def test_missing_philo_schedule_is_a_remote_navigable_tile(self):
         self.assertIn('class="epg-program epg-no-schedule"',HTML)
         self.assertIn('data-philo-url=',HTML)
