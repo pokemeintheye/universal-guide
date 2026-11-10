@@ -23,6 +23,7 @@ struct PhoneGuideView: View {
     @State private var actionError: String?
     @State private var philoResult: String?
     @State private var philoBusy = false
+    @State private var detailChoice = 0
 
     private var channel: PhoneChannel? {
         store.channels.indices.contains(channelIndex) ? store.channels[channelIndex] : nil
@@ -151,6 +152,7 @@ struct PhoneGuideView: View {
                             Button {
                                 channelIndex = i
                                 programIndex = 0
+                                detailChoice = 0
                                 details = true
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -188,6 +190,7 @@ struct PhoneGuideView: View {
                                         if let interval = visibleInterval(program, start: start) {
                                             Button {
                                                 channelIndex = c; programIndex = p
+                                                detailChoice = 0
                                                 details = true
                                             } label: {
                                                 VStack(alignment: .leading, spacing: 2) {
@@ -269,7 +272,13 @@ struct PhoneGuideView: View {
         }
         if showingSettings { if action == .back { showingSettings = false }; return }
         if details {
-            if action == .back { details = false }
+            switch action {
+            case .back: details = false
+            case .up, .left: detailChoice = max(0, detailChoice - 1)
+            case .down, .right: detailChoice = min(max(0, detailOptions.count - 1), detailChoice + 1)
+            case .select, .options: performDetailAction()
+            default: break
+            }
             return
         }
         let count = store.channels.count
@@ -286,7 +295,7 @@ struct PhoneGuideView: View {
         case .now:
             if let idx = channel?.programs.firstIndex(where: { $0.onNow }) { programIndex = idx }
         case .select, .options:
-            if program != nil { details = true }
+            if program != nil { detailChoice = 0; details = true }
         case .back: break
         }
     }
@@ -305,26 +314,27 @@ struct PhoneGuideView: View {
                         Text(program.description ?? "No description available.")
                             .foregroundStyle(.secondary)
                         Divider()
-                        if let ratingKey = program.plex?.ratingKey, Int(ratingKey) != nil {
-                            Text("AVAILABLE IN PLEX").foregroundStyle(.mint).font(.caption.bold())
-                            HStack {
-                                Button("Watch from Beginning") { playPlex("beginning", program) }
-                                    .buttonStyle(.borderedProminent)
-                                if program.onNow {
-                                    Button("Watch from Current Point") { playPlex("join", program) }
-                                        .buttonStyle(.bordered)
+                        Text("BACKBONE: UP / DOWN TO CHOOSE · A TO ACT · B TO GO BACK")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.cyan)
+                        ForEach(Array(detailOptions.enumerated()), id: \.offset) { index, option in
+                            Button { detailChoice = index; performDetailAction() } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: index == detailChoice ? "largecircle.fill.circle" : "circle")
+                                    Text(option.label)
+                                    Spacer()
+                                }
+                                .padding(10)
+                                .background(index == detailChoice ? Color.cyan.opacity(0.25) : navyLight)
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 9)
+                                        .stroke(index == detailChoice ? Color.cyan : gridLine, lineWidth: index == detailChoice ? 2 : 1)
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
-                        if channel.source == "tablo" && program.onNow {
-                            Button("Watch Live on Tablo") { playTablo(channel, program) }
-                                .buttonStyle(.borderedProminent)
-                        }
-                        if channel.source == "philo", let links = program.philoLinks {
-                            Text("PHILO HANDOFF TEST").font(.caption.bold())
-                            if let url = links.channel { Button("Open Channel in Philo") { openPhilo(url) } }
-                            if let url = links.episode { Button("Open Episode in Philo") { openPhilo(url) } }
-                            if let url = links.show { Button("Open Series in Philo") { openPhilo(url) } }
+                        if channel.source == "philo" {
                             Text("iPhone Universal Links do not prove Apple TV handoff or automatic playback.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -344,6 +354,44 @@ struct PhoneGuideView: View {
             .toolbar { Button("Done") { details = false } }
         }
         .presentationDetents([.large])
+    }
+
+    private struct DetailOption {
+        let key: String
+        let label: String
+    }
+    private var detailOptions: [DetailOption] {
+        guard let channel, let program else { return [] }
+        var result: [DetailOption] = []
+        if Int(program.plex?.ratingKey ?? "") != nil {
+            result.append(.init(key: "plex-begin", label: "Watch from Beginning · Plex"))
+            if program.onNow { result.append(.init(key: "plex-join", label: "Watch from Current Point · Plex")) }
+        }
+        if channel.source == "tablo" && program.onNow && program.channelID != nil {
+            result.append(.init(key: "tablo", label: "Watch Live · Tablo"))
+        }
+        if channel.source == "philo", let links = program.philoLinks {
+            if links.channel != nil { result.append(.init(key: "philo-channel", label: "Open Channel · Philo")) }
+            if links.episode != nil { result.append(.init(key: "philo-episode", label: "Open Episode · Philo")) }
+            if links.show != nil { result.append(.init(key: "philo-show", label: "Open Series · Philo")) }
+        }
+        return result
+    }
+    private func performDetailAction() {
+        guard let channel, let program, detailOptions.indices.contains(detailChoice) else { return }
+        let option = detailOptions[detailChoice].key
+        switch option {
+        case "plex-begin": playPlex("beginning", program)
+        case "plex-join": playPlex("join", program)
+        case "tablo": playTablo(channel, program)
+        case "philo-channel":
+            if let link = program.philoLinks?.channel { openPhilo(link) }
+        case "philo-show":
+            if let link = program.philoLinks?.show { openPhilo(link) }
+        case "philo-episode":
+            if let link = program.philoLinks?.episode { openPhilo(link) }
+        default: break
+        }
     }
 
     private func playPlex(_ mode: String, _ program: PhoneProgram) {
