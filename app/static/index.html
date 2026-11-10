@@ -613,6 +613,33 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
  position:absolute;left:10px;top:50%;transform:translateY(-50%);
  color:#c3cee0;font-size:13px;white-space:nowrap;
 }
+
+/* Poster preview sizing and aligned attribution: keep the portrait frame
+   visible even when artwork is still loading, and badge/credit stay adjacent. */
+.guide-app .guide-art{
+ flex:0 0 clamp(108px,12vw,175px);
+ width:clamp(108px,12vw,175px);
+ min-width:clamp(108px,12vw,175px);
+ height:100%;aspect-ratio:5/7;max-width:none;
+}
+.guide-detail-content .guide-source-tags{
+ justify-content:flex-start;align-content:center;gap:7px;
+ margin:6px 0 8px;min-height:25px;max-height:32px;
+ flex-wrap:nowrap;white-space:nowrap;
+}
+.guide-detail-content .guide-image-credit{
+ flex:0 0 auto;margin:0;align-self:center;
+ padding:3px 2px;font-size:11px;line-height:1.25;
+}
+.guide-detail-content #guidepreviewdesc{margin-top:3px}
+@media(max-width:650px){
+ .guide-app .guide-art{
+  flex:0 0 clamp(78px,21vw,115px);
+  width:clamp(78px,21vw,115px);
+  min-width:clamp(78px,21vw,115px);max-width:none;
+ }
+ .guide-detail-content .guide-source-tags{gap:4px;max-height:32px}
+}
 </style></head>
 <body>
 <main class="container guide-app">
@@ -895,7 +922,8 @@ function showGuidePreview(program){
    ...(e.plex?[["✓ Plex Match","plex-match"]]:[]),
    [ch.source==="tablo"?"Tablo":ch.source==="philo"?"Philo":ch.source.toUpperCase(),""]]){
   const tag=document.createElement("span");
-  tag.textContent=name;tag.className=css;tags.appendChild(tag);
+  tag.textContent=name;tag.className=css;
+  tags.insertBefore(tag,$("guideartcredit"));
  }
  const artwork=$("guideart");
  artwork.querySelector("span").textContent=(e.title||"TV").slice(0,2).toUpperCase();
@@ -1389,8 +1417,7 @@ async function guide(only){
      const verified=/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(ch.philo_channel_url);
      blocks=verified?'<button type="button" class="epg-program epg-no-schedule" data-philo-url="'+
         esc(ch.philo_channel_url)+'" style="left:0;width:360px;max-width:360px" aria-label="Open '+esc(ch.label)+' on Philo">'+
-        '<strong>Schedule unavailable</strong><span>▶ Watch on Philo'+
-        (ch.philo_verification==="iphone-tested"?"":" · Test Link")+'</span></button>'
+        '<strong>Schedule unavailable</strong><span>▶ Watch on Philo</span></button>'
        :'<div class="epg-no-schedule-message">Schedule unavailable</div>';
    }
    const label=ch.source==="tablo"
