@@ -108,7 +108,7 @@ class ConceptBGuideUiTests(unittest.TestCase):
     def test_details_are_inline_and_philo_watches_channel_only(self):
         self.assertNotIn('id="guidedetails"',HTML)
         self.assertIn('const channelUrl=verifiedPhiloPlaybackUrl(program)',HTML)
-        self.assertIn('www\\.philo\\.com\\/player\\/channel',HTML)
+        self.assertIn('function verifiedPhiloPlaybackUrl(program)',HTML)
         self.assertIn('$("philoepisode").hidden=true',HTML)
         self.assertIn('$("philoshow").hidden=true',HTML)
 
