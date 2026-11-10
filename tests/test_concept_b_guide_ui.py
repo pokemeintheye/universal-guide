@@ -163,6 +163,16 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('artworkImage.src=local.src',HTML)
         self.assertIn('artworkImage.src=img.src',HTML)
 
+    def test_preview_buttons_have_reserved_height_inside_panel(self):
+        self.assertIn('height:clamp(240px,30dvh,310px)',HTML)
+        self.assertIn('flex:0 0 clamp(240px,30dvh,310px)',HTML)
+        self.assertIn('box-sizing:border-box;',HTML)
+        self.assertIn('flex:1 1 0;',HTML)
+        self.assertIn('flex:0 0 66px;',HTML)
+        self.assertIn('min-height:66px;',HTML)
+        self.assertIn('height:48px;',HTML)
+        self.assertIn('overflow:visible;',HTML)
+
     def test_preview_description_and_button_focus_do_not_overlap(self):
         self.assertIn('-webkit-line-clamp:2',HTML)
         self.assertIn('max-height:2.8em',HTML)
