@@ -1091,12 +1091,23 @@ async function guide(only){
   let rows='';
   for(const ch of channels){
    let blocks='';
-   for(const p of ch.programs){
-    const a=Math.max(start,Date.parse(p.start)),b=Math.min(end,Date.parse(p.stop));
-    if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
+   // Guide feeds sometimes overlap on the same channel; clip each interval
+   // to the next scheduled start so no two buttons occupy the same pixels.
+   const airings=ch.programs.map(p=>({p,a:Math.max(start,Date.parse(p.start)),
+     b:Math.min(end,Date.parse(p.stop))}))
+     .filter(item=>Number.isFinite(item.a)&&Number.isFinite(item.b)&&item.b>item.a)
+     .sort((x,y)=>x.a-y.a||y.b-x.b);
+   let previousEnd=start;
+   for(let n=0;n<airings.length;n++){
+    const {p}=airings[n];
+    const a=Math.max(airings[n].a,previousEnd);
+    const nextStart=n+1<airings.length?airings[n+1].a:end;
+    const b=Math.min(airings[n].b,Math.max(a,nextStart));
+    if(b<=a)continue;
+    previousEnd=b;
     const left=(a-start)/(end-start)*100,width=(b-a)/(end-start)*100;
     const index=shownPrograms.push({channel:ch,entry:p})-1;
-    blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+(p.no_guide_data?' no-guide':'')+'" data-program="'+index+'" style="left:'+left+'%;width:calc('+width+'% - 3px)" title="'+esc(p.title)+(p.no_guide_data?' — tap to watch live':'')+'"><strong>'+esc(p.title)+'</strong>'+(p.no_guide_data?'<em>▶ Watch Live</em>':p.plex?'<em>✓ In Plex</em>':'')+'</button>';
+    blocks+='<button type="button" class="epg-program'+(p.plex?' owned':'')+(p.no_guide_data?' no-guide':'')+'" data-program="'+index+'" style="left:'+left+'%;width:'+width+'%;max-width:'+width+'%" title="'+esc(p.title)+(p.no_guide_data?' — tap to watch live':'')+'"><strong>'+esc(p.title)+'</strong>'+(p.no_guide_data?'<em>▶ Watch Live</em>':p.plex?'<em>✓ In Plex</em>':'')+'</button>';
    }
    if(ch.schedule_unavailable && ch.source==="philo" && ch.philo_channel_url){
      const verified=/^https:\/\/www\.philo\.com\/player\/channel\/[A-Za-z0-9_-]+$/.test(ch.philo_channel_url);
