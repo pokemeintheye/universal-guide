@@ -32,4 +32,4 @@ xcodebuild -project UniversalGuideTV.xcodeproj -scheme UniversalGuideTV -sdk app
 
 ## Signing
 
-`co.thejonesfamily.universalguide` is a **placeholder** bundle identifier; choose an unused identifier and register it in the Apple Developer portal. Never commit Apple API keys, private signing keys, provisioning profiles, Plex tokens, or credentials to GitHub. Keep the app connected to your trusted LAN only.
+The registered Apple App ID and Xcode project bundle identifier are both `co.thejonesfamily.universalguide`. Keep the App Store Connect app record on this same bundle ID. Never commit Apple API keys, private signing keys, provisioning profiles, Plex tokens, or credentials to GitHub. Keep the app connected to your trusted LAN only.
