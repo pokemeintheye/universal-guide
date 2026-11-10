@@ -853,15 +853,14 @@ function showGuidePreview(program){
    .filter(Boolean).join(" · ");
  $("guidepreviewdesc").textContent=e.description||"No program description available.";
  const tags=$("guidepreviewsources");
- tags.replaceChildren();
+ // Remove only source badges. Preserve the attached TVmaze credit link.
+ tags.querySelectorAll(":scope > span").forEach(badge=>badge.remove());
  for(const [name,css] of [
    ...(e.plex?[["✓ Plex Match","plex-match"]]:[]),
    [ch.source==="tablo"?"Tablo":ch.source==="philo"?"Philo":ch.source.toUpperCase(),""]]){
   const tag=document.createElement("span");
   tag.textContent=name;tag.className=css;tags.appendChild(tag);
  }
- // Keep attribution in the existing badges row, preserving summary space.
- tags.appendChild($("guideartcredit"));
  const artwork=$("guideart");
  artwork.querySelector("span").textContent=(e.title||"TV").slice(0,2).toUpperCase();
  const artworkImage=$("guideartimage");
