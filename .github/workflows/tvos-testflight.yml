@@ -37,6 +37,12 @@ jobs:
           xcrun --sdk appletvos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate required Apple TV branding
+        working-directory: tvOS
+        run: |
+          python3 -m venv "$RUNNER_TEMP/brand-venv"
+          "$RUNNER_TEMP/brand-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/brand-venv/bin/python" scripts/generate_brand_assets.py
       - name: Generate tvOS Xcode project
         working-directory: tvOS
         run: xcodegen generate
