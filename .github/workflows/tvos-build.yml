@@ -15,6 +15,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate Apple TV branding when present
+        working-directory: tvOS
+        run: |
+          python3 -m venv "$RUNNER_TEMP/brand-venv"
+          "$RUNNER_TEMP/brand-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/brand-venv/bin/python" scripts/generate_brand_assets.py --optional
       - name: Generate Xcode project
         working-directory: tvOS
         run: xcodegen generate
