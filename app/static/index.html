@@ -937,7 +937,12 @@ function guideScrollToProgram(button){
  const heading=pane.querySelector(".epg-time");
  const topEdge=paneRect.top+(heading?.getBoundingClientRect().height||0)+5;
  const bottomEdge=paneRect.bottom-8;
- if(rect.left<leftEdge) pane.scrollLeft=Math.max(0,pane.scrollLeft-(leftEdge-rect.left));
+ const availableWidth=Math.max(1,rightEdge-leftEdge);
+ // A long show can span multiple screens; align its start, not its far edge.
+ if(rect.width>availableWidth){
+  if(rect.left<leftEdge||rect.left>rightEdge)
+   pane.scrollLeft=Math.max(0,pane.scrollLeft+rect.left-leftEdge);
+ }else if(rect.left<leftEdge) pane.scrollLeft=Math.max(0,pane.scrollLeft-(leftEdge-rect.left));
  else if(rect.right>rightEdge) pane.scrollLeft+=rect.right-rightEdge;
  if(rect.top<topEdge) pane.scrollTop=Math.max(0,pane.scrollTop-(topEdge-rect.top));
  else if(rect.bottom>bottomEdge) pane.scrollTop+=rect.bottom-bottomEdge;
