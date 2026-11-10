@@ -1097,11 +1097,28 @@ function remoteFocusNext(direction){
   }
   return true;
  }
+ // Earlier, Today and Later form a reliable horizontal remote group.
+ const timeControls=["earlier","now","later"].map(id=>$(id));
+ const timeIndex=timeControls.indexOf(current);
+ if(timeIndex>=0&&$("guidefiltermenu").hidden&&
+    $("settingsdrawer").hidden&&$("searchdrawer").hidden){
+  if(direction==="ArrowLeft"||direction==="ArrowRight"){
+   const delta=direction==="ArrowRight"?1:-1;
+   const next=Math.max(0,Math.min(timeControls.length-1,timeIndex+delta));
+   timeControls[next].focus({preventScroll:true});
+   return true;
+  }
+  if(direction==="ArrowDown"){remoteGuideFocus();return true}
+  if(direction==="ArrowUp"){$("opensearch").focus({preventScroll:true});return true}
+ }
  const rail=["opensearch","openfilters","opensettings","guidenow"].map(id=>$(id));
  const railIndex=rail.indexOf(current);
  if(railIndex>=0&&$("guidefiltermenu").hidden&&
     $("settingsdrawer").hidden&&$("searchdrawer").hidden){
   if(direction==="ArrowRight"){remoteGuideFocus();return true}
+  if(direction==="ArrowUp"&&railIndex===0){
+   $("now").focus({preventScroll:true});return true;
+  }
   if(direction==="ArrowUp"||direction==="ArrowDown"){
    const next=Math.max(0,Math.min(rail.length-1,railIndex+(direction==="ArrowUp"?-1:1)));
    rail[next].focus();return true;
@@ -1423,7 +1440,7 @@ $("guide").addEventListener("keydown",event=>{
    // Reach the true start of the timeline without resetting the day or guide.
    if($("guide").scrollLeft>1)$("guide").scrollLeft=0;
    else $("openfilters").focus({preventScroll:true});
-  }else if(event.key==="ArrowUp")$("opensearch").focus({preventScroll:true});
+  }else if(event.key==="ArrowUp")$("now").focus({preventScroll:true});
   return;
  }
  if(event.key==="ArrowLeft"||event.key==="ArrowRight"){
