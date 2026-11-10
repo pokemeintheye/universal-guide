@@ -1,6 +1,6 @@
 name: UniversalGuideTV
 options:
-  bundleIdPrefix: com.universalguide
+  bundleIdPrefix: co.thejonesfamily
 settings:
   base:
     SWIFT_VERSION: 5.9
@@ -16,7 +16,7 @@ targets:
       path: Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.universalguide.tv
+        PRODUCT_BUNDLE_IDENTIFIER: co.thejonesfamily.universalguide
         TARGETED_DEVICE_FAMILY: "3"
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
