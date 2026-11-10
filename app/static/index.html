@@ -615,10 +615,6 @@ body{min-height:100dvh;background:radial-gradient(ellipse at 75% 5%,#17152d,#090
   <label for="findshow">Find an upcoming program</label>
   <div class="bar"><input id="findshow" placeholder="Show or movie title" aria-label="Find a show in the guide"><button id="findbutton" type="button">Find</button></div>
   <div id="findresults" class="note" aria-live="polite"></div>
-  <details><summary>Search Plex catalog</summary>
-   <input id="search" placeholder="Search your Plex movies and shows" aria-label="Search Plex catalog">
-   <div id="results" class="empty">Enter a title to search your Plex library.</div>
-  </details>
  </section>
  <div id="guideshade" class="guide-shade" hidden></div>
  <div class="guide-legacy-controls" hidden>
@@ -653,7 +649,6 @@ async function req(url,opts){const r=await fetch(url,opts);const d=await r.json(
 async function status(){try{const s=await req("/api/status");$("plexcount").textContent="Plex items: "+s.media_count;$("epgcount").textContent="XMLTV entries: "+s.listings_count;$("tablocount").textContent="Tablo entries: "+s.tablo_count;$("philocount").textContent="Philo programs: "+s.philo_count;if(s.tablo_error)$("message").textContent="Tablo: "+s.tablo_error;$("status").textContent=s.plex_configured?"Plex configured":"Plex needs configuration";$("status").className="chip "+(s.plex_configured?"green":"");$("message").textContent=s.plex_error?"Plex error: "+s.plex_error:s.tablo_error?"Tablo: "+s.tablo_error:s.media_count?"Plex updated: "+new Date(s.plex_sync).toLocaleString()+(s.tablo_sync?" | Tablo updated: "+new Date(s.tablo_sync).toLocaleString():""):"Set PLEX_URL and PLEX_TOKEN, then click Refresh Plex catalog."}catch(e){$("message").textContent=e.message}}
 async function act(kind){const b=$(kind);b.disabled=true;$("message").textContent="Working…";try{const v=await req("/api/sync/"+(kind==="sync"?"plex":kind==="tablo"?"tablo":kind==="philo"?"philo":"guide"),{method:"POST"});$("message").textContent=JSON.stringify(v);await status();await guide(view.plex)}catch(e){$("message").textContent="Error: "+e.message}finally{b.disabled=false}}
 $("sync").onclick=()=>act("sync");$("epg").onclick=()=>act("epg");$("tablo").onclick=()=>act("tablo");$("philo").onclick=()=>act("philo");
-let debounce;$("search").oninput=()=>{clearTimeout(debounce);debounce=setTimeout(async()=>{const q=$("search").value.trim();if(q.length<2){$("results").textContent="Enter two or more characters.";return}try{const r=await req("/api/search?q="+encodeURIComponent(q));$("results").innerHTML=r.length?r.map(x=>'<div class="result"><b>'+esc(x.show_title||x.title)+'</b> '+(x.kind==="episode"?"— "+esc(x.title)+" (S"+x.season+" E"+x.episode+")":"("+x.year+")")+' <span class="chip green">In Plex</span></div>').join(""):"No matches."}catch(e){$("results").textContent=e.message}},250)};
 const GUIDE_STATE_KEY="universal-guide-return-state-v1";
 const GUIDE_STATE_AGE=24*60*60*1000;
 function readGuideState(){
