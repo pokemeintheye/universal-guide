@@ -127,6 +127,12 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('if(drawer&&(direction==="ArrowUp"||direction==="ArrowDown"))',HTML)
         self.assertNotIn('$("guide").innerHTML=\'<div style="padding:14px">\'+output',HTML)
 
+    def test_tvmaze_credit_does_not_steal_synopsis_line(self):
+        self.assertIn('tags.appendChild($("guideartcredit"))',HTML)
+        self.assertIn('class="guide-source-tags">',HTML)
+        self.assertIn('guide-detail-content .guide-image-credit',HTML)
+        self.assertIn('guide-detail-content #guidepreviewdesc{flex-shrink:0}',HTML)
+
     def test_preview_description_and_button_focus_do_not_overlap(self):
         self.assertIn('-webkit-line-clamp:2',HTML)
         self.assertIn('max-height:2.8em',HTML)
