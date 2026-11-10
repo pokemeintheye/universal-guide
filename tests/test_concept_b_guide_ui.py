@@ -142,6 +142,19 @@ class ConceptBGuideUiTests(unittest.TestCase):
         self.assertIn('guide-detail-content .guide-image-credit',HTML)
         self.assertIn('guide-detail-content #guidepreviewdesc{flex-shrink:0}',HTML)
 
+    def test_bundled_sports_and_news_posters_fallback(self):
+        root=Path(__file__).resolve().parents[1]/"app"/"static"
+        self.assertTrue((root/"artwork-sports.svg").is_file())
+        self.assertTrue((root/"artwork-news.svg").is_file())
+        self.assertIn('function guideGenericArtwork(program)',HTML)
+        self.assertIn('return "/artwork/news.svg"',HTML)
+        self.assertIn('return "/artwork/sports.svg"',HTML)
+        self.assertIn('if(!text||e.no_guide_data)return null',HTML)
+        self.assertIn('artworkImage.src=genericPoster',HTML)
+        self.assertIn('const genericPoster=guideGenericArtwork(program)',HTML)
+        self.assertIn('artworkImage.src=local.src',HTML)
+        self.assertIn('artworkImage.src=img.src',HTML)
+
     def test_preview_description_and_button_focus_do_not_overlap(self):
         self.assertIn('-webkit-line-clamp:2',HTML)
         self.assertIn('max-height:2.8em',HTML)
