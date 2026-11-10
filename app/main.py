@@ -15,6 +15,7 @@ DB=Path("/data/guide.db")
 GUIDE=Path(os.getenv("GUIDE_XMLTV","/data/guide.xml"))
 PLEX_URL=os.getenv("PLEX_URL","").rstrip("/")
 PLEX_TOKEN=os.getenv("PLEX_TOKEN","")
+TMDB_API_KEY=os.getenv("TMDB_API_KEY","").strip()
 PLEX_ALLOWED_LABEL=os.getenv("PLEX_ALLOWED_LABEL","").strip()
 PLEX_LABEL_MODE=os.getenv("PLEX_LABEL_MODE","allow").strip().casefold()
 if PLEX_LABEL_MODE not in ("allow","exclude"):
@@ -783,8 +784,10 @@ artwork_progress={"running":False,"mode":None,"completed":0,"planned":0,
                   "downloaded":0,"missing":0,"failed":0,"current_title":"",
                   "last_error":"","last_finished":None}
 
-def artwork_key(title):
+def artwork_key(title,kind="series",year=None):
     from app.artwork import normalize_title
+    if kind=="movie":
+        return json.dumps([normalize_title(title),"movie",year if isinstance(year,int) and year>1800 else None],separators=(",",":"))
     return json.dumps([normalize_title(title),None,None],separators=(",",":"))
 
 def upcoming_artwork_titles():
@@ -792,19 +795,21 @@ def upcoming_artwork_titles():
     until=now+timedelta(hours=48)
     with db() as c:
         titles=c.execute("""
-            SELECT DISTINCT title FROM (
-                SELECT title,stop,program_kind FROM listings
-                UNION ALL SELECT title,stop,program_kind FROM tablo_listings
-                UNION ALL SELECT title,stop,program_kind FROM philo_listings
+            SELECT DISTINCT title,year,program_kind FROM (
+                SELECT title,year,stop,program_kind FROM listings
+                UNION ALL SELECT title,year,stop,program_kind FROM tablo_listings
+                UNION ALL SELECT title,year,stop,program_kind FROM philo_listings
             )
             WHERE stop>? AND stop<? AND title IS NOT NULL AND length(title) BETWEEN 2 AND 120
-              AND coalesce(program_kind,'unknown') != 'movie'
+              AND (coalesce(program_kind,'unknown') != 'movie' OR ?)
             ORDER BY title
-        """,(now.isoformat(),until.isoformat())).fetchall()
-    # De-duplicate spelling/punctuation variants before calling the provider.
+        """,(now.isoformat(),until.isoformat(),bool(TMDB_API_KEY))).fetchall()
+    # Show titles share one cache entry; movies are isolated by title and year.
     unique={}
     for row in titles:
-        unique.setdefault(artwork_key(row["title"]),row["title"])
+        kind="movie" if row["program_kind"]=="movie" else "series"
+        year=int(row["year"]) if kind=="movie" and row["year"] else None
+        unique.setdefault(artwork_key(row["title"],kind,year),(row["title"],kind,year))
     return unique
 
 def artwork_snapshot():
@@ -833,7 +838,7 @@ def artwork_snapshot():
 
 def refresh_show_artwork(manual=False):
     """Fetch upcoming show-level images, one title at a time, without blocking UI."""
-    from app.artwork import find_tvmaze_artwork,safe_image_url
+    from app.artwork import find_tvmaze_artwork,safe_image_url,find_tmdb_movie_artwork,safe_tmdb_image_url
     import hashlib
     # The manual job reserves the same lock as the automatic job.
     if not artwork_refresh_lock.acquire(blocking=False):
@@ -849,7 +854,7 @@ def refresh_show_artwork(manual=False):
             cached={row["cache_key"]:row for row in c.execute(
                 "SELECT cache_key,image_url,checked_at FROM guide_artwork_cache")}
         todo=[]
-        for key,title in titles.items():
+        for key,(title,kind,year) in titles.items():
             previous=cached.get(key)
             if previous and now-float(previous["checked_at"])<(
                     30*86400 if previous["image_url"] else 86400):
@@ -859,19 +864,20 @@ def refresh_show_artwork(manual=False):
                 if (not image and not manual) or (image.startswith("/api/guide/artwork/cached/") and (
                     ARTWORK_DIR/image.rsplit("/",1)[-1]).is_file()):
                     continue
-            todo.append((key,title))
+            todo.append((key,title,kind,year))
         if not manual:
             todo=todo[:ARTWORK_BATCH]
         with artwork_progress_lock:
             artwork_progress["planned"]=len(todo)
-        for key,title in todo:
+        for key,title,kind,year in todo:
             with artwork_progress_lock:
                 artwork_progress["current_title"]=title
             image_url=None
             credit_url=None
             try:
-                result=find_tvmaze_artwork(title)
-                if result and safe_image_url(result.get("image_url")):
+                result=(find_tmdb_movie_artwork(title,year,TMDB_API_KEY) if kind=="movie"
+                        else find_tvmaze_artwork(title))
+                if result and (safe_image_url(result.get("image_url")) or safe_tmdb_image_url(result.get("image_url"))):
                     response=requests.get(result["image_url"],timeout=(3,8),
                                           stream=True,allow_redirects=False)
                     try:
@@ -939,9 +945,10 @@ def guide_artwork_refresh():
 @app.get("/api/guide/artwork")
 def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
                            season:int|None=Query(None,ge=0,le=100),
-                           episode:int|None=Query(None,ge=1,le=999)):
+                           episode:int|None=Query(None,ge=1,le=999),
+                           kind:str="series",year:int|None=None):
     """Read already-prefetched series art; never download on selection."""
-    key=artwork_key(title)
+    key=artwork_key(title,kind,year)
     with db() as c:
         row=c.execute("SELECT image_url,credit_url FROM guide_artwork_cache WHERE cache_key=?",
                       (key,)).fetchone()
@@ -953,7 +960,7 @@ def guide_external_artwork(title:str=Query(...,min_length=2,max_length=120),
     if url and not (ARTWORK_DIR/url.rsplit("/",1)[-1]).is_file():
         url=None
     return {"image_url":url,"credit_url":row["credit_url"] if url else None,
-            "source":"TVmaze" if url else None}
+            "source":("TMDB" if row["credit_url"] and "themoviedb.org/movie/" in row["credit_url"] else "TVmaze") if url else None}
 
 @app.get("/api/guide/artwork/cached/{filename}")
 def guide_cached_artwork(filename:str):
