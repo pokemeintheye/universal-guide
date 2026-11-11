@@ -47,15 +47,23 @@ struct TVGuideScreen: View {
     @State private var tvSelection = ""
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
     @State private var now = Date()
+    // A shared 16:9 design canvas scales the guide's vertical proportions
+    // on iPhone landscape and Apple TV, including six visible program rows.
     #if os(iOS)
+    @State private var viewportHeight: CGFloat = 390
     private let minutePixels: CGFloat = 3.5
-    private let stationWidth: CGFloat = 115
-    private let rowHeight: CGFloat = 64
+    private let stationWidth: CGFloat = 105
     #else
+    @State private var viewportHeight: CGFloat = 1080
     private let minutePixels: CGFloat = 7
     private let stationWidth: CGFloat = 232
-    private let rowHeight: CGFloat = 100
     #endif
+    private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
+    private var rowHeight: CGFloat { 94 * uiScale }
+    private var timelineHeaderHeight: CGFloat { 38 * uiScale }
+    private var timelineHeight: CGFloat { timelineHeaderHeight + 6 * rowHeight }
+    private var detailHeight: CGFloat { 300 * uiScale }
+
     private var anchor: Date {
         let minute = Calendar.current.component(.minute, from: now)
         return Calendar.current.date(byAdding: .minute, value: -(minute % 30),
@@ -93,7 +101,7 @@ struct TVGuideScreen: View {
     var body: some View {
         ZStack {
             TVPalette.background.ignoresSafeArea()
-            HStack(spacing: isCompact ? 12 : 14) {
+            HStack(spacing: isCompact ? 7 : 14) {
                 sidebarRail
                     .frame(width: railWidth)
                 VStack(spacing: 13) {
@@ -116,6 +124,15 @@ struct TVGuideScreen: View {
             .padding(.horizontal, isCompact ? 8 : 20)
             .padding(.vertical, isCompact ? 5 : 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { viewportHeight = geometry.size.height }
+                        .onChange(of: geometry.size.height) { _, value in
+                            viewportHeight = value
+                        }
+                }
+            }
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
@@ -242,12 +259,7 @@ struct TVGuideScreen: View {
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
-            Divider().overlay(TVPalette.purple)
-            railButton("clock.arrow.circlepath", name: "Today", key: "rail-today") { goToday() }
             Spacer()
-            Text("UG")
-                .font(.system(size: 15, weight: .heavy))
-                .foregroundStyle(TVPalette.purple)
         }
         .padding(10)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 20))
@@ -256,12 +268,11 @@ struct TVGuideScreen: View {
     private func railButton(_ icon: String, name: String, key: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: isCompact ? 16 : 27, weight: .medium))
-                Text(name).font(.system(size: isCompact ? 9 : 13, weight: .semibold))
-            }
+            Image(systemName: icon)
+                .font(.system(size: isCompact ? 19 : 31, weight: .medium))
+                .accessibilityLabel(name)
             .foregroundStyle(selectedFocus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
-            .frame(width: isCompact ? 56 : 80, height: isCompact ? 48 : 72)
+            .frame(width: isCompact ? 38 : 80, height: isCompact ? 42 : 78)
             .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
@@ -291,7 +302,7 @@ struct TVGuideScreen: View {
                 .background(TVPalette.purple.opacity(0.26), in: Capsule())
             }
         }
-        .frame(height: isCompact ? 36 : 65)
+        .frame(height: 60 * uiScale)
     }
 
     private var timeline: some View {
@@ -311,7 +322,7 @@ struct TVGuideScreen: View {
                                 .frame(width: minutePixels * 30, alignment: .leading)
                         }
                     }
-                    .frame(height: 38)
+                    .frame(height: timelineHeaderHeight)
                     .background(Color(red: 0.105, green: 0.11, blue: 0.19))
                     ForEach(Array(channels.enumerated()), id: \.element.id) { channelIndex, channel in
                         HStack(spacing: 0) {
@@ -369,7 +380,7 @@ struct TVGuideScreen: View {
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13)
             .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
-        .frame(maxHeight: .infinity)
+        .frame(height: timelineHeight)
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
@@ -462,7 +473,7 @@ struct TVGuideScreen: View {
                         .foregroundStyle(.white.opacity(0.28))
                 }
             }
-            .frame(width: isCompact ? 64 : 150, height: isCompact ? 90 : 207)
+            .frame(width: 185 * uiScale, height: 268 * uiScale)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
                 VStack(alignment: .leading, spacing: 6) {
@@ -501,7 +512,7 @@ struct TVGuideScreen: View {
             }
         }
         .padding(isCompact ? 7 : 18)
-        .frame(height: isCompact ? 112 : 248)
+        .frame(height: detailHeight)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
 
     }
@@ -598,7 +609,7 @@ struct TVGuideScreen: View {
         false
         #endif
     }
-    private var railWidth: CGFloat { isCompact ? 70 : 94 }
+    private var railWidth: CGFloat { isCompact ? 48 : 94 }
 
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
