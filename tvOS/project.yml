@@ -12,6 +12,7 @@ targets:
     platform: tvOS
     sources:
       - path: Sources
+      - path: ../Shared/GuideModels.swift
       - path: Assets.xcassets
     info:
       path: Info.plist

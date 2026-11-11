@@ -21,7 +21,6 @@ private struct TVFocusCard: ButtonStyle {
 struct TVGuideScreen: View {
     @AppStorage("guide.serverURL") private var serverURL = ""
     @StateObject private var store = GuideStore()
-    @State private var sidebar: TVSidebar = .none
     @State private var filter = "All"
     @State private var searchText = ""
     @State private var favoriteOnly = false
@@ -36,9 +35,15 @@ struct TVGuideScreen: View {
     @State private var loadingPlayback = false
     @FocusState private var focus: String?
     @State private var now = Date()
+    #if os(iOS)
+    private let minutePixels: CGFloat = 3.5
+    private let stationWidth: CGFloat = 115
+    private let rowHeight: CGFloat = 54
+    #else
     private let minutePixels: CGFloat = 6
     private let stationWidth: CGFloat = 205
     private let rowHeight: CGFloat = 88
+    #endif
     private var anchor: Date {
         let minute = Calendar.current.component(.minute, from: now)
         return Calendar.current.date(byAdding: .minute, value: -(minute % 30),
@@ -68,7 +73,7 @@ struct TVGuideScreen: View {
             TVPalette.background.ignoresSafeArea()
             HStack(spacing: 20) {
                 sidebarRail
-                    .frame(width: 100)
+                    .frame(width: railWidth)
                 VStack(spacing: 13) {
                     header
                     if let error = store.error, store.channels.isEmpty {
@@ -86,8 +91,8 @@ struct TVGuideScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, 45)
-            .padding(.vertical, 30)
+            .padding(.horizontal, isCompact ? 8 : 45)
+            .padding(.vertical, isCompact ? 5 : 30)
             if loadingPlayback {
                 Color.black.opacity(0.55).ignoresSafeArea()
                 ProgressView("Preparing video…")
@@ -128,18 +133,36 @@ struct TVGuideScreen: View {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
         .task { await refreshGuide() }
-        .onMoveCommand(perform: remoteMove)
-        .onExitCommand { focus = "program-\(selectedChannel)-\(selectedProgram)" }
-        .onPlayPauseCommand {
-            // A player owns media key events when presented. In the guide,
-            // return focus to the current show instead of losing navigation.
-            focus = "program-\(selectedChannel)-\(selectedProgram)"
-        }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
+        .onChange(of: focus) { _, next in
+            if let next, next.hasPrefix("program-") {
+                let parts = next.split(separator: "-")
+                if parts.count == 3,
+                   let ch = Int(parts[1]), let pg = Int(parts[2]),
+                   channels.indices.contains(ch), channels[ch].programs.indices.contains(pg) {
+                    choose(ch, pg)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            if mediaSession == nil, let raw = event.object as? String { movePhoneDirection(raw) }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            if mediaSession == nil { activateFocused() }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            if mediaSession == nil { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+            #endif
+        }
     }
 
     private var sidebarRail: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: isCompact ? 5 : 16) {
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
@@ -158,11 +181,11 @@ struct TVGuideScreen: View {
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 27, weight: .medium))
-                Text(name).font(.system(size: 13, weight: .semibold))
+                Image(systemName: icon).font(.system(size: isCompact ? 16 : 27, weight: .medium))
+                Text(name).font(.system(size: isCompact ? 9 : 13, weight: .semibold))
             }
             .foregroundStyle(focus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
-            .frame(width: 80, height: 72)
+            .frame(width: isCompact ? 56 : 80, height: isCompact ? 48 : 72)
             .background(focus == key ? TVPalette.purple.opacity(0.38) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
@@ -176,9 +199,9 @@ struct TVGuideScreen: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Universal Guide")
-                    .font(.system(size: 32, weight: .heavy))
+                    .font(.system(size: isCompact ? 19 : 32, weight: .heavy))
                 Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
-                    .font(.system(size: 15))
+                    .font(.system(size: isCompact ? 10 : 15))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -192,13 +215,13 @@ struct TVGuideScreen: View {
                 .background(TVPalette.purple.opacity(0.26), in: Capsule())
             }
         }
-        .frame(height: 65)
+        .frame(height: isCompact ? 36 : 65)
     }
 
     private var timeline: some View {
         ScrollViewReader { vertical in
             ScrollView([.vertical, .horizontal]) {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 0) {
                         Text("CHANNEL")
                             .font(.caption.bold()).foregroundStyle(.secondary)
@@ -265,7 +288,10 @@ struct TVGuideScreen: View {
                 if end > start {
                     Button {
                         choose(index, pi)
-                        focus = "watch-primary"
+                        if program.plex != nil { focus = "watch-primary" }
+                        else if channel.source == "tablo" && program.isOnNow {
+                            focus = "watch-live"
+                        }
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(program.title)
@@ -297,9 +323,6 @@ struct TVGuideScreen: View {
                     .buttonStyle(TVFocusCard())
                     .focused($focus, equals: "program-\(index)-\(pi)")
                     .offset(x: CGFloat(start)*minutePixels)
-                    .onChange(of: focus) { _, next in
-                        if next == "program-\(index)-\(pi)" { choose(index,pi) }
-                    }
                 }
             }
         }
@@ -313,14 +336,15 @@ struct TVGuideScreen: View {
                 .fill(LinearGradient(colors: [TVPalette.purple.opacity(0.5), TVPalette.panel],
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
                 .overlay(Image(systemName: "tv").font(.system(size: 48)).foregroundStyle(.white.opacity(0.5)))
-                .frame(width: 180, height: 132)
+                .frame(width: isCompact ? 0 : 180, height: isCompact ? 0 : 132)
+                .opacity(isCompact ? 0 : 1)
             if let (_, program) = selected {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(program.title).font(.system(size: 25, weight: .bold)).lineLimit(1)
+                    Text(program.title).font(.system(size: isCompact ? 15 : 25, weight: .bold)).lineLimit(1)
                     Text([program.subtitle, program.timeRange].compactMap{$0}.joined(separator: " · "))
                         .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
                     Text(program.description ?? "Select a program to see viewing options.")
-                        .font(.system(size: 15)).foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
+                        .font(.system(size: isCompact ? 10 : 15)).foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     if program.plex != nil {
@@ -342,14 +366,14 @@ struct TVGuideScreen: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: 260)
+                .frame(width: isCompact ? 120 : 260)
             } else {
                 Text("Select a program in the guide")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(18)
-        .frame(height: 170)
+        .padding(isCompact ? 7 : 18)
+        .frame(height: isCompact ? 102 : 170)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
         .confirmationDialog("Watch on Plex", isPresented: Binding(get: {
             selectedAction == .plex
@@ -364,8 +388,8 @@ struct TVGuideScreen: View {
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.system(size: 17, weight: .bold))
-                .frame(maxWidth: .infinity).padding(.vertical, 13)
+            Text(label).font(.system(size: isCompact ? 11 : 17, weight: .bold))
+                .frame(maxWidth: .infinity).padding(.vertical, isCompact ? 7 : 13)
                 .foregroundStyle(.white)
                 .background(focus == key ? TVPalette.purple.opacity(0.55) :
                             Color(red: 0.32, green: 0.29, blue: 0.45),
@@ -394,49 +418,56 @@ struct TVGuideScreen: View {
     private func refreshGuide() async {
         await store.refresh(server: serverURL)
     }
-    private func remoteMove(_ direction: MoveCommandDirection) {
-        let rail = ["rail-search","rail-filter","rail-settings","rail-today"]
+    private var isCompact: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private var railWidth: CGFloat { isCompact ? 70 : 100 }
+
+    // On iOS the gamepad sends explicit commands to these same SwiftUI
+    // controls. tvOS uses its native focus engine, never this second handler.
+    private func movePhoneDirection(_ direction: String) {
+        let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        if direction == "rail" { focus = "rail-search"; return }
         if let value = focus, let i = rail.firstIndex(of: value) {
-            switch direction {
-            case .up: focus = rail[max(0,i-1)]
-            case .down: focus = rail[min(rail.count-1,i+1)]
-            case .right: focus = "program-\(selectedChannel)-\(selectedProgram)"
-            default: break
-            }
+            if direction == "down" { focus = rail[min(rail.count-1,i+1)] }
+            if direction == "up" { focus = rail[max(0,i-1)] }
+            if direction == "right" { focus = "program-\(selectedChannel)-\(selectedProgram)" }
             return
         }
         if focus == "watch-primary" || focus == "watch-live" {
-            switch direction {
-            case .up: focus = "program-\(selectedChannel)-\(selectedProgram)"
-            case .down: focus = "watch-live"
-            case .left: focus = "watch-primary"
-            case .right: focus = "watch-live"
-            default: break
-            }
+            if direction == "up" { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+            if direction == "left" { focus = "watch-primary" }
+            if direction == "right" || direction == "down" { focus = "watch-live" }
             return
         }
-        guard let value = focus, value.hasPrefix("program-") else { return }
-        switch direction {
-        case .up:
-            selectedChannel = max(0,selectedChannel-1)
-        case .down:
-            if selectedChannel == channels.count-1 { focus = "watch-primary"; return }
-            selectedChannel = min(channels.count-1,selectedChannel+1)
-        case .left:
-            if selectedProgram == 0 { focus = "rail-search"; return }
-            selectedProgram -= 1
-        case .right:
-            selectedProgram += 1
-        default: break
-        }
-        if channels.indices.contains(selectedChannel) {
-            let programs = channels[selectedChannel].programs
-            if programs.isEmpty { selectedProgram = 0; return }
-            if direction == .up || direction == .down {
-                selectedProgram = programs.firstIndex(where: {$0.isOnNow}) ?? 0
+        if direction == "left" && selectedProgram == 0 { focus = "rail-search"; return }
+        guard !channels.isEmpty else { return }
+        if direction == "up" { selectedChannel = max(0,selectedChannel-1) }
+        if direction == "down" { selectedChannel = min(channels.count-1, selectedChannel+1) }
+        let programs = channels[selectedChannel].programs
+        guard !programs.isEmpty else { return }
+        if direction == "left" { selectedProgram = max(0, selectedProgram-1) }
+        if direction == "right" { selectedProgram = min(programs.count-1, selectedProgram+1) }
+        selectedProgram = min(selectedProgram, programs.count-1)
+        focus = "program-\(selectedChannel)-\(selectedProgram)"
+    }
+    private func activateFocused() {
+        switch focus {
+        case "rail-search": showSearch = true
+        case "rail-filter": showFilters = true
+        case "rail-settings": showSettings = true
+        case "rail-today": goToday()
+        case "watch-primary": selectedAction = .plex
+        case "watch-live": playTablo()
+        default:
+            if selected?.1.plex != nil { focus = "watch-primary" }
+            else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                focus = "watch-live"
             }
-            selectedProgram = max(0,min(programs.count-1,selectedProgram))
-            focus = "program-\(selectedChannel)-\(selectedProgram)"
         }
     }
     private func playPlex(_ mode: String) {
@@ -468,5 +499,11 @@ struct TVGuideScreen: View {
     }
 }
 
-private enum TVSidebar { case none }
 private enum TVWatchAction { case plex }
+
+extension Notification.Name {
+    static let ugGamepadDirection = Notification.Name("UGNativeGuideDirection")
+    static let ugGamepadSelect = Notification.Name("UGNativeGuideSelect")
+    static let ugGamepadBack = Notification.Name("UGNativeGuideBack")
+    static let ugGamepadPlayPause = Notification.Name("UGNativeGuidePlayPause")
+}
