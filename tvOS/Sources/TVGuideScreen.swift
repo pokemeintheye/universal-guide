@@ -143,6 +143,9 @@ struct TVGuideScreen: View {
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
         .modifier(UniversalGuideFullscreenLayout())
+        .modifier(UniversalGuideRemoteMove { direction in
+            moveTVFocus(direction)
+        })
         .fullScreenCover(item: $mediaSession) { session in
             TVMediaPlayerScreen(session: session)
         }
@@ -325,18 +328,9 @@ struct TVGuideScreen: View {
                 }
             }
             .onChange(of: selectedProgram) { _, value in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
-                }
-            }
-            .onChange(of: focus) { _, value in
-                // tvOS focus is native, and can advance independently from
-                // selectedProgram until SwiftUI reports the new focus.
-                if !isCompact, let value, value.hasPrefix("program-") {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        vertical.scrollTo(value, anchor: .center)
-                    }
-                }
+                // A single immediate scroll per selection is much quicker
+                // than simultaneous animated focus and position changes.
+                vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
@@ -578,6 +572,103 @@ struct TVGuideScreen: View {
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
     // iPhone maps Backbone presses to a visible, explicit target.
+    // Exactly one D-pad handler on tvOS. The stock spatial focus engine
+    // chooses unpredictable tiles when adjacent rows have unequal durations.
+    // We choose explicit neighboring programs and keep their airing time.
+    private func moveTVFocus(_ direction: MoveCommandDirection) {
+        guard !isCompact && !showFilters && !showSearch && !showSettings,
+              !loadingPlayback && mediaSession == nil else { return }
+        // The choice dialog and native TV filters own their own focus.
+        if selectedAction == .plex { return }
+        let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        if let focus, let index = keys.firstIndex(of: focus) {
+            switch direction {
+            case .up: self.focus = keys[max(0,index-1)]
+            case .down: self.focus = keys[min(keys.count-1,index+1)]
+            case .right: focusSelectedTVProgram()
+            default: break
+            }
+            return
+        }
+        if let focus, ["watch-primary","watch-live","watch-philo"].contains(focus) {
+            switch direction {
+            case .up, .left:
+                if focus == "watch-primary" || selected?.1.plex == nil {
+                    focusSelectedTVProgram()
+                } else {
+                    self.focus = "watch-primary"
+                }
+            case .right, .down:
+                if focus == "watch-primary", selected?.0.source == "philo" {
+                    self.focus = "watch-philo"
+                } else if focus == "watch-primary", selected?.0.source == "tablo" {
+                    self.focus = "watch-live"
+                }
+            default: break
+            }
+            return
+        }
+        guard channels.indices.contains(selectedChannel) else { return }
+        let programs = channels[selectedChannel].programs
+        guard programs.indices.contains(selectedProgram) else { return }
+        let visible = programs.indices.filter {
+            (programs[$0].endDate ?? .distantPast) > anchor &&
+            (programs[$0].startDate ?? .distantFuture) <
+                anchor.addingTimeInterval(durationMinutes*60)
+        }
+        switch direction {
+        case .left:
+            guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
+                focus = "rail-search"
+                return
+            }
+            selectedProgram = visible[index-1]
+        case .right:
+            guard let index = visible.firstIndex(of: selectedProgram),
+                  index+1 < visible.count else { return }
+            selectedProgram = visible[index+1]
+        case .up, .down:
+            let nextRow = selectedChannel + (direction == .down ? 1 : -1)
+            if !channels.indices.contains(nextRow) {
+                if direction == .down {
+                    if selected?.1.plex != nil { focus = "watch-primary" }
+                    else if selected?.0.source == "tablo" { focus = "watch-live" }
+                    else if selected?.0.source == "philo" { focus = "watch-philo" }
+                }
+                return
+            }
+            let current = programs[selectedProgram]
+            let targetTime: Date = {
+                if let start=current.startDate, let end=current.endDate {
+                    return start.addingTimeInterval(end.timeIntervalSince(start)/2)
+                }
+                return now
+            }()
+            let candidates = channels[nextRow].programs
+            guard !candidates.isEmpty else { return }
+            let best = candidates.indices.min {
+                func distance(_ p: GuideProgram) -> Double {
+                    guard let start=p.startDate, let end=p.endDate else {
+                        return Double.greatestFiniteMagnitude
+                    }
+                    if start <= targetTime && targetTime < end { return 0 }
+                    return min(abs(start.timeIntervalSince(targetTime)),
+                               abs(end.timeIntervalSince(targetTime)))
+                }
+                return distance(candidates[$0]) < distance(candidates[$1])
+            } ?? 0
+            selectedChannel = nextRow
+            selectedProgram = best
+        default: return
+        }
+        focusSelectedTVProgram()
+    }
+    private func focusSelectedTVProgram() {
+        guard channels.indices.contains(selectedChannel),
+              channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
+        focus = "program-\(selectedChannel)-\(selectedProgram)"
+    }
+
     private func selectPhoneProgram() {
         guard channels.indices.contains(selectedChannel) else {return}
         let entries = channels[selectedChannel].programs
@@ -876,6 +967,17 @@ private struct UniversalGuideFullscreenLayout: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         #if os(tvOS)
         content.ignoresSafeArea(.container, edges: .all)
+        #else
+        content
+        #endif
+    }
+}
+
+private struct UniversalGuideRemoteMove: ViewModifier {
+    let onMove: (MoveCommandDirection) -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.onMoveCommand(perform: onMove)
         #else
         content
         #endif
