@@ -446,6 +446,13 @@ def _plex_duration(key):
         raise HTTPException(502, "Unable to read this item's runtime from Plex")
 
 
+@router.get("/capabilities")
+def playback_capabilities():
+    # Native apps use this to detect stale Unraid Docker images rather than
+    # trying to play old, extensionless HLS resources with AVPlayer.
+    return {"native_hls_resources": 2}
+
+
 @router.post("/start")
 def start_playback(body: PlaybackRequest):
     db_path, base, token = _config()
