@@ -45,9 +45,9 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 115
     private let rowHeight: CGFloat = 64
     #else
-    private let minutePixels: CGFloat = 6
-    private let stationWidth: CGFloat = 205
-    private let rowHeight: CGFloat = 88
+    private let minutePixels: CGFloat = 7
+    private let stationWidth: CGFloat = 232
+    private let rowHeight: CGFloat = 100
     #endif
     private var anchor: Date {
         let minute = Calendar.current.component(.minute, from: now)
@@ -76,7 +76,7 @@ struct TVGuideScreen: View {
     var body: some View {
         ZStack {
             TVPalette.background.ignoresSafeArea()
-            HStack(spacing: 20) {
+            HStack(spacing: isCompact ? 12 : 14) {
                 sidebarRail
                     .frame(width: railWidth)
                 VStack(spacing: 13) {
@@ -96,8 +96,8 @@ struct TVGuideScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, isCompact ? 8 : 45)
-            .padding(.vertical, isCompact ? 5 : 30)
+            .padding(.horizontal, isCompact ? 8 : 18)
+            .padding(.vertical, isCompact ? 5 : 12)
             if loadingPlayback {
                 Color.black.opacity(0.55).ignoresSafeArea()
                 ProgressView("Preparing video…")
@@ -167,7 +167,7 @@ struct TVGuideScreen: View {
                 },
                 onClose: { showFilters = false })
         }
-        .alert("Playback unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
+        .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
         .task { await refreshGuide() }
@@ -209,8 +209,8 @@ struct TVGuideScreen: View {
             Divider().overlay(TVPalette.purple)
             railButton("clock.arrow.circlepath", name: "Today", key: "rail-today") { goToday() }
             Spacer()
-            Text("UNIVERSAL")
-                .font(.system(size: 10, weight: .heavy))
+            Text("UG")
+                .font(.system(size: 15, weight: .heavy))
                 .foregroundStyle(TVPalette.purple)
         }
         .padding(10)
@@ -239,7 +239,7 @@ struct TVGuideScreen: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Universal Guide")
-                    .font(.system(size: isCompact ? 19 : 32, weight: .heavy))
+                    .font(.system(size: isCompact ? 19 : 35, weight: .heavy))
                 Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
                     .font(.system(size: isCompact ? 10 : 15))
                     .foregroundStyle(.secondary)
@@ -286,9 +286,12 @@ struct TVGuideScreen: View {
                                         .foregroundStyle(TVPalette.purple)
                                 }
                                 Text(channel.number ?? channel.label)
-                                    .font(.system(size: 18, weight: .bold))
-                                Text(channel.label)
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    .font(.system(size: isCompact ? 18 : 24, weight: .bold))
+                                if channel.number != nil && channel.label != channel.number {
+                                    Text(channel.label)
+                                        .font(.system(size: isCompact ? 11 : 16))
+                                        .foregroundStyle(.secondary).lineLimit(1)
+                                }
                             }
                             .padding(.leading, 12)
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
@@ -347,14 +350,15 @@ struct TVGuideScreen: View {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
-                        if program.plex != nil { openPlexChoice() }
+                        if channel.source == "philo" { openPhilo(channel,program) }
+                        else if program.plex != nil { openPlexChoice() }
                         else if channel.source == "tablo" && program.isOnNow {
                             playTablo()
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                             Text(program.title)
-                                .font(.system(size: isCompact ? 13 : 17, weight: .bold))
+                                .font(.system(size: isCompact ? 13 : 20, weight: .bold))
                                 .lineLimit(1)
                                 .foregroundStyle(.white)
                             if program.plex != nil {
@@ -364,13 +368,13 @@ struct TVGuideScreen: View {
                                     .lineLimit(1)
                             } else if let subtitle = program.subtitle {
                                 Text(subtitle)
-                                    .font(.system(size: isCompact ? 10 : 12))
+                                    .font(.system(size: isCompact ? 10 : 14))
                                     .foregroundStyle(.white.opacity(0.77))
                                     .lineLimit(1)
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .padding(.horizontal, isCompact ? 9 : 12)
+                        .padding(.horizontal, isCompact ? 9 : 14)
                         .background(program.plex != nil ?
                                     Color(red: 0.16, green: 0.30, blue: 0.31) :
                                     TVPalette.cell,
@@ -436,9 +440,11 @@ struct TVGuideScreen: View {
                     }
                     if selected?.0.source == "tablo" && program.isOnNow {
                         watchButton("Watch Live", key: "watch-live") { playTablo() }
-                    } else if selected?.0.source == "philo" {
-                        Text("Philo playback opens in the Philo app")
-                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if selected?.0.source == "philo" {
+                        watchButton("Open in Philo", key: "watch-philo") {
+                            if let (ch,entry) = selected { openPhilo(ch,entry) }
+                        }
                     }
                 }
                 .frame(width: isCompact ? 120 : 260)
@@ -448,7 +454,7 @@ struct TVGuideScreen: View {
             }
         }
         .padding(isCompact ? 7 : 18)
-        .frame(height: isCompact ? 102 : 170)
+        .frame(height: isCompact ? 102 : 158)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
 
     }
@@ -494,7 +500,7 @@ struct TVGuideScreen: View {
         false
         #endif
     }
-    private var railWidth: CGFloat { isCompact ? 70 : 100 }
+    private var railWidth: CGFloat { isCompact ? 70 : 94 }
 
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
@@ -530,7 +536,9 @@ struct TVGuideScreen: View {
         }
         let hasPlex = selected?.1.plex != nil
         let hasTablo = selected?.0.source == "tablo" && selected?.1.isOnNow == true
-        if phoneSelection == "watch-primary" || phoneSelection == "watch-live" {
+        let hasPhilo = selected?.0.source == "philo"
+        if phoneSelection == "watch-primary" || phoneSelection == "watch-live" ||
+            phoneSelection == "watch-philo" {
             switch direction {
             case "up": selectPhoneProgram()
             case "left":
@@ -567,6 +575,7 @@ struct TVGuideScreen: View {
             selectedChannel >= channels.count-1 {
             if hasPlex { phoneSelection = "watch-primary"; return }
             if hasTablo { phoneSelection = "watch-live"; return }
+            if hasPhilo { phoneSelection = "watch-philo"; return }
         }
         // In the guide, the playback choices are always also reachable
         // by pressing OK on a program with Plex or live Tablo.
@@ -615,12 +624,33 @@ struct TVGuideScreen: View {
             if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
                 playTablo()
             }
+        case "watch-philo":
+            if let (channel,program) = selected { openPhilo(channel,program) }
         default:
             // One A/OK press must do something. Opening the Plex choice
             // dialog directly avoids a second unhighlighted focus step.
-            if selected?.1.plex != nil { openPlexChoice() }
+            if selected?.0.source == "philo", let (channel,program) = selected {
+                openPhilo(channel,program)
+            } else if selected?.1.plex != nil { openPlexChoice() }
             else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
                 playTablo()
+            }
+        }
+    }
+    private func openPhilo(_ channel: GuideChannel, _ program: GuideProgram) {
+        let source = program.philoLinks?.channel?.url ?? channel.philoChannelURL
+        guard let raw = source,
+              let url = URL(string: raw),
+              url.scheme == "https",
+              url.host == "www.philo.com",
+              url.path.hasPrefix("/player/channel/"),
+              !url.lastPathComponent.isEmpty else {
+            playbackError = "No verified Philo channel link is available for \(channel.label)."
+            return
+        }
+        UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { success in
+            if !success {
+                playbackError = "Philo could not open this channel from Universal Guide on this Apple TV. Open the Philo app directly for now."
             }
         }
     }
