@@ -32,6 +32,10 @@ private struct PlexServerError: Decodable {
     let detail: String?
 }
 
+private struct PlexProxyCapabilities: Decodable {
+    let native_hls_resources: Int
+}
+
 enum PlexPlaybackService {
     static func baseURL(_ address: String) throws -> URL {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,6 +51,31 @@ enum PlexPlaybackService {
     static func start(serverURL: String, ratingKey: Int, mode: String,
                       airingStart: String, airingEnd: String) async throws -> PlexPlaybackSession {
         let base = try baseURL(serverURL)
+        guard let checkURL = URL(string: "/api/player/capabilities",
+                                 relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidServer
+        }
+        var checkRequest = URLRequest(url: checkURL)
+        checkRequest.timeoutInterval = 10
+        checkRequest.cachePolicy = .reloadIgnoringLocalCacheData
+        let capabilities: PlexProxyCapabilities?
+        do {
+            let (body, response) = try await URLSession.shared.data(for: checkRequest)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                capabilities = try? JSONDecoder().decode(PlexProxyCapabilities.self,
+                                                         from: body)
+            } else {
+                capabilities = nil
+            }
+        } catch {
+            capabilities = nil
+        }
+        guard (capabilities?.native_hls_resources ?? 0) >= 2 else {
+            throw PlexPlaybackError.server(
+                "The Universal Guide Docker container on Unraid needs to be " +
+                "updated for native Plex playback. Update the container from " +
+                "ghcr.io/pokemeintheye/universal-guide:latest and try again.")
+        }
         guard let startURL = URL(string: "/api/player/start", relativeTo: base)?.absoluteURL else {
             throw PlexPlaybackError.invalidServer
         }
@@ -107,6 +136,51 @@ enum PlexPlaybackService {
                 .hasPrefix("#EXTM3U") else {
             throw PlexPlaybackError.server(
                 "Unraid returned HTTP 200 but not a valid Plex HLS playlist.")
+        }
+        // A valid master alone is not enough for native HLS playback.
+        // Verify the first referenced child playlist from the same Unraid
+        // proxy. This turns otherwise opaque AVPlayer 404 errors into an
+        // actionable explanation before opening the player.
+        let lines = playlistText.components(separatedBy: .newlines)
+        if let variantTag = lines.firstIndex(where: { $0.hasPrefix("#EXT-X-STREAM-INF") }) {
+            let children = lines.dropFirst(variantTag + 1)
+            guard let reference = children.first(where: {
+                let line = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                return !line.isEmpty && !line.hasPrefix("#")
+            }),
+                  let childURL = URL(string: reference.trimmingCharacters(in: .whitespaces),
+                                     relativeTo: playlist)?.absoluteURL,
+                  childURL.scheme == playlist.scheme,
+                  childURL.host == playlist.host,
+                  childURL.port == playlist.port,
+                  childURL.path.hasPrefix("/api/player/\(sessionID)/") else {
+                throw PlexPlaybackError.server(
+                    "Plex HLS master lists an invalid child playlist URL. Update the Universal Guide Docker container.")
+            }
+            var childRequest = URLRequest(url: childURL)
+            childRequest.timeoutInterval = 30
+            childRequest.setValue("application/vnd.apple.mpegurl", forHTTPHeaderField: "Accept")
+            let (childData, childResponse): (Data, URLResponse)
+            do {
+                (childData, childResponse) = try await URLSession.shared.data(for: childRequest)
+            } catch {
+                throw PlexPlaybackError.server(
+                    "Plex HLS child playlist is unreachable: \(error.localizedDescription).")
+            }
+            guard let childHTTP = childResponse as? HTTPURLResponse else {
+                throw PlexPlaybackError.server("Plex HLS child returned no HTTP response.")
+            }
+            guard childHTTP.statusCode == 200 else {
+                throw PlexPlaybackError.server(
+                    "Plex HLS child playlist returned HTTP \(childHTTP.statusCode). " +
+                    "Update the Universal Guide Docker container on Unraid, then retry.")
+            }
+            guard let childText = String(data: childData, encoding: .utf8),
+                  childText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .hasPrefix("#EXTM3U") else {
+                throw PlexPlaybackError.server(
+                    "Plex HLS child returned data that is not an HLS playlist.")
+            }
         }
         return PlexPlaybackSession(id: sessionID, playlistURL: playlist,
                                    serverURL: base, title: info.title)

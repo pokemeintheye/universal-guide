@@ -102,6 +102,12 @@ def _safe_resource(base, location):
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urlencode(filtered), ""))
 
 
+# Keep the extension on HLS child resources. Safari's web playback can
+# infer content types from HTTP headers; native AVPlayer often relies on
+# playlist/segment URI suffixes when following an HLS master.
+_HLS_EXTENSIONS = frozenset((".m3u8", ".ts", ".m4s", ".mp4", ".aac",
+                             ".mp3", ".vtt", ".webvtt", ".key", ".m4a"))
+
 def _map_reference(session, parent, reference):
     real = _safe_resource(parent, reference)
     with _guard:
@@ -110,7 +116,13 @@ def _map_reference(session, parent, reference):
                 return "/api/player/" + session["id"] + "/" + key
         if len(session["resources"]) >= 12000:
             raise HTTPException(502, "Plex playlist has too many resources")
-        key = secrets.token_urlsafe(12)
+        path = urlparse(real).path
+        extension = "." + path.rsplit(".", 1)[-1].lower() if "." in path.rsplit("/", 1)[-1] else ""
+        if extension not in _HLS_EXTENSIONS:
+            # MPEG-TS media segments are the only extension-less references
+            # in the Plex HLS media playlists observed so far.
+            extension = ".ts"
+        key = secrets.token_urlsafe(12) + extension
         session["resources"][key] = real
     return "/api/player/" + session["id"] + "/" + key
 
@@ -432,6 +444,13 @@ def _plex_duration(key):
         return duration if duration > 0 else 0
     except (requests.RequestException, ValueError, ET.ParseError):
         raise HTTPException(502, "Unable to read this item's runtime from Plex")
+
+
+@router.get("/capabilities")
+def playback_capabilities():
+    # Native apps use this to detect stale Unraid Docker images rather than
+    # trying to play old, extensionless HLS resources with AVPlayer.
+    return {"native_hls_resources": 2}
 
 
 @router.post("/start")
