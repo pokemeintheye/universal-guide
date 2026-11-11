@@ -540,18 +540,16 @@ struct TVGuideScreen: View {
             switch direction {
             case "up": selectPhoneProgram()
             case "left":
-                if phoneSelection == "watch-live" && hasPlex {
+                if phoneSelection != "watch-primary" && hasPlex {
                     phoneSelection = "watch-primary"
                 } else {
                     selectPhoneProgram()
                 }
-            case "right":
+            case "right", "down":
                 if phoneSelection == "watch-primary" && hasTablo {
                     phoneSelection = "watch-live"
-                }
-            case "down":
-                if phoneSelection == "watch-primary" && hasTablo {
-                    phoneSelection = "watch-live"
+                } else if phoneSelection == "watch-primary" && hasPhilo {
+                    phoneSelection = "watch-philo"
                 }
             default: break
             }
