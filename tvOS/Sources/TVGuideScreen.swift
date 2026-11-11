@@ -211,16 +211,15 @@ struct TVGuideScreen: View {
         }
         .fullScreenCover(isPresented: $showSettings, onDismiss: {
             Task { await refreshGuide() }
-        }) { GuideSettingsView(serverURL: $serverURL) }
+        }) {
+            TVGuideRemoteTextPanel(title: "Settings", prompt: "Universal Guide server URL",
+                                   value: $serverURL, mode: .server,
+                                   onClose: { showSettings = false })
+        }
         .fullScreenCover(isPresented: $showSearch) {
-            NavigationStack {
-                Form {
-                    TextField("Search channels or programs", text: $searchText)
-                    Button("Clear Search") { searchText = "" }
-                    Button("Return to Guide") { showSearch = false }
-                }
-                .navigationTitle("Search")
-            }
+            TVGuideRemoteTextPanel(title: "Search", prompt: "Search channels or programs",
+                                   value: $searchText, mode: .search,
+                                   onClose: { showSearch = false })
         }
         .fullScreenCover(isPresented: $showFilters) {
             TVGuideFilterPanel(currentFilter: filter, favoritesOnly: favoriteOnly,
@@ -394,16 +393,21 @@ struct TVGuideScreen: View {
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
             }
             .onChange(of: selectedChannel) { _, value in
-                if channels.indices.contains(value) {
-                    vertical.scrollTo("row-\(value)", anchor: .center)
+                guard channels.indices.contains(value) else { return }
+                // Always move the viewport with the selected channel.
+                // Post to the next layout pass so lazily realized rows exist.
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        vertical.scrollTo("row-\(value)", anchor: .center)
+                    }
                 }
             }
             .onChange(of: selectedProgram) { _, value in
-                // Keep native and Backbone selection anchored to visible rows,
-                // including when moving between episodes in the same channel.
                 let ch = selectedChannel
                 DispatchQueue.main.async {
-                    vertical.scrollTo("program-\(ch)-\(value)", anchor: .center)
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        vertical.scrollTo("program-\(ch)-\(value)", anchor: .center)
+                    }
                 }
             }
             .onChange(of: selectedFocus) { _, target in
@@ -411,9 +415,11 @@ struct TVGuideScreen: View {
                 let channel = selectedChannel
                 // Materialize the lazily loaded channel row before targeting
                 // its nested horizontally positioned program tile.
-                vertical.scrollTo("row-\(channel)", anchor: .center)
                 DispatchQueue.main.async {
-                    vertical.scrollTo(target, anchor: .center)
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        vertical.scrollTo("row-\(channel)", anchor: .center)
+                        vertical.scrollTo(target, anchor: .center)
+                    }
                 }
             }
         }
