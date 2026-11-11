@@ -126,6 +126,17 @@ struct TVMediaPlayerScreen: View {
             VideoPlayer(player: player)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+            if !controlsVisible {
+                // Without a focusable surface, the TV remote's OK button
+                // never arrives. This invisible, genuinely focusable button
+                // opens transport controls on the first Select press.
+                Button { reveal() } label: {
+                    Color.clear
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($focused, equals: "reveal")
+            }
             if controlsVisible {
                 VStack {
                     HStack {
@@ -215,6 +226,7 @@ struct TVMediaPlayerScreen: View {
             player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
             player.play()
             isPaused = false
+            focused = "reveal"
         }
         .onDisappear {
             player.pause()
@@ -224,35 +236,71 @@ struct TVMediaPlayerScreen: View {
         .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
             updateProgress()
         }
-        .onPlayPauseCommand { playPause() }
-        .onMoveCommand { direction in
-            if !controlsVisible {
-                switch direction {
-                case .left: skip(-20)
-                case .right: skip(30)
-                default: reveal()
-                }
-            } else {
-                if focused == "seek" {
-                    if direction == .left { skip(-20); return }
-                    if direction == .right { skip(30); return }
-                }
-                let order = ["back", "pause", "forward", "seek", "live", "close"]
-                guard let index = order.firstIndex(of: focused ?? "pause") else {
-                    focused = "pause"; return
-                }
-                let offset = (direction == .left || direction == .up) ? -1 : 1
-                var next = max(0,min(order.count-1,index+offset))
-                if !session.isTablo && order[next] == "live" { next = 5 }
-                focused = order[next]
-                selectedControl = order[next]
-            }
+        .modifier(UniversalMediaInput(
+            direction: { direction in self.remoteDirection(direction) },
+            exit: { self.remoteExit() },
+            playPause: { self.playPause() }
+        ))
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            if let direction = event.object as? String { remoteDirection(direction) }
+            #endif
         }
-        .onExitCommand {
-            if controlsVisible { controlsVisible = false }
-            else { dismiss() }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            if !controlsVisible { reveal() }
+            else { activateCurrent() }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            remoteExit()
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadPlayPause)) { _ in
+            #if os(iOS)
+            playPause()
+            #endif
         }
         .onTapGesture { if !controlsVisible { reveal() } }
+    }
+
+    private func remoteDirection(_ direction: String) {
+        if !controlsVisible {
+            if direction == "left" { skip(-20) }
+            else if direction == "right" { skip(30) }
+            else { reveal() }
+            return
+        }
+        // Let tvOS move between focused buttons natively. On iPhone
+        // send the identical focus targets through the Backbone bridge.
+        #if os(iOS)
+        let order = ["back","pause","forward","seek","live","close"]
+        if focused == "seek" && direction == "left" { skip(-20); return }
+        if focused == "seek" && direction == "right" { skip(30); return }
+        let index = order.firstIndex(of: focused ?? "pause") ?? 1
+        let delta = (direction == "left" || direction == "up") ? -1 : 1
+        var target = max(0,min(order.count-1,index+delta))
+        if !session.isTablo && order[target] == "live" {target = 5}
+        focused = order[target]
+        #endif
+    }
+    private func activateCurrent() {
+        switch focused {
+        case "back": skip(-20)
+        case "pause": playPause()
+        case "forward": skip(30)
+        case "seek": skip(30)
+        case "live": if session.isTablo { seekTo(maximum-2) }
+        case "close": dismiss()
+        default: reveal()
+        }
+    }
+    private func remoteExit() {
+        if controlsVisible {
+            controlsVisible = false
+            focused = "reveal"
+        } else { dismiss() }
     }
 
     private func playerButton(_ symbol: String, key: String, size: CGFloat,
@@ -323,5 +371,30 @@ struct TVMediaPlayerScreen: View {
         let target = max(minimum,min(safeEnd,seconds))
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+}
+
+private struct UniversalMediaInput: ViewModifier {
+    let direction: (String) -> Void
+    let exit: () -> Void
+    let playPause: () -> Void
+
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content
+            .onMoveCommand { directionValue in
+                switch directionValue {
+                case .left: direction("left")
+                case .right: direction("right")
+                case .up: direction("up")
+                case .down: direction("down")
+                default: break
+                }
+            }
+            .onExitCommand(perform: exit)
+            .onPlayPauseCommand(perform: playPause)
+        #else
+        content
+        #endif
     }
 }
