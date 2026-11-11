@@ -41,6 +41,9 @@ import GameController
             Self.emit(.ugGamepadBack) }}
         pad.buttonY.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadPlayPause) }}
+        // X reaches the bottom information panel's Watch buttons.
+        pad.buttonX.pressedChangedHandler = { _,_,down in if down {
+            Self.emit(.ugGamepadDirection, "details") }}
         pad.leftShoulder.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadDirection, "rail") }}
         pad.rightShoulder.pressedChangedHandler = { _,_,down in if down {
