@@ -37,9 +37,11 @@ import GameController
             Self.emit(.ugGamepadDirection, "right") }}
         pad.buttonA.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadSelect) }}
-        // The target Apple TV remote has only directional keys, OK,
-        // Play/Pause, rewind and fast-forward. Do not use Backbone
-        // face/shoulder buttons as required navigation shortcuts.
+        // B emulates the Apple TV remote's Back/Menu button.
+        pad.buttonB.pressedChangedHandler = { _,_,down in if down {
+            Self.emit(.ugGamepadBack) }}
+        // The target TV remote uses directional keys, OK, Back, Play/Pause,
+        // Rewind and Fast Forward. No face/shoulder shortcut is required.
 
     }
 }
