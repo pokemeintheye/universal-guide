@@ -36,6 +36,7 @@ struct PlexPlaybackMetadata: Decodable {
     let subtitles: [PlexTrack]
     let duration_seconds: Double
     let preview_available: Bool
+    let release_date: String?
 }
 
 enum PlexPlaybackError: LocalizedError {
