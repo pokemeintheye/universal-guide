@@ -316,29 +316,9 @@ struct TVGuideScreen: View {
     private var timeline: some View {
         ScrollViewReader { vertical in
             ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 0) {
-                        Text("CHANNEL")
-                            .font(.caption.bold()).foregroundStyle(.secondary)
-                            .frame(width: stationWidth, alignment: .leading)
-                            .padding(.leading, 13)
-                        ForEach(0..<16, id: \.self) { slot in
-                            Text(anchor.addingTimeInterval(Double(slot * 1800))
-                                .formatted(date: .omitted, time: .shortened))
-                                .font(.caption.bold())
-                                .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
-                                .frame(width: minutePixels * 30, alignment: .leading)
-                        }
-                    }
-                    .frame(height: timelineHeaderHeight)
-                    .background(Color(red: 0.105, green: 0.11, blue: 0.19))
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(TVPalette.purple)
-                            .frame(width: isCompact ? 1.5 : 3)
-                            .offset(x: nowTimelineX)
-                            .allowsHitTesting(false)
-                    }
+                LazyVStack(alignment: .leading, spacing: 0,
+                           pinnedViews: [.sectionHeaders]) {
+                    Section {
                     ForEach(Array(channels.enumerated()), id: \.element.id) { channelIndex, channel in
                         HStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -364,6 +344,31 @@ struct TVGuideScreen: View {
                         .background(channelIndex.isMultiple(of: 2) ?
                                     TVPalette.background : TVPalette.panel.opacity(0.6))
                         .id("row-\(channelIndex)")
+                    }
+                    } header: {
+                    HStack(spacing: 0) {
+                        Text("CHANNEL")
+                            .font(.caption.bold()).foregroundStyle(.secondary)
+                            .frame(width: stationWidth, alignment: .leading)
+                            .padding(.leading, 13)
+                        ForEach(0..<16, id: \.self) { slot in
+                            Text(anchor.addingTimeInterval(Double(slot * 1800))
+                                .formatted(date: .omitted, time: .shortened))
+                                .font(.caption.bold())
+                                .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
+                                .frame(width: minutePixels * 30, alignment: .leading)
+                        }
+                    }
+                    .frame(height: timelineHeaderHeight)
+                    .background(Color(red: 0.105, green: 0.11, blue: 0.19))
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(TVPalette.purple)
+                            .frame(width: isCompact ? 1.5 : 3)
+                            .offset(x: nowTimelineX)
+                            .allowsHitTesting(false)
+                    }
+                            .zIndex(2)
                     }
                 }
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
