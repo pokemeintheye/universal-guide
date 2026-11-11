@@ -241,26 +241,31 @@ struct TVMediaPlayerScreen: View {
                         }
                         .buttonStyle(.plain)
 
-                        HStack(spacing: isCompact ? 18 : 58) {
-                            transport("rewind20", key: "back", size: isCompact ? 48 : 66) {
-                                skip(-20)
+                        ZStack(alignment: .trailing) {
+                            // Center the three transport buttons on screen,
+                            // regardless of whether Go Live is present.
+                            HStack(spacing: isCompact ? 18 : 58) {
+                                transport("rewind20", key: "back", size: isCompact ? 48 : 66) {
+                                    skip(-20)
+                                }
+                                transport(isPaused ? "play.fill" : "pause.fill",
+                                          key: "pause", size: isCompact ? 60 : 78) {
+                                    playPause()
+                                }
+                                transport("goforward.30", key: "forward",
+                                          size: isCompact ? 48 : 66) {
+                                    skip(30)
+                                }
                             }
-                            transport(isPaused ? "play.fill" : "pause.fill",
-                                      key: "pause", size: isCompact ? 60 : 78) {
-                                playPause()
-                            }
-                            transport("goforward.30", key: "forward",
-                                      size: isCompact ? 48 : 66) {
-                                skip(30)
-                            }
+                            .frame(maxWidth: .infinity)
                             if session.isTablo {
                                 Button {
                                     goLive()
                                 } label: {
                                     Label("Go Live", systemImage: "bolt.fill")
-                                        .font(.system(size: isCompact ? 12 : 18, weight: .semibold))
+                                        .font(.system(size: isCompact ? 11 : 18, weight: .semibold))
                                         .foregroundStyle(.white)
-                                        .padding(10)
+                                        .padding(isCompact ? 7 : 10)
                                         .overlay(RoundedRectangle(cornerRadius: 9)
                                             .stroke(isSelected("live") ? purple : .clear,
                                                     lineWidth: 2))
