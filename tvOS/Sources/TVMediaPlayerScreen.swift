@@ -115,6 +115,7 @@ struct TVMediaPlayerScreen: View {
     @State private var isPaused = false
     @State private var seekProgress: Double = 0
     @State private var isScrubbing = false
+    @State private var hideControlsTask: Task<Void, Never>?
     @FocusState private var focused: String?
     private let purple = Color(red: 0.72, green: 0.53, blue: 1)
     private var isCompact: Bool {
@@ -131,9 +132,10 @@ struct TVMediaPlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            // Avoid native VideoPlayer controls: the web interface has its
-            // own remote-accessible overlay, matching the phone design.
-            VideoPlayer(player: player)
+            // AVKit VideoPlayer can summon its own opaque system transport
+            // panel (the white sheet observed on tvOS). AVPlayerLayer renders
+            // video only; our controls are the sole overlay.
+            UniversalVideoSurface(player: player)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             if !controlsVisible {
@@ -234,7 +236,10 @@ struct TVMediaPlayerScreen: View {
         .preferredColorScheme(.dark)
         .onChange(of: focused) { _, target in
             #if os(tvOS)
-            if let target { selectedControl = target }
+            if let target {
+                selectedControl = target
+                if controlsVisible { scheduleHideControls() }
+            }
             #endif
         }
         .onAppear {
@@ -244,6 +249,7 @@ struct TVMediaPlayerScreen: View {
             focused = "reveal"
         }
         .onDisappear {
+            hideControlsTask?.cancel()
             player.pause()
             player.replaceCurrentItem(with: nil)
             Task { await session.stop() }
@@ -281,6 +287,7 @@ struct TVMediaPlayerScreen: View {
     }
 
     private func remoteDirection(_ direction: String) {
+        if controlsVisible { scheduleHideControls() }
         if !controlsVisible {
             if direction == "left" { skip(-20) }
             else if direction == "right" { skip(30) }
@@ -318,6 +325,7 @@ struct TVMediaPlayerScreen: View {
         #endif
     }
     private func activateCurrent() {
+        scheduleHideControls()
         switch isCompact ? selectedControl : (focused ?? selectedControl) {
         case "back": skip(-20)
         case "pause": playPause()
@@ -330,10 +338,22 @@ struct TVMediaPlayerScreen: View {
     }
     private func remoteExit() {
         if controlsVisible {
-            controlsVisible = false
-            selectedControl = "pause"
-            focused = "reveal"
+            hideControls()
         } else { dismiss() }
+    }
+    private func hideControls() {
+        hideControlsTask?.cancel()
+        controlsVisible = false
+        selectedControl = "pause"
+        focused = "reveal"
+    }
+    private func scheduleHideControls() {
+        hideControlsTask?.cancel()
+        hideControlsTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            hideControls()
+        }
     }
 
     private func playerButton(_ symbol: String, key: String, size: CGFloat,
@@ -370,8 +390,10 @@ struct TVMediaPlayerScreen: View {
         controlsVisible = true
         selectedControl = "pause"
         focused = "pause"
+        scheduleHideControls()
     }
     private func playPause() {
+        if controlsVisible { scheduleHideControls() }
         if player.rate == 0 {
             player.play(); isPaused = false
         } else {
@@ -446,5 +468,27 @@ private struct UniversalMediaInput: ViewModifier {
         #else
         content
         #endif
+    }
+}
+
+private final class UniversalVideoLayerView: UIView {
+    override static var layerClass: AnyClass { AVPlayerLayer.self }
+    var videoLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+}
+
+/// tvOS and iOS share exactly this video-only surface; native AVKit overlays
+/// are intentionally never created, preventing unexpected opaque white sheets.
+private struct UniversalVideoSurface: UIViewRepresentable {
+    let player: AVPlayer
+    func makeUIView(context: Context) -> UniversalVideoLayerView {
+        let view = UniversalVideoLayerView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .black
+        view.videoLayer.videoGravity = .resizeAspect
+        view.videoLayer.player = player
+        return view
+    }
+    func updateUIView(_ uiView: UniversalVideoLayerView, context: Context) {
+        if uiView.videoLayer.player !== player { uiView.videoLayer.player = player }
     }
 }
