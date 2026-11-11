@@ -43,7 +43,7 @@ struct TVGuideScreen: View {
     #if os(iOS)
     private let minutePixels: CGFloat = 3.5
     private let stationWidth: CGFloat = 115
-    private let rowHeight: CGFloat = 54
+    private let rowHeight: CGFloat = 64
     #else
     private let minutePixels: CGFloat = 6
     private let stationWidth: CGFloat = 205
@@ -333,18 +333,18 @@ struct TVGuideScreen: View {
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
-        ZStack(alignment: .leading) {
-            HStack(spacing: 0) {
-                ForEach(0..<16, id: \.self) { _ in
-                    Rectangle().fill(.white.opacity(0.075))
-                        .frame(width: 1)
-                        .frame(width: minutePixels * 30, alignment: .leading)
-                }
-            }
+        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
+        // can now scroll to the tile's actual horizontal position.
+        HStack(spacing: 0) {
             ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
                 let start = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                 let end = min(durationMinutes, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
-                if end > start {
+                let previousEnd = pi > 0 ?
+                    max(0, min(durationMinutes,
+                        (channel.programs[pi-1].endDate ?? anchor).timeIntervalSince(anchor) / 60)) : 0
+                let cellStart = max(start, previousEnd)
+                if end > cellStart {
+                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
                         if program.plex != nil { openPlexChoice() }
@@ -352,41 +352,56 @@ struct TVGuideScreen: View {
                             playTablo()
                         }
                     } label: {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                             Text(program.title)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: isCompact ? 13 : 17, weight: .bold))
                                 .lineLimit(1)
                                 .foregroundStyle(.white)
                             if program.plex != nil {
                                 Label("IN PLEX", systemImage: "checkmark.circle.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.system(size: isCompact ? 9 : 11, weight: .bold))
                                     .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
+                                    .lineLimit(1)
                             } else if let subtitle = program.subtitle {
-                                Text(subtitle).font(.caption2).foregroundStyle(.white.opacity(0.75))
+                                Text(subtitle)
+                                    .font(.system(size: isCompact ? 10 : 12))
+                                    .foregroundStyle(.white.opacity(0.77))
                                     .lineLimit(1)
                             }
                         }
-                        .frame(width: max(56, CGFloat(end-start)*minutePixels)-10,
-                               height: rowHeight-11, alignment: .leading)
-                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .padding(.horizontal, isCompact ? 9 : 12)
                         .background(program.plex != nil ?
                                     Color(red: 0.16, green: 0.30, blue: 0.31) :
                                     TVPalette.cell,
-                                    in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .stroke(selectedFocus == "program-\(index)-\(pi)" ? TVPalette.purple : .clear,
-                                    lineWidth: 4))
+                                    in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9)
+                            .stroke(selectedFocus == "program-\(index)-\(pi)" ?
+                                    TVPalette.purple : .clear, lineWidth: 3))
                         .shadow(color: selectedFocus == "program-\(index)-\(pi)" ?
-                                TVPalette.purple.opacity(0.6) : .clear, radius: 10)
+                                TVPalette.purple.opacity(0.55) : .clear, radius: 7)
                     }
+                    .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
+                           height: rowHeight-(isCompact ? 10 : 14))
+                    .padding(.trailing, 7)
                     .buttonStyle(TVFocusCard())
                     .focused($focus, equals: "program-\(index)-\(pi)")
-                    .offset(x: CGFloat(start)*minutePixels)
                     .id("program-\(index)-\(pi)")
                 }
             }
+            Spacer(minLength: 0)
         }
-        .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight, alignment: .leading)
+        .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight,
+               alignment: .leading)
+        .background(alignment: .leading) {
+            HStack(spacing: 0) {
+                ForEach(0..<16, id: \.self) { _ in
+                    Rectangle().fill(.white.opacity(0.075))
+                        .frame(width: 1)
+                        .frame(width: minutePixels*30, alignment: .leading)
+                }
+            }
+        }
         .clipped()
     }
 
