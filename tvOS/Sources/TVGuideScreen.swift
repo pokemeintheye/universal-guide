@@ -31,6 +31,8 @@ struct TVGuideScreen: View {
     @State private var selectedProgram = 0
     @State private var selectedAction: TVWatchAction?
     @State private var mediaSession: TVMediaSession?
+    @State private var pendingPlexSession: PlexPlaybackSession?
+    @State private var plexChoiceDismissed = true
     @State private var playbackError: String?
     @State private var loadingPlayback = false
     @State private var selectedArtworkURL: URL?
@@ -150,7 +152,13 @@ struct TVGuideScreen: View {
             selectedAction == .plex
         }, set: { shown in
             if !shown { dismissPlexChoice() }
-        })) {
+        }), onDismiss: {
+            plexChoiceDismissed = true
+            if let pending = pendingPlexSession {
+                pendingPlexSession = nil
+                mediaSession = .plex(pending)
+            }
+        }) {
             UniversalPlexChoiceScreen(title: selected?.1.title ?? "Plex",
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
@@ -780,6 +788,7 @@ struct TVGuideScreen: View {
         selectPhoneProgram()
     }
     private func openPlexChoice() {
+        plexChoiceDismissed = false
         selectedAction = .plex
         // Modal screen takes ownership of focus and controller commands.
     }
@@ -857,7 +866,14 @@ struct TVGuideScreen: View {
                 let session = try await PlexPlaybackService.start(serverURL: serverURL,
                     ratingKey: key, mode: mode, airingStart: program.start,
                     airingEnd: program.stop)
-                mediaSession = .plex(session)
+                // Never present the player until the source-choice
+                // fullScreenCover has fully dismissed. Competing covers can
+                // cause an early onDisappear and end the HLS session.
+                if plexChoiceDismissed {
+                    mediaSession = .plex(session)
+                } else {
+                    pendingPlexSession = session
+                }
             } catch { playbackError = error.localizedDescription }
             _ = channel
         }
