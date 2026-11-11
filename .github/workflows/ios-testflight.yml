@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Test Plex precise audio/caption switching and remove player help labels.
+  # Test live Plex timer and full-timeline caption and audio track switching.
   push:
     branches: [main]
     paths:
