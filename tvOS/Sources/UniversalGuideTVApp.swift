@@ -4,7 +4,7 @@ import SwiftUI
 struct UniversalGuideTVApp: App {
     var body: some Scene {
         WindowGroup {
-            GuideHomeView()
+            TVGuideScreen()
         }
     }
 }
