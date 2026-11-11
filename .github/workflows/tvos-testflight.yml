@@ -222,7 +222,7 @@ jobs:
         uses: apple-actions/upload-testflight-build@v5
         with:
           app-path: ${{ steps.ipa.outputs.app_path }}
-          app-type: tvos
+          app-type: appletvos
           backend: AppStoreAPI
           issuer-id: ${{ env.API_ISSUER_ID }}
           api-key-id: ${{ env.API_KEY_ID }}
