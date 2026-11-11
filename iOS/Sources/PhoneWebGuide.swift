@@ -589,7 +589,12 @@ struct PhoneGuideWebView: UIViewRepresentable {
         }
         plexJoinLast=at;plexJoinLastWall=wall;
       };
-      $('plexvideo')?.addEventListener('timeupdate',plexJoinClock);
+      // The existing Tablo player replaces the HTMLVideoElement when it
+      // switches HLS sources. Capture media events at document level so the
+      // Plex guard still works after returning from Tablo to Plex.
+      document.addEventListener('timeupdate',event=>{
+        if(event.target?.id==='plexvideo')plexJoinClock();
+      },true);
       // Reliable controller targets, without touching the backend or redefining
       // the web HLS playback implementation.
       window.universalGuideGamepad=function(command){
