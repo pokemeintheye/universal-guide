@@ -217,6 +217,47 @@ enum PlexPlaybackService {
                 throw PlexPlaybackError.server(
                     "Plex HLS child returned data that is not an HLS playlist.")
             }
+            if mode == "resume" {
+                // The existing preflight only proved the playlist exists.
+                // After a track switch, an HLS playlist may contain only
+                // empty MPEG-TS placeholders. Never destroy the working
+                // player unless the replacement has actual video data.
+                let candidates = childText.components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+                    .prefix(5)
+                guard !candidates.isEmpty else {
+                    throw PlexPlaybackError.server(
+                        "The replacement Plex playlist has no video segments.")
+                }
+                var playable = false
+                for candidate in candidates {
+                    guard let segment = URL(string: candidate, relativeTo: childURL)?.absoluteURL,
+                          segment.scheme == childURL.scheme,
+                          segment.host == childURL.host,
+                          segment.port == childURL.port,
+                          segment.path.hasPrefix("/api/player/\(sessionID)/") else {
+                        continue
+                    }
+                    var segmentRequest = URLRequest(url: segment)
+                    segmentRequest.timeoutInterval = 20
+                    segmentRequest.cachePolicy = .reloadIgnoringLocalCacheData
+                    guard let (segmentBytes, reply) = try? await URLSession.shared.data(for: segmentRequest),
+                          (reply as? HTTPURLResponse)?.statusCode == 200 else { continue }
+                    // Plex sometimes returns 188-byte placeholder packets
+                    // for segments before its transcode offset.
+                    if segmentBytes.count > 1880,
+                       segmentBytes.first == 0x47 {
+                        playable = true
+                        break
+                    }
+                }
+                guard playable else {
+                    throw PlexPlaybackError.server(
+                        "Plex returned HLS playlists but no playable MPEG-TS segments " +
+                        "at the requested position. The original player was kept.")
+                }
+            }
         }
         return PlexPlaybackSession(id: sessionID, playlistURL: playlist,
                                    serverURL: base, title: info.title,
