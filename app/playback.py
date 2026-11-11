@@ -332,7 +332,6 @@ def _plex_item_metadata(key):
             "title":video.get("title") or "",
             "show_title":video.get("grandparentTitle") or "",
             "year":number(video.get("year")),
-            "release_date":video.get("originallyAvailableAt") or None,
             "season":number(video.get("parentIndex")),
             "episode":number(video.get("index")),
             "duration_seconds":number(video.get("duration"))/1000,
