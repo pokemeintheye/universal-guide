@@ -140,6 +140,7 @@ struct TVGuideScreen: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             timeline
+                                .id("epg-\(filter)-\(favoriteOnly)-\(searchText)")
                             detailBar
                         }
                     }
@@ -1076,7 +1077,7 @@ private struct TVGuideFilterPanel: View {
 // D-pad/OK text entry shared by iPhone controller and Apple TV remote.
 // The TextField remains available for touch or a physical keyboard, but is
 // not required to complete either Search or Settings.
-private enum TVGuideTextMode {
+private enum TVGuideTextMode: Equatable {
     case search
     case server
 }
