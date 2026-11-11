@@ -34,6 +34,11 @@ struct TVGuideScreen: View {
     @State private var playbackError: String?
     @State private var loadingPlayback = false
     @FocusState private var focus: String?
+    // iOS gamepad input is not part of tvOS's native FocusState engine.
+    // Keep a separately-rendered selection so the purple ring always follows
+    // the Backbone even when UIKit declines to focus SwiftUI buttons.
+    @State private var phoneSelection = ""
+    private var selectedFocus: String? { isCompact ? phoneSelection : focus }
     @State private var now = Date()
     #if os(iOS)
     private let minutePixels: CGFloat = 3.5
@@ -156,7 +161,7 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
             #if os(iOS)
-            if mediaSession == nil { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+            if mediaSession == nil { selectPhoneProgram() }
             #endif
         }
     }
@@ -184,12 +189,12 @@ struct TVGuideScreen: View {
                 Image(systemName: icon).font(.system(size: isCompact ? 16 : 27, weight: .medium))
                 Text(name).font(.system(size: isCompact ? 9 : 13, weight: .semibold))
             }
-            .foregroundStyle(focus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
+            .foregroundStyle(selectedFocus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
             .frame(width: isCompact ? 56 : 80, height: isCompact ? 48 : 72)
-            .background(focus == key ? TVPalette.purple.opacity(0.38) : Color.clear,
+            .background(selectedFocus == key ? TVPalette.purple.opacity(0.38) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
-                .stroke(focus == key ? TVPalette.purple : .clear, lineWidth: 3))
+                .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
@@ -288,9 +293,9 @@ struct TVGuideScreen: View {
                 if end > start {
                     Button {
                         choose(index, pi)
-                        if program.plex != nil { focus = "watch-primary" }
+                        if program.plex != nil { selectedAction = .plex }
                         else if channel.source == "tablo" && program.isOnNow {
-                            focus = "watch-live"
+                            playTablo()
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
@@ -315,9 +320,9 @@ struct TVGuideScreen: View {
                                     TVPalette.cell,
                                     in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8)
-                            .stroke(focus == "program-\(index)-\(pi)" ? TVPalette.purple : .clear,
+                            .stroke(selectedFocus == "program-\(index)-\(pi)" ? TVPalette.purple : .clear,
                                     lineWidth: 4))
-                        .shadow(color: focus == "program-\(index)-\(pi)" ?
+                        .shadow(color: selectedFocus == "program-\(index)-\(pi)" ?
                                 TVPalette.purple.opacity(0.6) : .clear, radius: 10)
                     }
                     .buttonStyle(TVFocusCard())
@@ -391,7 +396,7 @@ struct TVGuideScreen: View {
             Text(label).font(.system(size: isCompact ? 11 : 17, weight: .bold))
                 .frame(maxWidth: .infinity).padding(.vertical, isCompact ? 7 : 13)
                 .foregroundStyle(.white)
-                .background(focus == key ? TVPalette.purple.opacity(0.55) :
+                .background(selectedFocus == key ? TVPalette.purple.opacity(0.55) :
                             Color(red: 0.32, green: 0.29, blue: 0.45),
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
@@ -408,7 +413,9 @@ struct TVGuideScreen: View {
     private func resetSelection() {
         selectedChannel = 0
         selectedProgram = channels.first?.programs.firstIndex(where: { $0.isOnNow }) ?? 0
-        focus = "program-\(selectedChannel)-\(selectedProgram)"
+        let target = "program-\(selectedChannel)-\(selectedProgram)"
+        if isCompact { phoneSelection = target }
+        else { focus = target }
     }
     private func goToday() {
         now = Date()
@@ -427,46 +434,91 @@ struct TVGuideScreen: View {
     }
     private var railWidth: CGFloat { isCompact ? 70 : 100 }
 
-    // On iOS the gamepad sends explicit commands to these same SwiftUI
-    // controls. tvOS uses its native focus engine, never this second handler.
+    // iPhone and Apple TV render the same native program tiles, sidebar and
+    // actions. Only their input adapters differ. Apple TV uses system focus;
+    // iPhone maps Backbone presses to a visible, explicit target.
+    private func selectPhoneProgram() {
+        guard channels.indices.contains(selectedChannel) else {return}
+        let entries = channels[selectedChannel].programs
+        guard !entries.isEmpty else { return }
+        selectedProgram = min(selectedProgram, entries.count-1)
+        phoneSelection = "program-\(selectedChannel)-\(selectedProgram)"
+    }
     private func movePhoneDirection(_ direction: String) {
         let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
-        if direction == "rail" { focus = "rail-search"; return }
-        if let value = focus, let i = rail.firstIndex(of: value) {
-            if direction == "down" { focus = rail[min(rail.count-1,i+1)] }
-            if direction == "up" { focus = rail[max(0,i-1)] }
-            if direction == "right" { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+        if direction == "rail" { phoneSelection = "rail-search"; return }
+        if direction == "guide" { selectPhoneProgram(); return }
+        if let index = rail.firstIndex(of: phoneSelection) {
+            switch direction {
+            case "up": phoneSelection = rail[max(0,index-1)]
+            case "down": phoneSelection = rail[min(rail.count-1,index+1)]
+            case "right": selectPhoneProgram()
+            default: break
+            }
             return
         }
-        if focus == "watch-primary" || focus == "watch-live" {
-            if direction == "up" { focus = "program-\(selectedChannel)-\(selectedProgram)" }
-            if direction == "left" { focus = "watch-primary" }
-            if direction == "right" || direction == "down" { focus = "watch-live" }
+        if phoneSelection == "watch-primary" || phoneSelection == "watch-live" {
+            switch direction {
+            case "up": selectPhoneProgram()
+            case "left":
+                if selected?.1.plex != nil { phoneSelection = "watch-primary" }
+                else {selectPhoneProgram()}
+            case "right":
+                if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                    phoneSelection = "watch-live"
+                }
+            case "down":
+                if phoneSelection == "watch-primary" &&
+                   selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                    phoneSelection = "watch-live"
+                }
+            default: break
+            }
             return
         }
-        if direction == "left" && selectedProgram == 0 { focus = "rail-search"; return }
-        guard !channels.isEmpty else { return }
-        if direction == "up" { selectedChannel = max(0,selectedChannel-1) }
-        if direction == "down" { selectedChannel = min(channels.count-1, selectedChannel+1) }
-        let programs = channels[selectedChannel].programs
-        guard !programs.isEmpty else { return }
-        if direction == "left" { selectedProgram = max(0, selectedProgram-1) }
-        if direction == "right" { selectedProgram = min(programs.count-1, selectedProgram+1) }
-        selectedProgram = min(selectedProgram, programs.count-1)
-        focus = "program-\(selectedChannel)-\(selectedProgram)"
+        if direction == "left" && selectedProgram == 0 {
+            phoneSelection = "rail-search"
+            return
+        }
+        guard !channels.isEmpty else {return}
+        switch direction {
+        case "up": selectedChannel = max(0,selectedChannel-1)
+        case "down": selectedChannel = min(channels.count-1,selectedChannel+1)
+        default: break
+        }
+        guard channels.indices.contains(selectedChannel) else {return}
+        let entries = channels[selectedChannel].programs
+        guard !entries.isEmpty else {
+            selectedProgram = 0
+            return
+        }
+        if direction == "up" || direction == "down" {
+            selectedProgram = entries.firstIndex(where: {$0.isOnNow}) ?? 0
+        } else if direction == "left" {
+            selectedProgram = max(0,selectedProgram-1)
+        } else if direction == "right" {
+            selectedProgram = min(entries.count-1,selectedProgram+1)
+        }
+        selectPhoneProgram()
     }
     private func activateFocused() {
-        switch focus {
+        switch phoneSelection {
         case "rail-search": showSearch = true
         case "rail-filter": showFilters = true
         case "rail-settings": showSettings = true
         case "rail-today": goToday()
-        case "watch-primary": selectedAction = .plex
-        case "watch-live": playTablo()
+        case "watch-primary":
+            if selected?.1.plex != nil { selectedAction = .plex }
+        case "watch-live":
+            if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                playTablo()
+            }
         default:
-            if selected?.1.plex != nil { focus = "watch-primary" }
+            // One A/OK press must do something. Opening the Plex choice
+            // dialog directly avoids a second unhighlighted focus step.
+            if selected?.1.plex != nil { selectedAction = .plex }
             else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
-                focus = "watch-live"
+                playTablo()
             }
         }
     }
