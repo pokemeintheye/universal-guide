@@ -1,6 +1,11 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
+  # Allow a deliberate workflow-file change to publish a new test build.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-testflight.yml'
 permissions:
   contents: read
 concurrency:
