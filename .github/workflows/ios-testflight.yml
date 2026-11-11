@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Publish iPhone TestFlight with native Plex chapters, captions, and audio menus.
+  # Publish iPhone TestFlight with 1x-4x two-stage Plex thumbnail scrubbing.
   push:
     branches: [main]
     paths:
