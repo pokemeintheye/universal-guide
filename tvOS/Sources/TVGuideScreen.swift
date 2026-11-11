@@ -503,36 +503,43 @@ struct TVGuideScreen: View {
             .frame(width: 185 * uiScale, height: 250 * uiScale)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(program.title).font(.system(size: isCompact ? 15 : 25, weight: .bold)).lineLimit(1)
-                    Text([program.subtitle, program.timeRange].compactMap{$0}.joined(separator: " · "))
-                        .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
+                VStack(alignment: .leading, spacing: isCompact ? 5 : 11) {
+                    Text(program.title)
+                        .font(.system(size: isCompact ? 13 : 25, weight: .semibold))
+                        .lineLimit(1)
+                    Text([program.subtitle, program.timeRange]
+                         .compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: isCompact ? 10 : 15))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Text(program.description ?? "Select a program to see viewing options.")
-                        .font(.system(size: isCompact ? 10 : 15)).foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
+                        .font(.system(size: isCompact ? 10 : 15))
+                        .foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
                         .lineLimit(isCompact ? 2 : 4)
-                    Spacer(minLength: 0)
                     if program.plex != nil {
-                        Text("✓ In Plex").font(.caption.bold())
+                        Text("✓ In Plex")
+                            .font(.system(size: isCompact ? 9 : 13, weight: .semibold))
                             .foregroundStyle(Color(red: 1, green: 0.8, blue: 0.44))
                     }
+                    Spacer(minLength: 0)
+                    HStack(spacing: isCompact ? 7 : 14) {
+                        if selected?.0.source == "tablo" && program.isOnNow {
+                            watchButton("Watch Live", key: "watch-live") { playTablo() }
+                        }
+                        if program.plex != nil {
+                            watchButton("Watch on Plex", key: "watch-primary") {
+                                openPlexChoice()
+                            }
+                        }
+                        if selected?.0.source == "philo" {
+                            watchButton("Open in Philo", key: "watch-philo") {
+                                if let (ch, entry) = selected { openPhilo(ch, entry) }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(spacing: 12) {
-                    if selected?.0.source == "tablo" && program.isOnNow {
-                        watchButton("Watch Live", key: "watch-live") { playTablo() }
-                    }
-                    if program.plex != nil {
-                        watchButton("Watch on Plex", key: "watch-primary") {
-                            openPlexChoice()
-                        }
-                    }
-                    if selected?.0.source == "philo" {
-                        watchButton("Open in Philo", key: "watch-philo") {
-                            if let (ch,entry) = selected { openPhilo(ch,entry) }
-                        }
-                    }
-                }
-                .frame(width: isCompact ? 120 : 260)
             } else {
                 Text("Select a program in the guide")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -546,8 +553,10 @@ struct TVGuideScreen: View {
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.system(size: isCompact ? 11 : 17, weight: .bold))
-                .frame(maxWidth: .infinity).padding(.vertical, isCompact ? 7 : 13)
+            Text(label).font(.system(size: isCompact ? 10 : 17, weight: .semibold))
+                .lineLimit(1)
+                .padding(.horizontal, isCompact ? 11 : 23)
+                .padding(.vertical, isCompact ? 7 : 13)
                 .foregroundStyle(.white)
                 .background(Color(red: 0.22, green: 0.20, blue: 0.31),
                             in: RoundedRectangle(cornerRadius: 11))
