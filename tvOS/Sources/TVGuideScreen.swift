@@ -33,6 +33,10 @@ struct TVGuideScreen: View {
     @State private var mediaSession: TVMediaSession?
     @State private var playbackError: String?
     @State private var loadingPlayback = false
+    @State private var selectedArtworkURL: URL?
+    @State private var artworkTask: Task<Void, Never>?
+    @State private var artworkCache: [String: URL] = [:]
+    @State private var noArtwork: Set<String> = []
     @FocusState private var focus: String?
     // iOS gamepad input is not part of tvOS's native FocusState engine.
     // Keep a separately-rendered selection so the purple ring always follows
@@ -96,8 +100,9 @@ struct TVGuideScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, isCompact ? 8 : 18)
-            .padding(.vertical, isCompact ? 5 : 12)
+            .padding(.horizontal, isCompact ? 8 : 20)
+            .padding(.vertical, isCompact ? 5 : 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if loadingPlayback {
                 Color.black.opacity(0.55).ignoresSafeArea()
                 ProgressView("Preparing video…")
@@ -137,6 +142,10 @@ struct TVGuideScreen: View {
         }
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
+        .modifier(UniversalGuideFullscreenLayout())
+        .modifier(UniversalGuideRemoteMove { direction in
+            moveTVFocus(direction)
+        })
         .fullScreenCover(item: $mediaSession) { session in
             TVMediaPlayerScreen(session: session)
         }
@@ -170,7 +179,13 @@ struct TVGuideScreen: View {
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
-        .task { await refreshGuide() }
+        .task { await refreshGuide(); refreshSelectedArtwork() }
+        .onChange(of: selected?.1.id) { _, _ in refreshSelectedArtwork() }
+        .onChange(of: serverURL) { _, _ in
+            artworkCache.removeAll()
+            noArtwork.removeAll()
+            refreshSelectedArtwork()
+        }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
         .onChange(of: focus) { _, next in
             if let next, next.hasPrefix("program-") {
@@ -313,18 +328,9 @@ struct TVGuideScreen: View {
                 }
             }
             .onChange(of: selectedProgram) { _, value in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
-                }
-            }
-            .onChange(of: focus) { _, value in
-                // tvOS focus is native, and can advance independently from
-                // selectedProgram until SwiftUI reports the new focus.
-                if !isCompact, let value, value.hasPrefix("program-") {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        vertical.scrollTo(value, anchor: .center)
-                    }
-                }
+                // A single immediate scroll per selection is much quicker
+                // than simultaneous animated focus and position changes.
+                vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
@@ -348,11 +354,7 @@ struct TVGuideScreen: View {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
-                        if channel.source == "philo" { openPhilo(channel,program) }
-                        else if program.plex != nil { openPlexChoice() }
-                        else if channel.source == "tablo" && program.isOnNow {
-                            playTablo()
-                        }
+                        activateGuideProgram(channel, program)
                     } label: {
                         VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                             Text(program.title)
@@ -408,13 +410,28 @@ struct TVGuideScreen: View {
     }
 
     private var detailBar: some View {
-        HStack(spacing: 25) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(LinearGradient(colors: [TVPalette.purple.opacity(0.5), TVPalette.panel],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(Image(systemName: "tv").font(.system(size: 48)).foregroundStyle(.white.opacity(0.5)))
-                .frame(width: isCompact ? 0 : 180, height: isCompact ? 0 : 132)
-                .opacity(isCompact ? 0 : 1)
+        HStack(spacing: isCompact ? 7 : 22) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(red: 0.08, green: 0.10, blue: 0.17))
+                if let selectedArtworkURL {
+                    AsyncImage(url: selectedArtworkURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFit()
+                        } else {
+                            Image(systemName: "tv")
+                                .font(.system(size: isCompact ? 22 : 45))
+                                .foregroundStyle(.white.opacity(0.28))
+                        }
+                    }
+                } else {
+                    Image(systemName: "tv")
+                        .font(.system(size: isCompact ? 22 : 45))
+                        .foregroundStyle(.white.opacity(0.28))
+                }
+            }
+            .frame(width: isCompact ? 64 : 150, height: isCompact ? 90 : 207)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(program.title).font(.system(size: isCompact ? 15 : 25, weight: .bold)).lineLimit(1)
@@ -422,7 +439,7 @@ struct TVGuideScreen: View {
                         .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
                     Text(program.description ?? "Select a program to see viewing options.")
                         .font(.system(size: isCompact ? 10 : 15)).foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
-                        .lineLimit(2)
+                        .lineLimit(isCompact ? 2 : 4)
                     Spacer(minLength: 0)
                     if program.plex != nil {
                         Text("✓ In Plex").font(.caption.bold())
@@ -452,7 +469,7 @@ struct TVGuideScreen: View {
             }
         }
         .padding(isCompact ? 7 : 18)
-        .frame(height: isCompact ? 102 : 158)
+        .frame(height: isCompact ? 112 : 248)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
 
     }
@@ -491,6 +508,58 @@ struct TVGuideScreen: View {
     private func refreshGuide() async {
         await store.refresh(server: serverURL)
     }
+    private func refreshSelectedArtwork() {
+        artworkTask?.cancel()
+        selectedArtworkURL = nil
+        guard let (_, program) = selected else { return }
+        let kind = program.programKind == "movie" ? "movie" : "series"
+        let key = "\(kind)|\(program.title)|\(kind == "movie" ? program.year ?? 0 : 0)"
+        if let cached = artworkCache[key] {
+            selectedArtworkURL = cached
+            return
+        }
+        if noArtwork.contains(key) { return }
+        let server = serverURL
+        let ratingKey = program.plex?.ratingKey
+        artworkTask = Task { @MainActor in
+            guard let base = URL(string: server), base.host != nil else { return }
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+            components?.path = "/api/guide/artwork"
+            var query = [URLQueryItem(name: "title", value: program.title)]
+            if kind == "movie" {
+                query.append(URLQueryItem(name: "kind", value: "movie"))
+                if let year = program.year {
+                    query.append(URLQueryItem(name: "year", value: String(year)))
+                }
+            }
+            components?.queryItems = query
+            var result: URL?
+            if let url = components?.url {
+                do {
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 6
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    if !Task.isCancelled,
+                       let http = response as? HTTPURLResponse, http.statusCode == 200,
+                       let art = try? JSONDecoder().decode(TVArtworkReply.self, from: data),
+                       let path = art.imageURL,
+                       path.hasPrefix("/api/guide/artwork/cached/") {
+                        result = URL(string: path, relativeTo: base)?.absoluteURL
+                    }
+                } catch { /* Plex fallback below */ }
+            }
+            if result == nil, let ratingKey, let rating = Int(ratingKey), rating > 0 {
+                result = URL(string: "/api/guide/art/\(rating)", relativeTo: base)?.absoluteURL
+            }
+            guard !Task.isCancelled else { return }
+            if let result {
+                artworkCache[key] = result
+                if selected?.1.id == program.id { selectedArtworkURL = result }
+            } else {
+                noArtwork.insert(key)
+            }
+        }
+    }
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -503,6 +572,103 @@ struct TVGuideScreen: View {
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
     // iPhone maps Backbone presses to a visible, explicit target.
+    // Exactly one D-pad handler on tvOS. The stock spatial focus engine
+    // chooses unpredictable tiles when adjacent rows have unequal durations.
+    // We choose explicit neighboring programs and keep their airing time.
+    private func moveTVFocus(_ direction: String) {
+        guard !isCompact && !showFilters && !showSearch && !showSettings,
+              !loadingPlayback && mediaSession == nil else { return }
+        // The choice dialog and native TV filters own their own focus.
+        if selectedAction == .plex { return }
+        let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        if let focus, let index = keys.firstIndex(of: focus) {
+            switch direction {
+            case "up": self.focus = keys[max(0,index-1)]
+            case "down": self.focus = keys[min(keys.count-1,index+1)]
+            case "right": focusSelectedTVProgram()
+            default: break
+            }
+            return
+        }
+        if let focus, ["watch-primary","watch-live","watch-philo"].contains(focus) {
+            switch direction {
+            case "up", "left":
+                if focus == "watch-primary" || selected?.1.plex == nil {
+                    focusSelectedTVProgram()
+                } else {
+                    self.focus = "watch-primary"
+                }
+            case "right", "down":
+                if focus == "watch-primary", selected?.0.source == "philo" {
+                    self.focus = "watch-philo"
+                } else if focus == "watch-primary", selected?.0.source == "tablo" {
+                    self.focus = "watch-live"
+                }
+            default: break
+            }
+            return
+        }
+        guard channels.indices.contains(selectedChannel) else { return }
+        let programs = channels[selectedChannel].programs
+        guard programs.indices.contains(selectedProgram) else { return }
+        let visible = programs.indices.filter {
+            (programs[$0].endDate ?? .distantPast) > anchor &&
+            (programs[$0].startDate ?? .distantFuture) <
+                anchor.addingTimeInterval(durationMinutes*60)
+        }
+        switch direction {
+        case "left":
+            guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
+                focus = "rail-search"
+                return
+            }
+            selectedProgram = visible[index-1]
+        case "right":
+            guard let index = visible.firstIndex(of: selectedProgram),
+                  index+1 < visible.count else { return }
+            selectedProgram = visible[index+1]
+        case "up", "down":
+            let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
+            if !channels.indices.contains(nextRow) {
+                if direction == "down" {
+                    if selected?.1.plex != nil { focus = "watch-primary" }
+                    else if selected?.0.source == "tablo" { focus = "watch-live" }
+                    else if selected?.0.source == "philo" { focus = "watch-philo" }
+                }
+                return
+            }
+            let current = programs[selectedProgram]
+            let targetTime: Date = {
+                if let start=current.startDate, let end=current.endDate {
+                    return start.addingTimeInterval(end.timeIntervalSince(start)/2)
+                }
+                return now
+            }()
+            let candidates = channels[nextRow].programs
+            guard !candidates.isEmpty else { return }
+            let best = candidates.indices.min {
+                func distance(_ p: GuideProgram) -> Double {
+                    guard let start=p.startDate, let end=p.endDate else {
+                        return Double.greatestFiniteMagnitude
+                    }
+                    if start <= targetTime && targetTime < end { return 0 }
+                    return min(abs(start.timeIntervalSince(targetTime)),
+                               abs(end.timeIntervalSince(targetTime)))
+                }
+                return distance(candidates[$0]) < distance(candidates[$1])
+            } ?? 0
+            selectedChannel = nextRow
+            selectedProgram = best
+        default: return
+        }
+        focusSelectedTVProgram()
+    }
+    private func focusSelectedTVProgram() {
+        guard channels.indices.contains(selectedChannel),
+              channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
+        focus = "program-\(selectedChannel)-\(selectedProgram)"
+    }
+
     private func selectPhoneProgram() {
         guard channels.indices.contains(selectedChannel) else {return}
         let entries = channels[selectedChannel].programs
@@ -623,16 +789,24 @@ struct TVGuideScreen: View {
         case "watch-philo":
             if let (channel,program) = selected { openPhilo(channel,program) }
         default:
-            // One A/OK press must do something. Opening the Plex choice
-            // dialog directly avoids a second unhighlighted focus step.
-            if selected?.0.source == "philo", let (channel,program) = selected {
-                openPhilo(channel,program)
-            } else if selected?.1.plex != nil { openPlexChoice() }
-            else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
-                playTablo()
+            if let (channel,program) = selected {
+                activateGuideProgram(channel,program)
             }
         }
     }
+    private func activateGuideProgram(_ channel: GuideChannel, _ program: GuideProgram) {
+        if program.plex != nil {
+            // Never automatically launch Philo when Plex also matches.
+            // OK moves to the bottom source choices, just like the web guide.
+            if isCompact { phoneSelection = "watch-primary" }
+            else { focus = "watch-primary" }
+        } else if channel.source == "philo" {
+            openPhilo(channel, program)
+        } else if channel.source == "tablo" && program.isOnNow {
+            playTablo()
+        }
+    }
+
     private func openPhilo(_ channel: GuideChannel, _ program: GuideProgram) {
         let source = program.philoLinks?.channel?.url ?? channel.philoChannelURL
         guard let raw = source,
@@ -781,5 +955,39 @@ private struct TVGuideFilterPanel: View {
         case 4: onFavorites()
         default: onClose()
         }
+    }
+}
+
+private struct TVArtworkReply: Decodable {
+    let imageURL: String?
+    enum CodingKeys: String, CodingKey { case imageURL = "image_url" }
+}
+
+private struct UniversalGuideFullscreenLayout: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.ignoresSafeArea(.container, edges: .all)
+        #else
+        content
+        #endif
+    }
+}
+
+private struct UniversalGuideRemoteMove: ViewModifier {
+    let onMove: (String) -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.onMoveCommand { command in
+            switch command {
+            case .up: onMove("up")
+            case .down: onMove("down")
+            case .left: onMove("left")
+            case .right: onMove("right")
+            default: break
+            }
+        }
+        #else
+        content
+        #endif
     }
 }
