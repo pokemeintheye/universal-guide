@@ -144,6 +144,14 @@ struct TVMediaPlayerScreen: View {
     @State private var checkedPlayback = false
     @State private var streamError: String?
     @State private var explicitlyClosing = false
+    @State private var replacementPlex: PlexPlaybackSession?
+    @State private var plexMetadata: PlexPlaybackMetadata?
+    @State private var audioID: Int?
+    @State private var subtitleID: Int?
+    @State private var trackMenu: String?
+    @State private var menuIndex = 0
+    @State private var changingTrack = false
+    @State private var optionsError: String?
     @State private var hideControlsTask: Task<Void, Never>?
     private let purple = Color(red: 0.72, green: 0.53, blue: 1)
     private var isCompact: Bool {
@@ -162,9 +170,32 @@ struct TVMediaPlayerScreen: View {
     private var sourceName: String {
         session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX"
     }
+    private var currentSession: TVMediaSession {
+        if let replacementPlex { return .plex(replacementPlex) }
+        return session
+    }
+    private var plexSession: PlexPlaybackSession? {
+        if case .plex(let plex) = currentSession { return plex }
+        return nil
+    }
     private var remoteButtons: [String] {
         session.isTablo ? ["back", "pause", "forward", "live"] :
-                          ["back", "pause", "forward"]
+                          ["back", "pause", "forward", "chapters", "captions", "audio"]
+    }
+    private var menuCount: Int {
+        switch trackMenu {
+        case "chapters": return plexMetadata?.chapters.count ?? 0
+        case "audio": return plexMetadata?.audio.count ?? 0
+        case "captions": return (plexMetadata?.subtitles.count ?? 0) + 1
+        default: return 0
+        }
+    }
+    private var menuTitle: String {
+        switch trackMenu {
+        case "chapters": return "Chapters"
+        case "audio": return "Audio"
+        default: return "Captions"
+        }
     }
 
     var body: some View {
@@ -272,6 +303,15 @@ struct TVMediaPlayerScreen: View {
                                                     lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
+                            } else {
+                                HStack(spacing: isCompact ? 6 : 12) {
+                                    plexOptionsButton("chapters", icon: "book.closed",
+                                                      enabled: !(plexMetadata?.chapters.isEmpty ?? true))
+                                    plexOptionsButton("captions", icon: "captions.bubble",
+                                                      enabled: plexMetadata != nil)
+                                    plexOptionsButton("audio", icon: "globe",
+                                                      enabled: !(plexMetadata?.audio.isEmpty ?? true))
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -289,6 +329,14 @@ struct TVMediaPlayerScreen: View {
                     startPoint: .top, endPoint: .bottom))
                 .transition(.opacity)
             }
+            if trackMenu != nil {
+                plexOptionsOverlay
+            }
+            if changingTrack {
+                Color.black.opacity(0.55).ignoresSafeArea()
+                ProgressView("Updating Plex playback…")
+                    .font(.title3)
+            }
             #if os(tvOS)
             UniversalMediaRemoteReceiver(
                 onMove: remoteDirection,
@@ -303,7 +351,16 @@ struct TVMediaPlayerScreen: View {
         .preferredColorScheme(.dark)
         .onAppear {
             streamStartedAt = Date()
-            let item = AVPlayerItem(url: session.playlist)
+            if let plex = plexSession {
+                Task {
+                    if let metadata = try? await PlexPlaybackService.metadata(plex) {
+                        plexMetadata = metadata
+                        audioID = metadata.audio.first(where: { $0.selected })?.id
+                        subtitleID = metadata.subtitles.first(where: { $0.selected })?.id ?? 0
+                    }
+                }
+            }
+            let item = AVPlayerItem(url: currentSession.playlist)
             player.replaceCurrentItem(with: item)
             player.play()
             isPaused = false
@@ -341,6 +398,13 @@ struct TVMediaPlayerScreen: View {
             playPause()
             #endif
         }
+        .alert("Plex options", isPresented: Binding(
+            get: { optionsError != nil }, set: { if !$0 { optionsError = nil } }
+        )) {
+            Button("OK") { optionsError = nil }
+        } message: {
+            Text(optionsError ?? "")
+        }
         .alert("Plex playback couldn't start",
                isPresented: Binding(get: { streamError != nil },
                                     set: { if !$0 { streamError = nil } })) {
@@ -348,6 +412,200 @@ struct TVMediaPlayerScreen: View {
             Button("Return to Guide") { exitPlayback() }
         } message: {
             Text(streamError ?? "The player did not receive a video frame.")
+        }
+    }
+
+    private func plexOptionsButton(_ key: String, icon: String, enabled: Bool) -> some View {
+        Button {
+            openPlexOptions(key)
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: isCompact ? 18 : 27, weight: .medium))
+                .foregroundStyle(enabled ? .white : .gray)
+                .frame(width: isCompact ? 34 : 46, height: isCompact ? 40 : 52)
+                .overlay(RoundedRectangle(cornerRadius: 9)
+                    .stroke(isSelected(key) ? purple : .clear, lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled || changingTrack)
+        .accessibilityLabel(key == "captions" ? "Captions" : key.capitalized)
+    }
+
+    private var plexOptionsOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.8).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: isCompact ? 8 : 16) {
+                HStack {
+                    Text(menuTitle).font(.system(size: isCompact ? 24 : 35, weight: .bold))
+                    Spacer()
+                    Button { trackMenu = nil } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: isCompact ? 24 : 32))
+                    }
+                }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: isCompact ? 5 : 10) {
+                            ForEach(0..<menuCount, id: \.self) { index in
+                                Button { selectPlexOption(index) } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(optionLabel(index))
+                                                .font(.system(size: isCompact ? 15 : 23, weight: .semibold))
+                                            if let detail = optionDetail(index) {
+                                                Text(detail)
+                                                    .font(.system(size: isCompact ? 11 : 16))
+                                                    .foregroundStyle(.white.opacity(0.7))
+                                            }
+                                        }
+                                        Spacer()
+                                        if optionIsSelected(index) {
+                                            Image(systemName: "checkmark").foregroundStyle(purple)
+                                        }
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(isCompact ? 9 : 16)
+                                    .background(menuIndex == index ? purple.opacity(0.28) :
+                                                Color.white.opacity(0.08),
+                                                in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(RoundedRectangle(cornerRadius: 10)
+                                        .stroke(menuIndex == index ? purple : .clear, lineWidth: 2))
+                                }
+                                .buttonStyle(.plain)
+                                .id(index)
+                            }
+                        }
+                    }
+                    .onChange(of: menuIndex) { _, next in
+                        withAnimation { proxy.scrollTo(next, anchor: .center) }
+                    }
+                }
+            }
+            .padding(isCompact ? 18 : 34)
+            .frame(maxWidth: isCompact ? 560 : 900, maxHeight: isCompact ? 300 : 700)
+            .background(Color(red: 0.09, green: 0.08, blue: 0.16),
+                        in: RoundedRectangle(cornerRadius: 20))
+        }
+    }
+
+    private func optionLabel(_ index: Int) -> String {
+        switch trackMenu {
+        case "chapters":
+            guard let items = plexMetadata?.chapters, items.indices.contains(index) else { return "" }
+            return items[index].title
+        case "audio":
+            guard let items = plexMetadata?.audio, items.indices.contains(index) else { return "" }
+            return items[index].label
+        default:
+            if index == 0 { return "Off" }
+            guard let items = plexMetadata?.subtitles, items.indices.contains(index-1) else { return "" }
+            return items[index-1].label
+        }
+    }
+    private func optionDetail(_ index: Int) -> String? {
+        if trackMenu == "chapters", let chapters = plexMetadata?.chapters,
+           chapters.indices.contains(index) {
+            return time(chapters[index].start_seconds)
+        }
+        return nil
+    }
+    private func optionIsSelected(_ index: Int) -> Bool {
+        if trackMenu == "audio", let audio = plexMetadata?.audio, audio.indices.contains(index) {
+            return audio[index].id == audioID
+        }
+        if trackMenu == "captions" {
+            if index == 0 { return subtitleID == nil || subtitleID == 0 }
+            if let subtitles = plexMetadata?.subtitles, subtitles.indices.contains(index-1) {
+                return subtitles[index-1].id == subtitleID
+            }
+        }
+        return false
+    }
+
+    private func openPlexOptions(_ kind: String) {
+        guard plexMetadata != nil, !changingTrack else { return }
+        trackMenu = kind
+        menuIndex = 0
+        if kind == "audio", let audio = plexMetadata?.audio,
+           let index = audio.firstIndex(where: { $0.id == audioID }) { menuIndex = index }
+        if kind == "captions", let sub = plexMetadata?.subtitles,
+           let index = sub.firstIndex(where: { $0.id == subtitleID }) { menuIndex = index+1 }
+        hideControlsTask?.cancel()
+    }
+
+    private func selectPlexOption(_ index: Int) {
+        guard !changingTrack, let plex = plexSession else { return }
+        if trackMenu == "chapters" {
+            guard let chapters = plexMetadata?.chapters, chapters.indices.contains(index) else { return }
+            trackMenu = nil
+            let target = chapters[index].start_seconds
+            if plex.offsetSeconds == 0 && target <= maximum {
+                seekTo(target)
+            } else {
+                Task { await replacePlexStream(at: target, audio: audioID,
+                                               captions: subtitleID, change: nil) }
+            }
+            return
+        }
+        if trackMenu == "audio" {
+            guard let tracks = plexMetadata?.audio, tracks.indices.contains(index) else { return }
+            let chosen = tracks[index].id
+            trackMenu = nil
+            if chosen != audioID {
+                Task { await replacePlexStream(at: plex.offsetSeconds + elapsed,
+                                               audio: chosen, captions: subtitleID,
+                                               change: "audio") }
+            }
+        } else if trackMenu == "captions" {
+            let chosen: Int
+            if index == 0 { chosen = 0 }
+            else {
+                guard let tracks = plexMetadata?.subtitles,
+                      tracks.indices.contains(index-1) else { return }
+                chosen = tracks[index-1].id
+            }
+            trackMenu = nil
+            if chosen != (subtitleID ?? 0) {
+                Task { await replacePlexStream(at: plex.offsetSeconds + elapsed,
+                                               audio: audioID, captions: chosen,
+                                               change: "captions") }
+            }
+        }
+    }
+
+    private func replacePlexStream(at position: Double, audio: Int?,
+                                   captions: Int?, change: String?) async {
+        guard let plex = plexSession, !changingTrack else { return }
+        changingTrack = true
+        defer { changingTrack = false; scheduleHideControls() }
+        do {
+            if change == "audio" {
+                try await PlexPlaybackService.selectTracks(plex, audioID: audio)
+            } else if change == "captions" {
+                try await PlexPlaybackService.selectTracks(plex, subtitleID: captions)
+            }
+            let next = try await PlexPlaybackService.start(
+                serverURL: plex.serverURL.absoluteString, ratingKey: plex.ratingKey,
+                mode: "resume", airingStart: "", airingEnd: "",
+                offsetSeconds: max(0, position), audioStreamID: audio,
+                subtitleStreamID: captions)
+            // The new HLS playlist has passed preflight. Only now replace
+            // the current AVPlayer item and retire the previous session.
+            replacementPlex = next
+            player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
+            player.play()
+            audioID = audio
+            subtitleID = captions
+            elapsed = 0
+            minimum = 0
+            maximum = max(1, (plexMetadata?.duration_seconds ?? 1)-next.offsetSeconds)
+            videoReady = false
+            checkedPlayback = false
+            recoveredOnce = false
+            streamStartedAt = Date()
+            await PlexPlaybackService.stop(plex)
+        } catch {
+            optionsError = error.localizedDescription
         }
     }
 
