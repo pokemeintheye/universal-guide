@@ -262,27 +262,44 @@ struct PhoneGuideWebView: UIViewRepresentable {
          :focus-visible. Mark the actual remote selection explicitly. */
       html.ug-phone .ug-pad-focus,
       html.ug-phone :is(button,a,input,summary):focus {
-        outline: 4px solid #52e4ff !important;
+        outline: 4px solid #bd91ff !important;
         outline-offset: 3px !important;
-        box-shadow: 0 0 0 3px #070d19, 0 0 22px #41d8ffbb !important;
+        box-shadow: 0 0 0 3px #070d19, 0 0 22px #a668ffbb !important;
         position: relative;
         z-index: 12 !important;
       }
       html.ug-phone .guide-top-actions .ug-pad-focus,
       html.ug-phone .guide-detail-actions .ug-pad-focus,
       html.ug-phone .guide-popover .ug-pad-focus {
-        background: #38568a !important;
-        border-color: #67e9ff !important;
+        background: #583b81 !important;
+        border-color: #d7b0ff !important;
         color: white !important;
       }
       html.ug-phone .player-backdrop .ug-pad-focus {
-        background: #27496ac0 !important;
+        background: #5b3b85c0 !important;
         border-radius: 14px;
         transform: scale(1.075);
       }
       html.ug-phone .player-backdrop .tablo-transport.ug-pad-focus {
         border-radius: 50% !important;
         transform: scale(1.1) !important;
+      }
+      /* Only the white seek thumb gets the focus halo: keep the full
+         timeline as a neutral grey track while using the controller. */
+      html.ug-phone .player-backdrop :is(#plexseek,#tablodvrseek):is(
+        .ug-pad-focus,:focus) {
+        outline: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        transform: none !important;
+      }
+      html.ug-phone .player-backdrop :is(#plexseek,#tablodvrseek):is(
+        .ug-pad-focus,:focus)::-webkit-slider-thumb {
+        outline: 4px solid #bd91ff !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 3px #100d1b, 0 0 15px #a668ff !important;
+        background: #fff !important;
+        transform: scale(1.14) !important;
       }
       /* Text emoji ⏸ draws a solid blue square on iOS. Draw the same
          clean, outlined transport style as rewind and fast-forward. */
@@ -503,6 +520,65 @@ struct PhoneGuideWebView: UIViewRepresentable {
         // Use the existing web guide's keyboard algorithm for EPG navigation.
         key(directions[command]);
       }
+      // Safari native HLS sometimes starts a Plex join at the correct
+      // requested time, then silently seeks far ahead on its first segments.
+      // Detect only a sudden, unrequested time jump during the first seconds
+      // of a "Join" session. Restore the prior playable position once, and
+      // leave all manual scrubbing, normal playback, and Tablo DVR untouched.
+      let plexStartupSession=null, plexStartupStarted=0;
+      let plexStartupLast=null, plexStartupLastAt=0;
+      let plexStartupSamples=0, plexStartupCorrected=false;
+      let lastExplicitSeekAt=0;
+      document.addEventListener('pointerdown',event=>{
+        if(event.target?.closest('#plexseek,#plexback,#plexforward'))
+          lastExplicitSeekAt=Date.now();
+      },true);
+      const plexJoinClock = () => {
+        const video=$('plexvideo');
+        if(!video || !plex() || !player())return;
+        if(!($('playertitle')?.textContent||'').includes('Join at ~'))return;
+        const sid=(typeof playerSession!=='undefined')?playerSession:null;
+        if(!sid)return;
+        const now=Date.now(),position=video.currentTime;
+        if(!Number.isFinite(position))return;
+        if(sid!==plexStartupSession){
+          plexStartupSession=sid;
+          plexStartupStarted=now;
+          plexStartupLast=null;
+          plexStartupSamples=0;
+          plexStartupCorrected=false;
+        }
+        if(now-plexStartupStarted>25000 || plexStartupCorrected)return;
+        if(plexStartupLast!==null && plexStartupSamples>=2 &&
+           now-plexStartupLastAt<3500 &&
+           now-lastExplicitSeekAt>5000 &&
+           position-plexStartupLast>25 &&
+           plexStartupLast<35){
+          const target=plexStartupLast+Math.min(2,(now-plexStartupLastAt)/1000);
+          const ranges=video.seekable;
+          let seekable=false;
+          for(let i=0;i<(ranges?.length||0);i++){
+            if(ranges.start(i)<=target && target<=ranges.end(i)){
+              seekable=true;break;
+            }
+          }
+          if(seekable){
+            video.currentTime=target;
+            plexStartupCorrected=true;
+            console.warn('Universal Guide: corrected unexpected Safari Plex join jump',
+              {from:plexStartupLast,to:position,restored:target});
+          }else{
+            // Avoid an invalid seek that could restart the native HLS stream.
+            console.warn('Universal Guide: Safari join advanced outside buffered range',
+              {from:plexStartupLast,to:position});
+            plexStartupCorrected=true;
+          }
+        }
+        plexStartupLast=position;
+        plexStartupLastAt=now;
+        plexStartupSamples++;
+      };
+      $('plexvideo')?.addEventListener('timeupdate',plexJoinClock);
       // Reliable controller targets, without touching the backend or redefining
       // the web HLS playback implementation.
       window.universalGuideGamepad=function(command){
@@ -537,6 +613,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
             return;
           }
           if(command==='left'||command==='right'){
+            if(plex())lastExplicitSeekAt=Date.now();
             if(!overlayVisible){
               transportClick(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
                 (command==='left'?'plexback':'plexforward'));
