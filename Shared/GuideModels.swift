@@ -12,11 +12,13 @@ struct GuideChannel: Decodable, Identifiable {
     let network: String?
     let favorite: Bool?
     let scheduleUnavailable: Bool?
+    let philoChannelURL: String?
     let programs: [GuideProgram]
 
     enum CodingKeys: String, CodingKey {
         case id, label, source, number, network, favorite, programs
         case scheduleUnavailable = "schedule_unavailable"
+        case philoChannelURL = "philo_channel_url"
     }
 }
 
@@ -29,11 +31,13 @@ struct GuideProgram: Decodable, Identifiable {
     let year: Int?
     let programKind: String?
     let plex: PlexMatch?
+    let philoLinks: PhiloLinks?
 
     var id: String { "\(title)|\(start)|\(stop)" }
 
     enum CodingKeys: String, CodingKey {
         case title, subtitle, start, stop, description, year, plex
+        case philoLinks = "philo_links"
         case programKind = "program_kind"
     }
 
@@ -48,6 +52,9 @@ struct GuideProgram: Decodable, Identifiable {
         return "\(startDate.formatted(date: .omitted, time: .shortened)) – \(endDate.formatted(date: .omitted, time: .shortened))"
     }
 }
+
+struct PhiloLink: Decodable { let url: String? }
+struct PhiloLinks: Decodable { let channel: PhiloLink? }
 
 struct PlexMatch: Decodable {
     // The Unraid API sends Plex rating_key as a numeric string.
