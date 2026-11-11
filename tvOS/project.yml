@@ -17,6 +17,7 @@ targets:
       path: Info.plist
       properties:
         ITSAppUsesNonExemptEncryption: false
+        NSLocalNetworkUsageDescription: "Universal Guide connects to your Unraid TV guide and playback server on your local network."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true
