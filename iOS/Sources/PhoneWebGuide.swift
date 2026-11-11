@@ -262,27 +262,44 @@ struct PhoneGuideWebView: UIViewRepresentable {
          :focus-visible. Mark the actual remote selection explicitly. */
       html.ug-phone .ug-pad-focus,
       html.ug-phone :is(button,a,input,summary):focus {
-        outline: 4px solid #52e4ff !important;
+        outline: 4px solid #bd91ff !important;
         outline-offset: 3px !important;
-        box-shadow: 0 0 0 3px #070d19, 0 0 22px #41d8ffbb !important;
+        box-shadow: 0 0 0 3px #070d19, 0 0 22px #a668ffbb !important;
         position: relative;
         z-index: 12 !important;
       }
       html.ug-phone .guide-top-actions .ug-pad-focus,
       html.ug-phone .guide-detail-actions .ug-pad-focus,
       html.ug-phone .guide-popover .ug-pad-focus {
-        background: #38568a !important;
-        border-color: #67e9ff !important;
+        background: #583b81 !important;
+        border-color: #d7b0ff !important;
         color: white !important;
       }
       html.ug-phone .player-backdrop .ug-pad-focus {
-        background: #27496ac0 !important;
+        background: #5b3b85c0 !important;
         border-radius: 14px;
         transform: scale(1.075);
       }
       html.ug-phone .player-backdrop .tablo-transport.ug-pad-focus {
         border-radius: 50% !important;
         transform: scale(1.1) !important;
+      }
+      /* Only the white seek thumb gets the focus halo: keep the full
+         timeline as a neutral grey track while using the controller. */
+      html.ug-phone .player-backdrop :is(#plexseek,#tablodvrseek):is(
+        .ug-pad-focus,:focus) {
+        outline: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        transform: none !important;
+      }
+      html.ug-phone .player-backdrop :is(#plexseek,#tablodvrseek):is(
+        .ug-pad-focus,:focus)::-webkit-slider-thumb {
+        outline: 4px solid #bd91ff !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 3px #100d1b, 0 0 15px #a668ff !important;
+        background: #fff !important;
+        transform: scale(1.14) !important;
       }
       /* Text emoji ⏸ draws a solid blue square on iOS. Draw the same
          clean, outlined transport style as rewind and fast-forward. */
