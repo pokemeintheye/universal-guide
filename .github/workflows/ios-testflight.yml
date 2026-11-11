@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Test Plex long-pause recovery, year in player, and chapter thumbnails.
+  # Test first pass of the matching purple six-row iPhone and Apple TV guide.
   push:
     branches: [main]
     paths:
