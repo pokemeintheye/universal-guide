@@ -153,17 +153,19 @@ struct TVGuideScreen: View {
                 .navigationTitle("Search")
             }
         }
-        .confirmationDialog("Filter Guide", isPresented: $showFilters) {
-            ForEach(["All", "In Plex", "Tablo", "Philo"], id: \.self) { name in
-                Button(name) {
+        .fullScreenCover(isPresented: $showFilters) {
+            TVGuideFilterPanel(currentFilter: filter, favoritesOnly: favoriteOnly,
+                onFilter: { name in
                     filter = name
                     resetSelection()
-                }
-            }
-            Button(favoriteOnly ? "Show All Channels" : "Favorites Only") {
-                favoriteOnly.toggle()
-                resetSelection()
-            }
+                    showFilters = false
+                },
+                onFavorites: {
+                    favoriteOnly.toggle()
+                    resetSelection()
+                    showFilters = false
+                },
+                onClose: { showFilters = false })
         }
         .alert("Playback unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
@@ -182,12 +184,13 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if mediaSession == nil, let raw = event.object as? String { movePhoneDirection(raw) }
+            if mediaSession == nil && !showFilters && !showSettings && !showSearch,
+               let raw = event.object as? String { movePhoneDirection(raw) }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if mediaSession == nil { activateFocused() }
+            if mediaSession == nil && !showFilters && !showSettings && !showSearch { activateFocused() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
@@ -301,7 +304,26 @@ struct TVGuideScreen: View {
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
             }
             .onChange(of: selectedChannel) { _, value in
-                withAnimation(.easeOut(duration: 0.1)) { vertical.scrollTo("row-\(value)", anchor: .center) }
+                if channels.indices.contains(value) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        vertical.scrollTo("row-\(value)", anchor: .center)
+                        vertical.scrollTo("program-\(value)-\(selectedProgram)", anchor: .center)
+                    }
+                }
+            }
+            .onChange(of: selectedProgram) { _, value in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
+                }
+            }
+            .onChange(of: focus) { _, value in
+                // tvOS focus is native, and can advance independently from
+                // selectedProgram until SwiftUI reports the new focus.
+                if !isCompact, let value, value.hasPrefix("program-") {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        vertical.scrollTo(value, anchor: .center)
+                    }
+                }
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
@@ -360,6 +382,7 @@ struct TVGuideScreen: View {
                     .buttonStyle(TVFocusCard())
                     .focused($focus, equals: "program-\(index)-\(pi)")
                     .offset(x: CGFloat(start)*minutePixels)
+                    .id("program-\(index)-\(pi)")
                 }
             }
         }
@@ -622,4 +645,100 @@ extension Notification.Name {
     static let ugGamepadSelect = Notification.Name("UGNativeGuideSelect")
     static let ugGamepadBack = Notification.Name("UGNativeGuideBack")
     static let ugGamepadPlayPause = Notification.Name("UGNativeGuidePlayPause")
+}
+
+
+/// A dedicated presentation isolates filter focus from the underlying EPG.
+/// iPhone controller A/D-pad and Apple TV native focus use identical actions.
+private struct TVGuideFilterPanel: View {
+    let currentFilter: String
+    let favoritesOnly: Bool
+    let onFilter: (String) -> Void
+    let onFavorites: () -> Void
+    let onClose: () -> Void
+    @FocusState private var focused: Int?
+    @State private var phoneIndex = 0
+    private let choices = ["All Channels", "In Plex", "Tablo", "Philo",
+                           "Favorites", "Cancel"]
+    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private var isCompact: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private var selection: Int? { isCompact ? phoneIndex : focused }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(spacing: isCompact ? 8 : 16) {
+                Text("Filter Guide").font(isCompact ? .title3.bold() : .largeTitle.bold())
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 6)
+                ForEach(Array(choices.enumerated()), id: \.offset) { index, name in
+                    Button { activate(index) } label: {
+                        HStack {
+                            Text(name)
+                            Spacer()
+                            if name == currentFilter ||
+                                name == "All Channels" && currentFilter == "All" ||
+                                name == "Favorites" && favoritesOnly {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: isCompact ? 35 : 58)
+                        .foregroundStyle(.white)
+                        .background(selection == index ? purple.opacity(0.40) :
+                                    Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(selection == index ? purple : .clear, lineWidth: 3))
+                    }
+                    .buttonStyle(.plain)
+                    .focused($focused, equals: index)
+                }
+            }
+            .padding(24)
+            .frame(width: isCompact ? 360 : 600)
+            .background(Color(red: 0.11, green: 0.12, blue: 0.22),
+                        in: RoundedRectangle(cornerRadius: 18))
+        }
+        .onAppear { focused = 0; phoneIndex = 0 }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            guard let direction = event.object as? String else {return}
+            if direction == "down" || direction == "right" {
+                phoneIndex = min(choices.count-1, phoneIndex+1)
+            } else if direction == "up" || direction == "left" {
+                phoneIndex = max(0, phoneIndex-1)
+            }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            activate(phoneIndex)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            onClose()
+            #endif
+        }
+        #if os(tvOS)
+        .onExitCommand(perform: onClose)
+        #endif
+    }
+
+    private func activate(_ index: Int) {
+        switch index {
+        case 0: onFilter("All")
+        case 1: onFilter("In Plex")
+        case 2: onFilter("Tablo")
+        case 3: onFilter("Philo")
+        case 4: onFavorites()
+        default: onClose()
+        }
+    }
 }
