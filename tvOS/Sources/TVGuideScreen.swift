@@ -575,7 +575,7 @@ struct TVGuideScreen: View {
     // Exactly one D-pad handler on tvOS. The stock spatial focus engine
     // chooses unpredictable tiles when adjacent rows have unequal durations.
     // We choose explicit neighboring programs and keep their airing time.
-    private func moveTVFocus(_ direction: MoveCommandDirection) {
+    private func moveTVFocus(_ direction: String) {
         guard !isCompact && !showFilters && !showSearch && !showSettings,
               !loadingPlayback && mediaSession == nil else { return }
         // The choice dialog and native TV filters own their own focus.
@@ -583,22 +583,22 @@ struct TVGuideScreen: View {
         let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
         if let focus, let index = keys.firstIndex(of: focus) {
             switch direction {
-            case .up: self.focus = keys[max(0,index-1)]
-            case .down: self.focus = keys[min(keys.count-1,index+1)]
-            case .right: focusSelectedTVProgram()
+            case "up": self.focus = keys[max(0,index-1)]
+            case "down": self.focus = keys[min(keys.count-1,index+1)]
+            case "right": focusSelectedTVProgram()
             default: break
             }
             return
         }
         if let focus, ["watch-primary","watch-live","watch-philo"].contains(focus) {
             switch direction {
-            case .up, .left:
+            case "up", "left":
                 if focus == "watch-primary" || selected?.1.plex == nil {
                     focusSelectedTVProgram()
                 } else {
                     self.focus = "watch-primary"
                 }
-            case .right, .down:
+            case "right", "down":
                 if focus == "watch-primary", selected?.0.source == "philo" {
                     self.focus = "watch-philo"
                 } else if focus == "watch-primary", selected?.0.source == "tablo" {
@@ -617,20 +617,20 @@ struct TVGuideScreen: View {
                 anchor.addingTimeInterval(durationMinutes*60)
         }
         switch direction {
-        case .left:
+        case "left":
             guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
                 focus = "rail-search"
                 return
             }
             selectedProgram = visible[index-1]
-        case .right:
+        case "right":
             guard let index = visible.firstIndex(of: selectedProgram),
                   index+1 < visible.count else { return }
             selectedProgram = visible[index+1]
-        case .up, .down:
-            let nextRow = selectedChannel + (direction == .down ? 1 : -1)
+        case "up", "down":
+            let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
             if !channels.indices.contains(nextRow) {
-                if direction == .down {
+                if direction == "down" {
                     if selected?.1.plex != nil { focus = "watch-primary" }
                     else if selected?.0.source == "tablo" { focus = "watch-live" }
                     else if selected?.0.source == "philo" { focus = "watch-philo" }
@@ -974,10 +974,18 @@ private struct UniversalGuideFullscreenLayout: ViewModifier {
 }
 
 private struct UniversalGuideRemoteMove: ViewModifier {
-    let onMove: (MoveCommandDirection) -> Void
+    let onMove: (String) -> Void
     @ViewBuilder func body(content: Content) -> some View {
         #if os(tvOS)
-        content.onMoveCommand(perform: onMove)
+        content.onMoveCommand { command in
+            switch command {
+            case .up: onMove("up")
+            case .down: onMove("down")
+            case .left: onMove("left")
+            case .right: onMove("right")
+            default: break
+            }
+        }
         #else
         content
         #endif
