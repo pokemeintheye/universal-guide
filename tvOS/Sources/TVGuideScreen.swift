@@ -109,7 +109,7 @@ struct TVGuideScreen: View {
             HStack(spacing: isCompact ? 7 : 14) {
                 sidebarRail
                     .frame(width: railWidth)
-                VStack(spacing: 13) {
+                VStack(spacing: isCompact ? 7 : 13) {
                     header
                     if let error = store.error, store.channels.isEmpty {
                         VStack(spacing: 20) {
@@ -294,14 +294,14 @@ struct TVGuideScreen: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Universal Guide")
-                    .font(.system(size: isCompact ? 19 : 35, weight: .heavy))
+                    .font(.system(size: isCompact ? 17 : 35, weight: .heavy))
                 Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
                     .font(.system(size: isCompact ? 10 : 15))
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Text(now.formatted(date: .abbreviated, time: .shortened))
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: isCompact ? 12 : 16, weight: .semibold))
                 .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
             if filter != "All" || favoriteOnly {
                 Text([filter != "All" ? filter : "", favoriteOnly ? "Favorites" : ""]
@@ -328,14 +328,14 @@ struct TVGuideScreen: View {
                                         .foregroundStyle(TVPalette.purple)
                                 }
                                 Text(channel.number ?? channel.label)
-                                    .font(.system(size: isCompact ? 18 : 24, weight: .bold))
+                                    .font(.system(size: isCompact ? 14 : 24, weight: .semibold))
                                 if channel.number != nil && channel.label != channel.number {
                                     Text(channel.label)
-                                        .font(.system(size: isCompact ? 11 : 16))
+                                        .font(.system(size: isCompact ? 10 : 16))
                                         .foregroundStyle(.secondary).lineLimit(1)
                                 }
                             }
-                            .padding(.leading, 12)
+                            .padding(.leading, isCompact ? 7 : 12)
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
                             .background(Color(red: 0.135, green: 0.145, blue: 0.225))
                             timelineRow(channel, index: channelIndex)
@@ -359,7 +359,7 @@ struct TVGuideScreen: View {
                                 .frame(width: minutePixels * 30, alignment: .leading)
                         }
                     }
-                    .frame(height: timelineHeaderHeight)
+                    .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
                     .background(Color(red: 0.105, green: 0.11, blue: 0.19))
                     .overlay(alignment: .leading) {
                         Rectangle()
@@ -420,25 +420,25 @@ struct TVGuideScreen: View {
                         choose(index, pi)
                         activateGuideProgram(channel, program)
                     } label: {
-                        VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
+                        VStack(alignment: .leading, spacing: isCompact ? 2 : 7) {
                             Text(program.title)
-                                .font(.system(size: isCompact ? 13 : 20, weight: .bold))
+                                .font(.system(size: isCompact ? 11 : 20, weight: .semibold))
                                 .lineLimit(1)
                                 .foregroundStyle(.white)
                             if program.plex != nil {
                                 Label("IN PLEX", systemImage: "checkmark.circle.fill")
-                                    .font(.system(size: isCompact ? 9 : 11, weight: .bold))
+                                    .font(.system(size: isCompact ? 8 : 11, weight: .bold))
                                     .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
                                     .lineLimit(1)
                             } else if let subtitle = program.subtitle {
                                 Text(subtitle)
-                                    .font(.system(size: isCompact ? 10 : 14))
+                                    .font(.system(size: isCompact ? 9 : 14))
                                     .foregroundStyle(.white.opacity(0.77))
                                     .lineLimit(1)
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .padding(.horizontal, isCompact ? 9 : 14)
+                        .padding(.horizontal, isCompact ? 7 : 14)
                         .background(program.plex != nil ?
                                     TVPalette.purple.opacity(0.22) :
                                     TVPalette.cell,
@@ -449,7 +449,7 @@ struct TVGuideScreen: View {
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
-                           height: rowHeight-(isCompact ? 10 : 14))
+                           height: rowHeight-(isCompact ? 6 : 14))
                     .padding(.trailing, 7)
                     .buttonStyle(TVFocusCard())
                     .focused($focus, equals: "program-\(index)-\(pi)")
