@@ -308,10 +308,8 @@ struct TVGuideScreen: View {
             }
             .onChange(of: selectedChannel) { _, value in
                 if channels.indices.contains(value) {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        vertical.scrollTo("row-\(value)", anchor: .center)
-                        vertical.scrollTo("program-\(value)-\(selectedProgram)", anchor: .center)
-                    }
+                    // Avoid two competing scroll animations for one remote press.
+                    vertical.scrollTo("row-\(value)", anchor: .center)
                 }
             }
             .onChange(of: selectedProgram) { _, value in
