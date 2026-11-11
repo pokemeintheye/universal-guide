@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Allow a deliberate workflow-file change to publish a new test build.
+  # Publish iPhone TestFlight with native Plex chapters, captions, and audio menus.
   push:
     branches: [main]
     paths:
