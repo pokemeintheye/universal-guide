@@ -620,8 +620,10 @@ struct TVMediaPlayerScreen: View {
     // This works whether an HLS manifest begins at 0 or at 3600 seconds.
     private func currentPlexPosition(_ plex: PlexPlaybackSession) -> Double {
         let current = CMTimeGetSeconds(player.currentTime())
-        let relative = current.isFinite && plexPlaybackOrigin != nil ?
-            max(0, current - plexPlaybackOrigin!) : 0
+        // Preserve negative deltas when the user seeks backward within the
+        // existing stream; clamp the final absolute movie timestamp instead.
+        let relative = current.isFinite ?
+            (plexPlaybackOrigin.map { current - $0 } ?? 0) : 0
         let length = plexMetadata?.duration_seconds ?? Double.greatestFiniteMagnitude
         return min(max(0, length - 1), plex.offsetSeconds + relative)
     }
@@ -1024,7 +1026,7 @@ struct TVMediaPlayerScreen: View {
         if current.isFinite {
             elapsed = current
             if !session.isTablo, plexPlaybackOrigin == nil, videoReady,
-               player.currentItem?.status == .readyToPlay {
+               item.status == .readyToPlay {
                 plexPlaybackOrigin = current
             }
         }
