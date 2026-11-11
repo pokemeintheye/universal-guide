@@ -77,6 +77,37 @@ enum PlexPlaybackService {
               !sessionID.isEmpty else {
             throw PlexPlaybackError.invalidSession
         }
+        // AVPlayer's error alone did not identify which endpoint failed:
+        // the previous report showed zero recorded playlist requests. Fetch
+        // the token-free HLS master explicitly before creating the player.
+        // This also warms the Plex transcoder and gives a precise HTTP error
+        // when the requested playlist is not actually available.
+        var masterRequest = URLRequest(url: playlist)
+        masterRequest.httpMethod = "GET"
+        masterRequest.timeoutInterval = 40
+        masterRequest.setValue("application/vnd.apple.mpegurl", forHTTPHeaderField: "Accept")
+        let (master, masterResponse): (Data, URLResponse)
+        do {
+            (master, masterResponse) = try await URLSession.shared.data(for: masterRequest)
+        } catch {
+            throw PlexPlaybackError.server(
+                "Unraid could not deliver the Plex HLS playlist: \(error.localizedDescription).")
+        }
+        guard let masterHTTP = masterResponse as? HTTPURLResponse else {
+            throw PlexPlaybackError.server("No HTTP response from the Plex HLS playlist.")
+        }
+        guard masterHTTP.statusCode == 200 else {
+            let detail = (try? JSONDecoder().decode(PlexServerError.self, from: master))?.detail
+            throw PlexPlaybackError.server(
+                "Plex HLS master returned HTTP \(masterHTTP.statusCode): " +
+                (detail ?? "Check the Unraid /api/player proxy and Plex transcoder."))
+        }
+        guard let playlistText = String(data: master, encoding: .utf8),
+              playlistText.trimmingCharacters(in: .whitespacesAndNewlines)
+                .hasPrefix("#EXTM3U") else {
+            throw PlexPlaybackError.server(
+                "Unraid returned HTTP 200 but not a valid Plex HLS playlist.")
+        }
         return PlexPlaybackSession(id: sessionID, playlistURL: playlist,
                                    serverURL: base, title: info.title)
     }
