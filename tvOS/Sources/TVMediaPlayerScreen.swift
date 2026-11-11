@@ -147,6 +147,10 @@ struct TVMediaPlayerScreen: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // The full-screen transparent Button was receiving tvOS's
+                // giant opaque *focused button* effect, obscuring video.
+                // Keep the remote's OK activation but suppress the effect.
+                .modifier(UniversalDisableFocusEffect())
                 .focused($focused, equals: "reveal")
             }
             if controlsVisible {
@@ -490,5 +494,15 @@ private struct UniversalVideoSurface: UIViewRepresentable {
     }
     func updateUIView(_ uiView: UniversalVideoLayerView, context: Context) {
         if uiView.videoLayer.player !== player { uiView.videoLayer.player = player }
+    }
+}
+
+private struct UniversalDisableFocusEffect: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.focusEffectDisabled()
+        #else
+        content
+        #endif
     }
 }
