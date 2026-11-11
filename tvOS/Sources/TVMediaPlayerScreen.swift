@@ -163,6 +163,9 @@ struct TVMediaPlayerScreen: View {
     // First playable AVPlayer timestamp for the current Plex transcode.
     // Its timestamp may be zero OR an absolute HLS media timestamp.
     @State private var plexPlaybackOrigin: Double?
+    @State private var pendingTrackSeek: Double?
+    @State private var applyingTrackSeek = false
+    @State private var playbackTimeObserver: Any?
     @State private var audioID: Int?
     @State private var subtitleID: Int?
     @State private var trackMenu: String?
@@ -435,15 +438,26 @@ struct TVMediaPlayerScreen: View {
                     }
                 }
             }
-            plexPlaybackOrigin = nil
+            plexPlaybackOrigin = plexSession?.offsetSeconds == 0 ? 0 : nil
             let item = AVPlayerItem(url: currentSession.playlist)
             player.replaceCurrentItem(with: item)
             player.play()
             isPaused = false
+            playbackTimeObserver = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+                queue: .main
+            ) { _ in
+                updateProgress()
+                monitorPlexStartup()
+            }
         }
         .onDisappear {
             scrubThumbnailTask?.cancel()
             hideControlsTask?.cancel()
+            if let observer = playbackTimeObserver {
+                player.removeTimeObserver(observer)
+                playbackTimeObserver = nil
+            }
             player.pause()
             player.replaceCurrentItem(with: nil)
             // SwiftUI can tear down a playback view during a presentation
@@ -454,10 +468,7 @@ struct TVMediaPlayerScreen: View {
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             tickPlexScrub()
         }
-        .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
-            updateProgress()
-            monitorPlexStartup()
-        }
+        // The AVPlayer periodic-time observer drives the live clock.
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
             if let direction = event.object as? String { remoteDirection(direction) }
@@ -619,7 +630,9 @@ struct TVMediaPlayerScreen: View {
     // change in AVPlayer time to the requested absolute movie offset.
     // This works whether an HLS manifest begins at 0 or at 3600 seconds.
     private func currentPlexPosition(_ plex: PlexPlaybackSession) -> Double {
-        let current = CMTimeGetSeconds(player.currentTime())
+        // Read the observable player clock so the timeline and the resume
+        // position reflect the same actual playback tick.
+        let current = elapsed
         // Preserve negative deltas when the user seeks backward within the
         // existing stream; clamp the final absolute movie timestamp instead.
         let relative = current.isFinite ?
@@ -693,22 +706,28 @@ struct TVMediaPlayerScreen: View {
             } else if change == "captions" {
                 try await PlexPlaybackService.selectTracks(plex, subtitleID: captions)
             }
+            // Avoid resume-offset HLS timeline ambiguity for track switches:
+            // load the full-movie stream then seek locally to the saved time.
+            let trackChange = change == "audio" || change == "captions"
             let next = try await PlexPlaybackService.start(
                 serverURL: plex.serverURL.absoluteString, ratingKey: plex.ratingKey,
-                mode: "resume", airingStart: "", airingEnd: "",
-                offsetSeconds: max(0, position), audioStreamID: audio,
-                subtitleStreamID: captions)
+                mode: trackChange ? "beginning" : "resume",
+                airingStart: "", airingEnd: "",
+                offsetSeconds: trackChange ? nil : max(0, position),
+                audioStreamID: audio, subtitleStreamID: captions)
             // The new HLS playlist has passed preflight. Only now replace
             // the current AVPlayer item and retire the previous session.
             // Keep the previous transcode alive until the first new video
             // frame is actually displayed, not merely until a manifest loads.
             retiringPlex = plex
             videoReady = false
-            plexPlaybackOrigin = nil
+            plexPlaybackOrigin = trackChange ? 0 : nil
+            pendingTrackSeek = trackChange ? max(0, position) : nil
+            applyingTrackSeek = false
             replacementPlex = next
             replaced = true
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
-            player.play()
+            if !trackChange { player.play() }
             audioID = audio
             subtitleID = captions
             elapsed = 0
@@ -1033,6 +1052,19 @@ struct TVMediaPlayerScreen: View {
     }
     private func updateProgress() {
         guard let item = player.currentItem else { return }
+        if let target = pendingTrackSeek, item.status == .readyToPlay,
+           !applyingTrackSeek {
+            applyingTrackSeek = true
+            pendingTrackSeek = nil
+            player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
+                        toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                DispatchQueue.main.async {
+                    applyingTrackSeek = false
+                    if finished { player.play() }
+                    else { optionsError = "Plex could not seek to the saved playback position." }
+                }
+            }
+        }
         let current = CMTimeGetSeconds(player.currentTime())
         if current.isFinite {
             elapsed = current
@@ -1101,7 +1133,9 @@ struct TVMediaPlayerScreen: View {
                 // destroy a known-good Plex playback session.
                 retiringPlex = nil
                 replacementPlex = previous
-                plexPlaybackOrigin = nil
+                pendingTrackSeek = nil
+                applyingTrackSeek = false
+                plexPlaybackOrigin = previous.offsetSeconds == 0 ? 0 : nil
                 player.replaceCurrentItem(with: AVPlayerItem(url: previous.playlistURL))
                 player.play()
                 videoReady = false
