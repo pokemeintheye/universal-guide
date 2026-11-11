@@ -143,6 +143,7 @@ struct TVMediaPlayerScreen: View {
     @State private var recoveredOnce = false
     @State private var checkedPlayback = false
     @State private var streamError: String?
+    @State private var explicitlyClosing = false
     @State private var hideControlsTask: Task<Void, Never>?
     private let purple = Color(red: 0.72, green: 0.53, blue: 1)
     private var isCompact: Bool {
@@ -193,7 +194,7 @@ struct TVMediaPlayerScreen: View {
                             }
                         }
                         Spacer()
-                        Button { dismiss() } label: {
+                        Button { exitPlayback() } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: isCompact ? 20 : 28))
                                 .foregroundStyle(.white)
@@ -311,7 +312,10 @@ struct TVMediaPlayerScreen: View {
             hideControlsTask?.cancel()
             player.pause()
             player.replaceCurrentItem(with: nil)
-            Task { await session.stop() }
+            // SwiftUI can tear down a playback view during a presentation
+            // transition. Don't DELETE a Plex session until an explicit exit.
+            // Preserve existing Tablo cleanup.
+            if session.isTablo { Task { await session.stop() } }
         }
         .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
             updateProgress()
@@ -341,7 +345,7 @@ struct TVMediaPlayerScreen: View {
                isPresented: Binding(get: { streamError != nil },
                                     set: { if !$0 { streamError = nil } })) {
             Button("Retry") { restartVideo() }
-            Button("Return to Guide") { dismiss() }
+            Button("Return to Guide") { exitPlayback() }
         } message: {
             Text(streamError ?? "The player did not receive a video frame.")
         }
@@ -418,12 +422,20 @@ struct TVMediaPlayerScreen: View {
         case "forward": skip(30)
         case "seek": seekTo(elapsed)
         case "live": goLive()
-        case "close": dismiss()
+        case "close": exitPlayback()
         default: reveal()
         }
     }
     private func remoteExit() {
-        if controlsVisible { hideControls() } else { dismiss() }
+        if controlsVisible { hideControls() } else { exitPlayback() }
+    }
+    private func exitPlayback() {
+        guard !explicitlyClosing else { return }
+        explicitlyClosing = true
+        hideControlsTask?.cancel()
+        player.pause()
+        if !session.isTablo { Task { await session.stop() } }
+        dismiss()
     }
     private func goLive() {
         guard session.isTablo else { return }
