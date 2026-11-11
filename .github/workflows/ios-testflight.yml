@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Test live Plex timer and full-timeline caption and audio track switching.
+  # Test live Plex timer and saved-position slider during caption/audio changes.
   push:
     branches: [main]
     paths:
