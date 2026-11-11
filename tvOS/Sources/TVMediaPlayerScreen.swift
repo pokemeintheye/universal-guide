@@ -195,6 +195,15 @@ struct TVMediaPlayerScreen: View {
     private var plexScrubDuration: Double {
         max(1, plexMetadata?.duration_seconds ?? 1)
     }
+    private var playbackElapsedSeconds: Double {
+        if session.isTablo { return max(0, elapsed - minimum) }
+        if let plex = plexSession { return currentPlexPosition(plex) }
+        return max(0, elapsed)
+    }
+    private var playbackRemainingSeconds: Double {
+        if session.isTablo { return max(0, maximum - elapsed) }
+        return max(0, plexScrubDuration - playbackElapsedSeconds)
+    }
     private var shownSeekProgress: Double {
         if !session.isTablo, let scrubPosition {
             return min(1, max(0, scrubPosition / plexScrubDuration))
@@ -275,13 +284,10 @@ struct TVMediaPlayerScreen: View {
                     // The seek bar is ABOVE the three transport controls.
                     VStack(spacing: isCompact ? 10 : 17) {
                         HStack {
-                            Text(time(session.isTablo ? max(0, elapsed-minimum) :
-                                      (plexSession.map { currentPlexPosition($0) } ?? elapsed)))
+                            Text(time(playbackElapsedSeconds))
                             Spacer()
                             Text(session.isTablo && maximum-elapsed < 8 ? "LIVE" :
-                                 "-\(time(session.isTablo ? max(0,maximum-elapsed) :
-                                   max(0,plexScrubDuration -
-                                       (plexSession.map { currentPlexPosition($0) } ?? elapsed))))")
+                                 "-" + time(playbackRemainingSeconds))
                         }
                         .font(.system(size: isCompact ? 13 : 18, weight: .medium))
                         .foregroundStyle(.white)
