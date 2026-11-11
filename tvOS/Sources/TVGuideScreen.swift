@@ -221,6 +221,9 @@ struct TVGuideScreen: View {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
         .task { await refreshGuide(); refreshSelectedArtwork() }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            now = Date()
+        }
         .onChange(of: selected?.1.id) { _, _ in refreshSelectedArtwork() }
         .onChange(of: serverURL) { _, _ in
             artworkCache.removeAll()
@@ -432,7 +435,7 @@ struct TVGuideScreen: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .padding(.horizontal, isCompact ? 9 : 14)
                         .background(program.plex != nil ?
-                                    Color(red: 0.16, green: 0.30, blue: 0.31) :
+                                    TVPalette.purple.opacity(0.22) :
                                     TVPalette.cell,
                                     in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9)
@@ -510,13 +513,13 @@ struct TVGuideScreen: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(spacing: 12) {
+                    if selected?.0.source == "tablo" && program.isOnNow {
+                        watchButton("Watch Live", key: "watch-live") { playTablo() }
+                    }
                     if program.plex != nil {
                         watchButton("Watch on Plex", key: "watch-primary") {
                             openPlexChoice()
                         }
-                    }
-                    if selected?.0.source == "tablo" && program.isOnNow {
-                        watchButton("Watch Live", key: "watch-live") { playTablo() }
                     }
                     if selected?.0.source == "philo" {
                         watchButton("Open in Philo", key: "watch-philo") {
