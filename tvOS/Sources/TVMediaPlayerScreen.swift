@@ -467,6 +467,9 @@ struct TVMediaPlayerScreen: View {
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             tickPlexScrub()
+            // A new AVPlayerItem may become ready while playback is paused
+            // for a track switch, so periodic playback callbacks won't fire.
+            if pendingTrackSeek != nil { updateProgress() }
         }
         // The AVPlayer periodic-time observer drives the live clock.
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
@@ -728,6 +731,7 @@ struct TVMediaPlayerScreen: View {
             replaced = true
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
             if !trackChange { player.play() }
+            else { elapsed = max(0, position) }
             audioID = audio
             subtitleID = captions
             elapsed = 0
@@ -1060,8 +1064,12 @@ struct TVMediaPlayerScreen: View {
                         toleranceBefore: .zero, toleranceAfter: .zero) { finished in
                 DispatchQueue.main.async {
                     applyingTrackSeek = false
-                    if finished { player.play() }
-                    else { optionsError = "Plex could not seek to the saved playback position." }
+                    if finished {
+                        updateProgress()
+                        player.play()
+                    } else {
+                        optionsError = "Plex could not seek to the saved playback position."
+                    }
                 }
             }
         }
