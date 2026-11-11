@@ -514,6 +514,58 @@ struct TVGuideScreen: View {
     private func refreshGuide() async {
         await store.refresh(server: serverURL)
     }
+    private func refreshSelectedArtwork() {
+        artworkTask?.cancel()
+        selectedArtworkURL = nil
+        guard let (_, program) = selected else { return }
+        let kind = program.programKind == "movie" ? "movie" : "series"
+        let key = "\(kind)|\(program.title)|\(kind == "movie" ? program.year ?? 0 : 0)"
+        if let cached = artworkCache[key] {
+            selectedArtworkURL = cached
+            return
+        }
+        if noArtwork.contains(key) { return }
+        let server = serverURL
+        let ratingKey = program.plex?.ratingKey
+        artworkTask = Task { @MainActor in
+            guard let base = URL(string: server), base.host != nil else { return }
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+            components?.path = "/api/guide/artwork"
+            var query = [URLQueryItem(name: "title", value: program.title)]
+            if kind == "movie" {
+                query.append(URLQueryItem(name: "kind", value: "movie"))
+                if let year = program.year {
+                    query.append(URLQueryItem(name: "year", value: String(year)))
+                }
+            }
+            components?.queryItems = query
+            var result: URL?
+            if let url = components?.url {
+                do {
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 6
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    if !Task.isCancelled,
+                       let http = response as? HTTPURLResponse, http.statusCode == 200,
+                       let art = try? JSONDecoder().decode(TVArtworkReply.self, from: data),
+                       let path = art.imageURL,
+                       path.hasPrefix("/api/guide/artwork/cached/") {
+                        result = URL(string: path, relativeTo: base)?.absoluteURL
+                    }
+                } catch { /* Plex fallback below */ }
+            }
+            if result == nil, let ratingKey, let rating = Int(ratingKey), rating > 0 {
+                result = URL(string: "/api/guide/art/\(rating)", relativeTo: base)?.absoluteURL
+            }
+            guard !Task.isCancelled else { return }
+            if let result {
+                artworkCache[key] = result
+                if selected?.1.id == program.id { selectedArtworkURL = result }
+            } else {
+                noArtwork.insert(key)
+            }
+        }
+    }
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -812,5 +864,20 @@ private struct TVGuideFilterPanel: View {
         case 4: onFavorites()
         default: onClose()
         }
+    }
+}
+
+private struct TVArtworkReply: Decodable {
+    let imageURL: String?
+    enum CodingKeys: String, CodingKey { case imageURL = "image_url" }
+}
+
+private struct UniversalGuideFullscreenLayout: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.ignoresSafeArea(.container, edges: .all)
+        #else
+        content
+        #endif
     }
 }
