@@ -1,0 +1,21 @@
+name: Actions runner smoke test
+on:
+  push:
+    branches:
+      - actions-runner-smoke-test
+    paths:
+      - '.github/workflows/actions-runner-smoke-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke-test:
+    name: Verify GitHub-hosted runner starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm runner availability
+        run: |
+          echo "GitHub Actions runner started successfully"
+          echo "Run ID: $GITHUB_RUN_ID"
+          echo "Runner: $RUNNER_OS"
