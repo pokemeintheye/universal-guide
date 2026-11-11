@@ -127,23 +127,45 @@ jobs:
           EOF
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/UniversalGuidePhone.xcarchive" \
             -exportPath "$RUNNER_TEMP/Export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-      - name: Upload to App Store Connect
-        # Stop indefinitely stalled altool uploads. A new workflow_dispatch
-        # gets a unique build number if Apple received the previous binary.
-        timeout-minutes: 15
+      # The older --use-old-altool uploader fails on newer Xcode images with
+      # "Defaults.properties couldn't be opened" and has also hung indefinitely.
+      # Decode the existing base64 secret for an API-native upload; do not
+      # print the private key to logs.
+      - name: Prepare App Store Connect API key
+        id: appstore_api_key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY_FILE="$HOME/.private_keys/AuthKey_${API_KEY_ID}.p8"
+          test -s "$KEY_FILE"
+          DELIMITER="UG_KEY_$(openssl rand -hex 16)"
+          {
+            echo "private_key<<$DELIMITER"
+            cat "$KEY_FILE"
+            echo
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
+      - name: Locate IPA for upload
+        id: ipa
         shell: bash
         run: |
           set -euo pipefail
           IPA="$(find "$RUNNER_TEMP/Export" -maxdepth 1 -name '*.ipa' -print -quit)"
-          test -n "$IPA"
+          test -s "$IPA"
+          echo "app_path=$IPA" >> "$GITHUB_OUTPUT"
           echo "IPA prepared: $(du -h "$IPA" | cut -f1)"
-          echo "Starting App Store Connect upload at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          echo "Check TestFlight Build Uploads before retrying after a timeout."
-          # Xcode 26's new altool can fail to resolve a valid iOS app record
-          # with "Cannot determine the Apple ID from Bundle ID ... (19)".
-          # The legacy uploader bypasses that provider-resolution regression.
-          xcrun altool --use-old-altool --upload-app -f "$IPA" -t ios \
-            --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+      - name: Upload to App Store Connect (direct API)
+        timeout-minutes: 20
+        uses: apple-actions/upload-testflight-build@v5
+        with:
+          app-path: ${{ steps.ipa.outputs.app_path }}
+          app-type: ios
+          backend: appstore-api
+          issuer-id: ${{ env.API_ISSUER_ID }}
+          api-key-id: ${{ env.API_KEY_ID }}
+          api-private-key: ${{ steps.appstore_api_key.outputs.private_key }}
+          uses-non-exempt-encryption: 'false'
+          wait-for-processing: 'false'
       - name: Remove local signing materials
         if: always()
         shell: bash
