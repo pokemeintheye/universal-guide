@@ -340,7 +340,7 @@ struct TVMediaPlayerScreen: View {
             #if os(tvOS)
             UniversalMediaRemoteReceiver(
                 onMove: remoteDirection,
-                onSelect: { if controlsVisible { activateCurrent() } else { reveal() } },
+                onSelect: { if controlsVisible || trackMenu != nil { activateCurrent() } else { reveal() } },
                 onBack: remoteExit,
                 onPlayPause: playPause
             )
@@ -385,7 +385,7 @@ struct TVMediaPlayerScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if controlsVisible { activateCurrent() } else { reveal() }
+            if controlsVisible || trackMenu != nil { activateCurrent() } else { reveal() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
@@ -634,6 +634,15 @@ struct TVMediaPlayerScreen: View {
     }
 
     private func remoteDirection(_ direction: String) {
+        if changingTrack { return }
+        if trackMenu != nil {
+            switch direction {
+            case "up", "left": menuIndex = max(0, menuIndex-1)
+            case "down", "right": menuIndex = min(max(0,menuCount-1), menuIndex+1)
+            default: break
+            }
+            return
+        }
         if !controlsVisible {
             switch direction {
             case "left": skip(-20)
@@ -658,7 +667,9 @@ struct TVMediaPlayerScreen: View {
         }
         if direction == "down" {
             if selectedControl == "close" { selectedControl = "seek" }
-            else if selectedControl == "live" { selectedControl = "pause" }
+            else if ["live", "chapters", "captions", "audio"].contains(selectedControl) {
+                selectedControl = "pause"
+            }
             return
         }
         if direction == "left" || direction == "right" {
@@ -673,6 +684,8 @@ struct TVMediaPlayerScreen: View {
     }
 
     private func activateCurrent() {
+        if trackMenu != nil { selectPlexOption(menuIndex); return }
+        if changingTrack { return }
         scheduleHideControls()
         switch selectedControl {
         case "back": skip(-20)
@@ -680,11 +693,14 @@ struct TVMediaPlayerScreen: View {
         case "forward": skip(30)
         case "seek": seekTo(elapsed)
         case "live": goLive()
+        case "chapters", "captions", "audio": openPlexOptions(selectedControl)
         case "close": exitPlayback()
         default: reveal()
         }
     }
     private func remoteExit() {
+        if trackMenu != nil { trackMenu = nil; scheduleHideControls(); return }
+        if changingTrack { return }
         if controlsVisible { hideControls() } else { exitPlayback() }
     }
     private func exitPlayback() {
@@ -692,7 +708,14 @@ struct TVMediaPlayerScreen: View {
         explicitlyClosing = true
         hideControlsTask?.cancel()
         player.pause()
-        if !session.isTablo { Task { await session.stop() } }
+        if !session.isTablo {
+            let active = replacementPlex
+            let original = session
+            Task {
+                if let active { await PlexPlaybackService.stop(active) }
+                await original.stop()
+            }
+        }
         dismiss()
     }
     private func goLive() {
@@ -775,7 +798,7 @@ struct TVMediaPlayerScreen: View {
         recoveredOnce = true
         videoReady = false
         streamStartedAt = Date()
-        player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
+        player.replaceCurrentItem(with: AVPlayerItem(url: currentSession.playlist))
         player.play()
     }
     private func monitorPlexStartup() {
@@ -785,7 +808,7 @@ struct TVMediaPlayerScreen: View {
             recoveredOnce = true
             // Retry an HLS master that may have been opened before Plex
             // finished generating its first playable media segments.
-            player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
+            player.replaceCurrentItem(with: AVPlayerItem(url: currentSession.playlist))
             player.play()
             streamStartedAt = Date()
             return
@@ -795,7 +818,7 @@ struct TVMediaPlayerScreen: View {
             Task {
                 var message = player.currentItem?.error?.localizedDescription ??
                     "No video frame was received from the Plex HLS stream."
-                if case .plex(let plexSession) = session {
+                if case .plex(let plexSession) = currentSession {
                     if let url = URL(string: "/api/player/\(plexSession.id)/diagnostics",
                                      relativeTo: plexSession.serverURL)?.absoluteURL,
                        let (data, _) = try? await URLSession.shared.data(from: url),
