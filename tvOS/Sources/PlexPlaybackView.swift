@@ -7,6 +7,35 @@ struct PlexPlaybackSession: Identifiable {
     let playlistURL: URL
     let serverURL: URL
     let title: String
+    let ratingKey: Int
+    let offsetSeconds: Double
+}
+
+struct PlexChapter: Decodable, Identifiable {
+    let title: String
+    let start_seconds: Double
+    var id: Double { start_seconds }
+}
+
+struct PlexTrack: Decodable, Identifiable {
+    let id: Int
+    let language: String
+    let codec: String
+    let title: String
+    let selected: Bool
+    let forced: Bool
+    var label: String {
+        let detail = title.isEmpty ? codec.uppercased() : title
+        return [language, detail].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+struct PlexPlaybackMetadata: Decodable {
+    let chapters: [PlexChapter]
+    let audio: [PlexTrack]
+    let subtitles: [PlexTrack]
+    let duration_seconds: Double
+    let preview_available: Bool
 }
 
 enum PlexPlaybackError: LocalizedError {
@@ -26,6 +55,7 @@ enum PlexPlaybackError: LocalizedError {
 private struct PlexStartResponse: Decodable {
     let title: String
     let playlist_url: String
+    let offset_seconds: Double
 }
 
 private struct PlexServerError: Decodable {
@@ -49,7 +79,10 @@ enum PlexPlaybackService {
     }
 
     static func start(serverURL: String, ratingKey: Int, mode: String,
-                      airingStart: String, airingEnd: String) async throws -> PlexPlaybackSession {
+                      airingStart: String, airingEnd: String,
+                      offsetSeconds: Double? = nil,
+                      audioStreamID: Int? = nil,
+                      subtitleStreamID: Int? = nil) async throws -> PlexPlaybackSession {
         let base = try baseURL(serverURL)
         guard let checkURL = URL(string: "/api/player/capabilities",
                                  relativeTo: base)?.absoluteURL else {
@@ -88,6 +121,9 @@ enum PlexPlaybackService {
             payload["airing_start"] = airingStart
             payload["airing_end"] = airingEnd
         }
+        if let offsetSeconds { payload["offset_seconds"] = offsetSeconds }
+        if let audioStreamID { payload["audio_stream_id"] = audioStreamID }
+        if let subtitleStreamID { payload["subtitle_stream_id"] = subtitleStreamID }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -183,7 +219,42 @@ enum PlexPlaybackService {
             }
         }
         return PlexPlaybackSession(id: sessionID, playlistURL: playlist,
-                                   serverURL: base, title: info.title)
+                                   serverURL: base, title: info.title,
+                                   ratingKey: ratingKey, offsetSeconds: info.offset_seconds)
+    }
+
+    static func metadata(_ session: PlexPlaybackSession) async throws -> PlexPlaybackMetadata {
+        guard let url = URL(string: "/api/player/\(session.id)/metadata",
+                            relativeTo: session.serverURL)?.absoluteURL else {
+            throw PlexPlaybackError.invalidSession
+        }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw PlexPlaybackError.server("Unable to load Plex chapters and tracks.")
+        }
+        return try JSONDecoder().decode(PlexPlaybackMetadata.self, from: data)
+    }
+
+    static func selectTracks(_ session: PlexPlaybackSession,
+                             audioID: Int? = nil,
+                             subtitleID: Int? = nil) async throws {
+        guard let url = URL(string: "/api/player/\(session.id)/tracks",
+                            relativeTo: session.serverURL)?.absoluteURL else {
+            throw PlexPlaybackError.invalidSession
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 25
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Int] = [:]
+        if let audioID { body["audio_stream_id"] = audioID }
+        if let subtitleID { body["subtitle_stream_id"] = subtitleID }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let detail = try? JSONDecoder().decode(PlexServerError.self, from: data)
+            throw PlexPlaybackError.server(detail?.detail ?? "Plex rejected the track change.")
+        }
     }
 
     static func stop(_ session: PlexPlaybackSession) async {
