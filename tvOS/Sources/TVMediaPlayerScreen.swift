@@ -117,6 +117,16 @@ struct TVMediaPlayerScreen: View {
     @State private var isScrubbing = false
     @FocusState private var focused: String?
     private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private var isCompact: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private func isSelected(_ key: String) -> Bool {
+        controlsVisible && (isCompact ? selectedControl == key : focused == key)
+    }
 
     var body: some View {
         ZStack {
@@ -154,7 +164,7 @@ struct TVMediaPlayerScreen: View {
                     .padding(.top, 46)
                     Spacer()
                     HStack(spacing: 55) {
-                        playerButton("gobackward.20", key: "back", size: 68) { skip(-20) }
+                        playerButton("rewind20", key: "back", size: 68) { skip(-20) }
                         playerButton(isPaused ? "play.fill" : "pause.fill", key: "pause", size: 90) { playPause() }
                         playerButton("goforward.30", key: "forward", size: 68) { skip(30) }
                     }
@@ -183,7 +193,7 @@ struct TVMediaPlayerScreen: View {
                                         Circle().fill(.white)
                                             .frame(width: 22,height: 22)
                                             .overlay(Circle().stroke(
-                                                focused == "seek" ? purple : .clear,
+                                                isSelected("seek") ? purple : .clear,
                                                 lineWidth: 4))
                                             .offset(x: max(0,(geometry.size.width-22)*seekProgress))
                                     }
@@ -208,7 +218,7 @@ struct TVMediaPlayerScreen: View {
                                 .focused($focused, equals: "live")
                             }
                             Spacer()
-                            Text("Select to use controls · Menu to close")
+                            Text("OK to select · Back to close")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -222,6 +232,11 @@ struct TVMediaPlayerScreen: View {
         }
         .tint(purple)
         .preferredColorScheme(.dark)
+        .onChange(of: focused) { _, target in
+            #if os(tvOS)
+            if let target { selectedControl = target }
+            #endif
+        }
         .onAppear {
             player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
             player.play()
@@ -272,21 +287,38 @@ struct TVMediaPlayerScreen: View {
             else { reveal() }
             return
         }
-        // Let tvOS move between focused buttons natively. On iPhone
-        // send the identical focus targets through the Backbone bridge.
         #if os(iOS)
-        let order = ["back","pause","forward","seek","live","close"]
-        if focused == "seek" && direction == "left" { skip(-20); return }
-        if focused == "seek" && direction == "right" { skip(30); return }
-        let index = order.firstIndex(of: focused ?? "pause") ?? 1
-        let delta = (direction == "left" || direction == "up") ? -1 : 1
-        var target = max(0,min(order.count-1,index+delta))
-        if !session.isTablo && order[target] == "live" {target = 5}
-        focused = order[target]
+        // iOS receives Backbone events, not a reliable native FocusState.
+        // Explicitly select only real, currently visible controls.
+        if selectedControl == "seek" && direction == "left" { skip(-20); return }
+        if selectedControl == "seek" && direction == "right" { skip(30); return }
+        let row = ["back", "pause", "forward"]
+        let upper = ["close"]
+        let lower = session.isTablo ? ["seek", "live"] : ["seek"]
+        switch direction {
+        case "left", "right":
+            let candidate = selectedControl == "close" ? upper :
+                lower.contains(selectedControl) ? lower : row
+            let index = candidate.firstIndex(of: selectedControl) ?? 1
+            let delta = direction == "left" ? -1 : 1
+            selectedControl = candidate[max(0,min(candidate.count-1,index+delta))]
+        case "up":
+            selectedControl = selectedControl == "close" ? "pause" :
+                lower.contains(selectedControl) ? "pause" : "close"
+        case "down":
+            selectedControl = selectedControl == "close" ? "pause" : "seek"
+        default: break
+        }
+        // Keep tvOS and iOS renderers on the same named playback controls.
+        focused = selectedControl
+        #else
+        // Let Apple's tvOS focus engine move between actual buttons.
+        // Its focus changes are displayed by the same isSelected() helper.
+        _ = direction
         #endif
     }
     private func activateCurrent() {
-        switch focused {
+        switch isCompact ? selectedControl : (focused ?? selectedControl) {
         case "back": skip(-20)
         case "pause": playPause()
         case "forward": skip(30)
@@ -299,6 +331,7 @@ struct TVMediaPlayerScreen: View {
     private func remoteExit() {
         if controlsVisible {
             controlsVisible = false
+            selectedControl = "pause"
             focused = "reveal"
         } else { dismiss() }
     }
@@ -306,12 +339,29 @@ struct TVMediaPlayerScreen: View {
     private func playerButton(_ symbol: String, key: String, size: CGFloat,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: size*0.55, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(focused == key ? purple.opacity(0.45) : .clear, in: Circle())
-                .overlay(Circle().stroke(focused == key ? purple : .white.opacity(0.55), lineWidth: 3))
+            Group {
+                if symbol == "rewind20" {
+                    // SF Symbols doesn't provide a universal gobackward.20
+                    // glyph. Draw a readable 20-second icon on both platforms.
+                    ZStack {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: size*0.57, weight: .medium))
+                        Text("20")
+                            .font(.system(size: size*0.23, weight: .bold))
+                    }
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: size*0.55, weight: .medium))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            // No circles at rest: a single purple ring identifies whichever
+            // control the remote has selected.
+            .background(isSelected(key) ? purple.opacity(0.25) : .clear,
+                        in: Circle())
+            .overlay(Circle().stroke(isSelected(key) ? purple : .clear,
+                                     lineWidth: 3))
         }
         .buttonStyle(.plain)
         .focused($focused, equals: key)

@@ -43,7 +43,7 @@ struct TVGuideScreen: View {
     #if os(iOS)
     private let minutePixels: CGFloat = 3.5
     private let stationWidth: CGFloat = 115
-    private let rowHeight: CGFloat = 54
+    private let rowHeight: CGFloat = 64
     #else
     private let minutePixels: CGFloat = 6
     private let stationWidth: CGFloat = 205
@@ -153,17 +153,19 @@ struct TVGuideScreen: View {
                 .navigationTitle("Search")
             }
         }
-        .confirmationDialog("Filter Guide", isPresented: $showFilters) {
-            ForEach(["All", "In Plex", "Tablo", "Philo"], id: \.self) { name in
-                Button(name) {
+        .fullScreenCover(isPresented: $showFilters) {
+            TVGuideFilterPanel(currentFilter: filter, favoritesOnly: favoriteOnly,
+                onFilter: { name in
                     filter = name
                     resetSelection()
-                }
-            }
-            Button(favoriteOnly ? "Show All Channels" : "Favorites Only") {
-                favoriteOnly.toggle()
-                resetSelection()
-            }
+                    showFilters = false
+                },
+                onFavorites: {
+                    favoriteOnly.toggle()
+                    resetSelection()
+                    showFilters = false
+                },
+                onClose: { showFilters = false })
         }
         .alert("Playback unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
@@ -182,12 +184,13 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if mediaSession == nil, let raw = event.object as? String { movePhoneDirection(raw) }
+            if mediaSession == nil && !showFilters && !showSettings && !showSearch,
+               let raw = event.object as? String { movePhoneDirection(raw) }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if mediaSession == nil { activateFocused() }
+            if mediaSession == nil && !showFilters && !showSettings && !showSearch { activateFocused() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
@@ -301,7 +304,26 @@ struct TVGuideScreen: View {
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
             }
             .onChange(of: selectedChannel) { _, value in
-                withAnimation(.easeOut(duration: 0.1)) { vertical.scrollTo("row-\(value)", anchor: .center) }
+                if channels.indices.contains(value) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        vertical.scrollTo("row-\(value)", anchor: .center)
+                        vertical.scrollTo("program-\(value)-\(selectedProgram)", anchor: .center)
+                    }
+                }
+            }
+            .onChange(of: selectedProgram) { _, value in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
+                }
+            }
+            .onChange(of: focus) { _, value in
+                // tvOS focus is native, and can advance independently from
+                // selectedProgram until SwiftUI reports the new focus.
+                if !isCompact, let value, value.hasPrefix("program-") {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        vertical.scrollTo(value, anchor: .center)
+                    }
+                }
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
@@ -311,18 +333,18 @@ struct TVGuideScreen: View {
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
-        ZStack(alignment: .leading) {
-            HStack(spacing: 0) {
-                ForEach(0..<16, id: \.self) { _ in
-                    Rectangle().fill(.white.opacity(0.075))
-                        .frame(width: 1)
-                        .frame(width: minutePixels * 30, alignment: .leading)
-                }
-            }
+        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
+        // can now scroll to the tile's actual horizontal position.
+        HStack(spacing: 0) {
             ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
                 let start = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                 let end = min(durationMinutes, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
-                if end > start {
+                let previousEnd = pi > 0 ?
+                    max(0, min(durationMinutes,
+                        (channel.programs[pi-1].endDate ?? anchor).timeIntervalSince(anchor) / 60)) : 0
+                let cellStart = max(start, previousEnd)
+                if end > cellStart {
+                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
                         if program.plex != nil { openPlexChoice() }
@@ -330,40 +352,56 @@ struct TVGuideScreen: View {
                             playTablo()
                         }
                     } label: {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                             Text(program.title)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: isCompact ? 13 : 17, weight: .bold))
                                 .lineLimit(1)
                                 .foregroundStyle(.white)
                             if program.plex != nil {
                                 Label("IN PLEX", systemImage: "checkmark.circle.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.system(size: isCompact ? 9 : 11, weight: .bold))
                                     .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
+                                    .lineLimit(1)
                             } else if let subtitle = program.subtitle {
-                                Text(subtitle).font(.caption2).foregroundStyle(.white.opacity(0.75))
+                                Text(subtitle)
+                                    .font(.system(size: isCompact ? 10 : 12))
+                                    .foregroundStyle(.white.opacity(0.77))
                                     .lineLimit(1)
                             }
                         }
-                        .frame(width: max(56, CGFloat(end-start)*minutePixels)-10,
-                               height: rowHeight-11, alignment: .leading)
-                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .padding(.horizontal, isCompact ? 9 : 12)
                         .background(program.plex != nil ?
                                     Color(red: 0.16, green: 0.30, blue: 0.31) :
                                     TVPalette.cell,
-                                    in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .stroke(selectedFocus == "program-\(index)-\(pi)" ? TVPalette.purple : .clear,
-                                    lineWidth: 4))
+                                    in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9)
+                            .stroke(selectedFocus == "program-\(index)-\(pi)" ?
+                                    TVPalette.purple : .clear, lineWidth: 3))
                         .shadow(color: selectedFocus == "program-\(index)-\(pi)" ?
-                                TVPalette.purple.opacity(0.6) : .clear, radius: 10)
+                                TVPalette.purple.opacity(0.55) : .clear, radius: 7)
                     }
+                    .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
+                           height: rowHeight-(isCompact ? 10 : 14))
+                    .padding(.trailing, 7)
                     .buttonStyle(TVFocusCard())
                     .focused($focus, equals: "program-\(index)-\(pi)")
-                    .offset(x: CGFloat(start)*minutePixels)
+                    .id("program-\(index)-\(pi)")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight,
+               alignment: .leading)
+        .background(alignment: .leading) {
+            HStack(spacing: 0) {
+                ForEach(0..<16, id: \.self) { _ in
+                    Rectangle().fill(.white.opacity(0.075))
+                        .frame(width: 1)
+                        .frame(width: minutePixels*30, alignment: .leading)
                 }
             }
         }
-        .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight, alignment: .leading)
         .clipped()
     }
 
@@ -622,4 +660,100 @@ extension Notification.Name {
     static let ugGamepadSelect = Notification.Name("UGNativeGuideSelect")
     static let ugGamepadBack = Notification.Name("UGNativeGuideBack")
     static let ugGamepadPlayPause = Notification.Name("UGNativeGuidePlayPause")
+}
+
+
+/// A dedicated presentation isolates filter focus from the underlying EPG.
+/// iPhone controller A/D-pad and Apple TV native focus use identical actions.
+private struct TVGuideFilterPanel: View {
+    let currentFilter: String
+    let favoritesOnly: Bool
+    let onFilter: (String) -> Void
+    let onFavorites: () -> Void
+    let onClose: () -> Void
+    @FocusState private var focused: Int?
+    @State private var phoneIndex = 0
+    private let choices = ["All Channels", "In Plex", "Tablo", "Philo",
+                           "Favorites", "Cancel"]
+    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private var isCompact: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private var selection: Int? { isCompact ? phoneIndex : focused }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(spacing: isCompact ? 8 : 16) {
+                Text("Filter Guide").font(isCompact ? .title3.bold() : .largeTitle.bold())
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 6)
+                ForEach(Array(choices.enumerated()), id: \.offset) { index, name in
+                    Button { activate(index) } label: {
+                        HStack {
+                            Text(name)
+                            Spacer()
+                            if name == currentFilter ||
+                                name == "All Channels" && currentFilter == "All" ||
+                                name == "Favorites" && favoritesOnly {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: isCompact ? 35 : 58)
+                        .foregroundStyle(.white)
+                        .background(selection == index ? purple.opacity(0.40) :
+                                    Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(selection == index ? purple : .clear, lineWidth: 3))
+                    }
+                    .buttonStyle(.plain)
+                    .focused($focused, equals: index)
+                }
+            }
+            .padding(24)
+            .frame(width: isCompact ? 360 : 600)
+            .background(Color(red: 0.11, green: 0.12, blue: 0.22),
+                        in: RoundedRectangle(cornerRadius: 18))
+        }
+        .onAppear { focused = 0; phoneIndex = 0 }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            guard let direction = event.object as? String else {return}
+            if direction == "down" || direction == "right" {
+                phoneIndex = min(choices.count-1, phoneIndex+1)
+            } else if direction == "up" || direction == "left" {
+                phoneIndex = max(0, phoneIndex-1)
+            }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            activate(phoneIndex)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            onClose()
+            #endif
+        }
+        #if os(tvOS)
+        .onExitCommand(perform: onClose)
+        #endif
+    }
+
+    private func activate(_ index: Int) {
+        switch index {
+        case 0: onFilter("All")
+        case 1: onFilter("In Plex")
+        case 2: onFilter("Tablo")
+        case 3: onFilter("Philo")
+        case 4: onFavorites()
+        default: onClose()
+        }
+    }
 }
