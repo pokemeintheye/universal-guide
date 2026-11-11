@@ -103,6 +103,37 @@ struct TVGuideScreen: View {
                 ProgressView("Preparing video…")
                     .font(.title2)
             }
+            if selectedAction == .plex {
+                Color.black.opacity(0.68).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    Text("Watch on Plex")
+                        .font(.title2.bold())
+                    Text(selected?.1.title ?? "Selected program")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Button("Watch from Beginning") { playPlex("beginning") }
+                        .buttonStyle(.borderedProminent)
+                        .focused($focus, equals: "plex-beginning")
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(selectedFocus == "plex-beginning" ?
+                                    TVPalette.purple : .clear, lineWidth: 4))
+                    if selected?.1.isOnNow == true {
+                        Button("Watch from Current Point") { playPlex("join") }
+                            .buttonStyle(.borderedProminent)
+                            .focused($focus, equals: "plex-now")
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(selectedFocus == "plex-now" ?
+                                        TVPalette.purple : .clear, lineWidth: 4))
+                    }
+                    Button("Cancel") { dismissPlexChoice() }
+                        .focused($focus, equals: "plex-cancel")
+                }
+                .padding(24)
+                .frame(width: isCompact ? 320 : 540)
+                .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20)
+                    .stroke(TVPalette.purple.opacity(0.9), lineWidth: 3))
+                .shadow(color: .black.opacity(0.7), radius: 25)
+            }
         }
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
@@ -161,7 +192,8 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
             #if os(iOS)
-            if mediaSession == nil { selectPhoneProgram() }
+            if selectedAction == .plex { dismissPlexChoice() }
+            else if mediaSession == nil { selectPhoneProgram() }
             #endif
         }
     }
@@ -293,7 +325,7 @@ struct TVGuideScreen: View {
                 if end > start {
                     Button {
                         choose(index, pi)
-                        if program.plex != nil { selectedAction = .plex }
+                        if program.plex != nil { openPlexChoice() }
                         else if channel.source == "tablo" && program.isOnNow {
                             playTablo()
                         }
@@ -361,7 +393,7 @@ struct TVGuideScreen: View {
                 VStack(spacing: 12) {
                     if program.plex != nil {
                         watchButton("Watch on Plex", key: "watch-primary") {
-                            selectedAction = .plex
+                            openPlexChoice()
                         }
                     }
                     if selected?.0.source == "tablo" && program.isOnNow {
@@ -380,15 +412,7 @@ struct TVGuideScreen: View {
         .padding(isCompact ? 7 : 18)
         .frame(height: isCompact ? 102 : 170)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
-        .confirmationDialog("Watch on Plex", isPresented: Binding(get: {
-            selectedAction == .plex
-        }, set: { if !$0 { selectedAction = nil } })) {
-            Button("Watch from Beginning") { playPlex("beginning") }
-            if selected?.1.isOnNow == true {
-                Button("Watch from Current Point") { playPlex("join") }
-            }
-            Button("Cancel", role: .cancel) { selectedAction = nil }
-        }
+
     }
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
@@ -445,6 +469,15 @@ struct TVGuideScreen: View {
         phoneSelection = "program-\(selectedChannel)-\(selectedProgram)"
     }
     private func movePhoneDirection(_ direction: String) {
+        if selectedAction == .plex {
+            if direction == "left" || direction == "up" {
+                phoneSelection = "plex-beginning"
+            } else if direction == "right" || direction == "down" {
+                phoneSelection = selected?.1.isOnNow == true ?
+                    "plex-now" : "plex-cancel"
+            }
+            return
+        }
         let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
         if direction == "rail" { phoneSelection = "rail-search"; return }
         if direction == "guide" { selectPhoneProgram(); return }
@@ -517,14 +550,32 @@ struct TVGuideScreen: View {
         }
         selectPhoneProgram()
     }
+    private func openPlexChoice() {
+        selectedAction = .plex
+        if isCompact { phoneSelection = "plex-beginning" }
+        else { focus = "plex-beginning" }
+    }
+    private func dismissPlexChoice() {
+        selectedAction = nil
+        if isCompact { selectPhoneProgram() }
+        else { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+    }
     private func activateFocused() {
+        if selectedAction == .plex {
+            switch phoneSelection {
+            case "plex-now": playPlex("join")
+            case "plex-cancel": dismissPlexChoice()
+            default: playPlex("beginning")
+            }
+            return
+        }
         switch phoneSelection {
         case "rail-search": showSearch = true
         case "rail-filter": showFilters = true
         case "rail-settings": showSettings = true
         case "rail-today": goToday()
         case "watch-primary":
-            if selected?.1.plex != nil { selectedAction = .plex }
+            if selected?.1.plex != nil { openPlexChoice() }
         case "watch-live":
             if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
                 playTablo()
@@ -532,7 +583,7 @@ struct TVGuideScreen: View {
         default:
             // One A/OK press must do something. Opening the Plex choice
             // dialog directly avoids a second unhighlighted focus step.
-            if selected?.1.plex != nil { selectedAction = .plex }
+            if selected?.1.plex != nil { openPlexChoice() }
             else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
                 playTablo()
             }
