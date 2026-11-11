@@ -158,6 +158,7 @@ struct TVMediaPlayerScreen: View {
     @State private var streamError: String?
     @State private var explicitlyClosing = false
     @State private var replacementPlex: PlexPlaybackSession?
+    @State private var retiringPlex: PlexPlaybackSession?
     @State private var plexMetadata: PlexPlaybackMetadata?
     @State private var audioID: Int?
     @State private var subtitleID: Int?
@@ -228,6 +229,12 @@ struct TVMediaPlayerScreen: View {
             Color.black.ignoresSafeArea()
             UniversalVideoSurface(player: player) { ready in
                 videoReady = ready
+                if ready, let previous = retiringPlex {
+                    // The new stream has displayed a video frame: only now
+                    // can we safely retire the previously working stream.
+                    retiringPlex = nil
+                    Task { await PlexPlaybackService.stop(previous) }
+                }
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -677,6 +684,10 @@ struct TVMediaPlayerScreen: View {
                 subtitleStreamID: captions)
             // The new HLS playlist has passed preflight. Only now replace
             // the current AVPlayer item and retire the previous session.
+            // Keep the previous transcode alive until the first new video
+            // frame is actually displayed, not merely until a manifest loads.
+            retiringPlex = plex
+            videoReady = false
             replacementPlex = next
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
             player.play()
@@ -685,11 +696,9 @@ struct TVMediaPlayerScreen: View {
             elapsed = 0
             minimum = 0
             maximum = max(1, (plexMetadata?.duration_seconds ?? 1)-next.offsetSeconds)
-            videoReady = false
             checkedPlayback = false
             recoveredOnce = false
             streamStartedAt = Date()
-            await PlexPlaybackService.stop(plex)
         } catch {
             optionsError = error.localizedDescription
         }
@@ -951,9 +960,14 @@ struct TVMediaPlayerScreen: View {
         player.pause()
         if !session.isTablo {
             let active = replacementPlex
+            let previous = retiringPlex
             let original = session
             Task {
                 if let active { await PlexPlaybackService.stop(active) }
+                if let previous, previous.id != active?.id,
+                   previous.id != original.id {
+                    await PlexPlaybackService.stop(previous)
+                }
                 await original.stop()
             }
         }
@@ -1056,6 +1070,20 @@ struct TVMediaPlayerScreen: View {
         }
         if age >= 20 {
             checkedPlayback = true
+            if let previous = retiringPlex, let failed = replacementPlex {
+                // A new transcoder that never displays a frame must not
+                // destroy a known-good Plex playback session.
+                retiringPlex = nil
+                replacementPlex = previous
+                player.replaceCurrentItem(with: AVPlayerItem(url: previous.playlistURL))
+                player.play()
+                videoReady = false
+                streamStartedAt = Date()
+                recoveredOnce = true
+                Task { await PlexPlaybackService.stop(failed) }
+                optionsError = "The selected Plex track could not produce playable video. Restored the previous stream."
+                return
+            }
             Task {
                 var message = player.currentItem?.error?.localizedDescription ??
                     "No video frame was received from the Plex HLS stream."
