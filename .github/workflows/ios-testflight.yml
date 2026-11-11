@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Publish Plex thumbnail-follow and protected caption/audio switching test build.
+  # Retry iPhone TestFlight after fixing SwiftUI remaining-time interpolation compile error.
   push:
     branches: [main]
     paths:
