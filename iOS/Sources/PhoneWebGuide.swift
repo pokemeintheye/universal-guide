@@ -520,6 +520,65 @@ struct PhoneGuideWebView: UIViewRepresentable {
         // Use the existing web guide's keyboard algorithm for EPG navigation.
         key(directions[command]);
       }
+      // Safari native HLS sometimes starts a Plex join at the correct
+      // requested time, then silently seeks far ahead on its first segments.
+      // Detect only a sudden, unrequested time jump during the first seconds
+      // of a "Join" session. Restore the prior playable position once, and
+      // leave all manual scrubbing, normal playback, and Tablo DVR untouched.
+      let plexStartupSession=null, plexStartupStarted=0;
+      let plexStartupLast=null, plexStartupLastAt=0;
+      let plexStartupSamples=0, plexStartupCorrected=false;
+      let lastExplicitSeekAt=0;
+      document.addEventListener('pointerdown',event=>{
+        if(event.target?.closest('#plexseek,#plexback,#plexforward'))
+          lastExplicitSeekAt=Date.now();
+      },true);
+      const plexJoinClock = () => {
+        const video=$('plexvideo');
+        if(!video || !plex() || !player())return;
+        if(!($('playertitle')?.textContent||'').includes('Join at ~'))return;
+        const sid=(typeof playerSession!=='undefined')?playerSession:null;
+        if(!sid)return;
+        const now=Date.now(),position=video.currentTime;
+        if(!Number.isFinite(position))return;
+        if(sid!==plexStartupSession){
+          plexStartupSession=sid;
+          plexStartupStarted=now;
+          plexStartupLast=null;
+          plexStartupSamples=0;
+          plexStartupCorrected=false;
+        }
+        if(now-plexStartupStarted>25000 || plexStartupCorrected)return;
+        if(plexStartupLast!==null && plexStartupSamples>=2 &&
+           now-plexStartupLastAt<3500 &&
+           now-lastExplicitSeekAt>5000 &&
+           position-plexStartupLast>25 &&
+           plexStartupLast<35){
+          const target=plexStartupLast+Math.min(2,(now-plexStartupLastAt)/1000);
+          const ranges=video.seekable;
+          let seekable=false;
+          for(let i=0;i<(ranges?.length||0);i++){
+            if(ranges.start(i)<=target && target<=ranges.end(i)){
+              seekable=true;break;
+            }
+          }
+          if(seekable){
+            video.currentTime=target;
+            plexStartupCorrected=true;
+            console.warn('Universal Guide: corrected unexpected Safari Plex join jump',
+              {from:plexStartupLast,to:position,restored:target});
+          }else{
+            // Avoid an invalid seek that could restart the native HLS stream.
+            console.warn('Universal Guide: Safari join advanced outside buffered range',
+              {from:plexStartupLast,to:position});
+            plexStartupCorrected=true;
+          }
+        }
+        plexStartupLast=position;
+        plexStartupLastAt=now;
+        plexStartupSamples++;
+      };
+      $('plexvideo')?.addEventListener('timeupdate',plexJoinClock);
       // Reliable controller targets, without touching the backend or redefining
       // the web HLS playback implementation.
       window.universalGuideGamepad=function(command){
@@ -554,6 +613,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
             return;
           }
           if(command==='left'||command==='right'){
+            if(plex())lastExplicitSeekAt=Date.now();
             if(!overlayVisible){
               transportClick(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
                 (command==='left'?'plexback':'plexforward'));
