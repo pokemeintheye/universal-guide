@@ -137,6 +137,16 @@ struct TVMediaPlayerScreen: View {
     @State private var minimum: Double = 0
     @State private var maximum: Double = 1
     @State private var seekProgress: Double = 0
+    // Plex preview cursor is independent of the actual AVPlayer seek position.
+    @State private var scrubPosition: Double?
+    @State private var scrubDirection = 0
+    @State private var scrubSpeed = 0
+    @State private var scrubNeedsConfirm = false
+    @State private var scrubLastTick: Date?
+    @State private var scrubThumbnail: UIImage?
+    @State private var scrubThumbnailSeconds: Int?
+    @State private var scrubThumbnailTask: Task<Void, Never>?
+    @State private var scrubThumbnailCache: [Int: UIImage] = [:]
     @State private var isPaused = false
     @State private var videoReady = false
     @State private var streamStartedAt = Date()
@@ -177,6 +187,18 @@ struct TVMediaPlayerScreen: View {
     private var plexSession: PlexPlaybackSession? {
         if case .plex(let plex) = currentSession { return plex }
         return nil
+    }
+    private var plexScrubDuration: Double {
+        max(1, plexMetadata?.duration_seconds ?? 1)
+    }
+    private var shownSeekProgress: Double {
+        if !session.isTablo, let scrubPosition {
+            return min(1, max(0, scrubPosition / plexScrubDuration))
+        }
+        if !session.isTablo, let plex = plexSession, plexMetadata != nil {
+            return min(1, max(0, currentPlexPosition(plex) / plexScrubDuration))
+        }
+        return seekProgress
     }
     private var remoteButtons: [String] {
         session.isTablo ? ["back", "pause", "forward", "live"] :
@@ -251,21 +273,53 @@ struct TVMediaPlayerScreen: View {
                         .font(.system(size: isCompact ? 13 : 18, weight: .medium))
                         .foregroundStyle(.white)
 
-                        Button { seekTo(elapsed + 30) } label: {
+                        if !session.isTablo, let preview = scrubPosition {
+                            HStack(spacing: 12) {
+                                if let thumbnail = scrubThumbnail {
+                                    Image(uiImage: thumbnail)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: isCompact ? 112 : 190,
+                                               height: isCompact ? 63 : 107)
+                                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                                } else if plexMetadata?.preview_available == true {
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .fill(Color.white.opacity(0.12))
+                                        .frame(width: isCompact ? 112 : 190,
+                                               height: isCompact ? 63 : 107)
+                                        .overlay(ProgressView())
+                                }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(time(preview))
+                                        .font(.system(size: isCompact ? 17 : 28, weight: .bold))
+                                    Text(scrubSpeed == 0 ?
+                                         (scrubNeedsConfirm ? "Press OK to jump here" : "Select a direction") :
+                                         "\(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×")
+                                        .font(.system(size: isCompact ? 11 : 17))
+                                        .foregroundStyle(purple)
+                                }
+                                Spacer()
+                            }
+                            .frame(height: isCompact ? 68 : 112)
+                        }
+                        Button {
+                            if session.isTablo { seekTo(elapsed + 30) }
+                            else { handlePlexScrubOK() }
+                        } label: {
                             GeometryReader { geometry in
                                 let usable = max(0, geometry.size.width-24)
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(Color.white.opacity(0.36))
                                         .frame(height: 6)
                                     Capsule().fill(purple.opacity(0.6))
-                                        .frame(width: geometry.size.width*seekProgress,
+                                        .frame(width: geometry.size.width*shownSeekProgress,
                                                height: 6)
                                     Circle().fill(.white)
                                         .frame(width: 24, height: 24)
                                         .overlay(Circle().stroke(
                                             isSelected("seek") ? purple : .clear,
                                             lineWidth: 4))
-                                        .offset(x: usable*seekProgress)
+                                        .offset(x: usable*shownSeekProgress)
                                 }
                                 .frame(height: geometry.size.height)
                             }
@@ -315,7 +369,9 @@ struct TVMediaPlayerScreen: View {
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        Text(selectedControl == "seek" ?
+                        Text(selectedControl == "seek" && !session.isTablo ?
+                             "Direction: 1×–4× · Opposite: slow down · OK: stop, then seek" :
+                             selectedControl == "seek" ?
                              "Left / Right to seek · Down for playback controls" :
                              "Up for timeline · Back to hide controls")
                             .font(.system(size: isCompact ? 10 : 13))
@@ -366,6 +422,7 @@ struct TVMediaPlayerScreen: View {
             isPaused = false
         }
         .onDisappear {
+            scrubThumbnailTask?.cancel()
             hideControlsTask?.cancel()
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -373,6 +430,9 @@ struct TVMediaPlayerScreen: View {
             // transition. Don't DELETE a Plex session until an explicit exit.
             // Preserve existing Tablo cleanup.
             if session.isTablo { Task { await session.stop() } }
+        }
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            tickPlexScrub()
         }
         .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
             updateProgress()
@@ -672,6 +732,21 @@ struct TVMediaPlayerScreen: View {
         }
         scheduleHideControls()
         if selectedControl == "seek" {
+            if !session.isTablo {
+                switch direction {
+                case "left": changePlexScrubDirection(-1); return
+                case "right": changePlexScrubDirection(1); return
+                case "down":
+                    cancelPlexScrub()
+                    selectedControl = "pause"
+                    return
+                case "up":
+                    cancelPlexScrub()
+                    selectedControl = "close"
+                    return
+                default: return
+                }
+            }
             switch direction {
             case "left": skip(-20); return
             case "right": skip(30); return
@@ -710,7 +785,8 @@ struct TVMediaPlayerScreen: View {
         case "back": skip(-20)
         case "pause": playPause()
         case "forward": skip(30)
-        case "seek": seekTo(elapsed)
+        case "seek":
+            if session.isTablo { seekTo(elapsed) } else { handlePlexScrubOK() }
         case "live": goLive()
         case "chapters", "captions", "audio": openPlexOptions(selectedControl)
         case "close": exitPlayback()
@@ -720,9 +796,133 @@ struct TVMediaPlayerScreen: View {
     private func remoteExit() {
         if trackMenu != nil { trackMenu = nil; scheduleHideControls(); return }
         if changingTrack { return }
-        if controlsVisible { hideControls() } else { exitPlayback() }
+        if controlsVisible {
+            cancelPlexScrub()
+            hideControls()
+        } else { exitPlayback() }
     }
+    private func changePlexScrubDirection(_ requested: Int) {
+        guard !session.isTablo, let plex = plexSession, !changingTrack else { return }
+        if scrubPosition == nil {
+            scrubPosition = currentPlexPosition(plex)
+            scrubNeedsConfirm = false
+            requestPlexThumbnail()
+        }
+        if scrubDirection == requested {
+            scrubSpeed = min(4, scrubSpeed + 1)
+        } else if scrubSpeed > 0 && scrubDirection != 0 {
+            // Reverse-direction taps decelerate through 4,3,2,1,stop.
+            // Another tap after stopping begins the other direction at 1×.
+            scrubSpeed -= 1
+            if scrubSpeed == 0 { scrubDirection = 0 }
+        } else {
+            scrubDirection = requested
+            scrubSpeed = 1
+        }
+        scrubNeedsConfirm = false
+        scrubLastTick = Date()
+        hideControlsTask?.cancel()
+    }
+
+    private func tickPlexScrub() {
+        guard scrubSpeed > 0, scrubDirection != 0, let position = scrubPosition else {
+            scrubLastTick = nil
+            return
+        }
+        let now = Date()
+        let delta = min(0.25, max(0, now.timeIntervalSince(scrubLastTick ?? now)))
+        scrubLastTick = now
+        // 1× is a 15-second-per-second preview scan; 4× is 60 s/s.
+        // This changes only the highlighted preview cursor, never AVPlayer.
+        let next = min(max(0, position + Double(scrubDirection * scrubSpeed) * 15 * delta),
+                       max(0, plexScrubDuration - 0.5))
+        scrubPosition = next
+        requestPlexThumbnail()
+        if next <= 0 || next >= plexScrubDuration - 0.5 {
+            scrubSpeed = 0
+            scrubDirection = 0
+            scrubNeedsConfirm = true
+        }
+    }
+
+    private func handlePlexScrubOK() {
+        guard let position = scrubPosition else {
+            // First OK on the seek bar arms the non-destructive preview.
+            if let plex = plexSession {
+                scrubPosition = currentPlexPosition(plex)
+                scrubNeedsConfirm = false
+                requestPlexThumbnail()
+            }
+            return
+        }
+        if scrubSpeed > 0 {
+            scrubSpeed = 0
+            scrubDirection = 0
+            scrubNeedsConfirm = true
+            scrubLastTick = nil
+            return
+        }
+        // Second OK commits the chosen position.
+        cancelPlexScrub()
+        guard let plex = plexSession else { return }
+        let start = player.currentItem?.seekableTimeRanges.first.map {
+            CMTimeGetSeconds($0.timeRangeValue.start)
+        } ?? 0
+        let relative = position - plex.offsetSeconds + (start.isFinite ? start : 0)
+        if position >= plex.offsetSeconds && relative >= minimum && relative <= maximum {
+            seekTo(relative)
+        } else {
+            Task {
+                await replacePlexStream(at: position, audio: audioID,
+                                        captions: subtitleID, change: nil)
+            }
+        }
+    }
+
+    private func cancelPlexScrub() {
+        scrubSpeed = 0
+        scrubDirection = 0
+        scrubPosition = nil
+        scrubLastTick = nil
+        scrubNeedsConfirm = false
+        scrubThumbnailTask?.cancel()
+        scrubThumbnail = nil
+        scrubThumbnailSeconds = nil
+    }
+
+    private func requestPlexThumbnail() {
+        guard let plex = plexSession, let position = scrubPosition,
+              plexMetadata?.preview_available == true else { return }
+        let second = max(0, Int(position / 5) * 5)
+        guard second != scrubThumbnailSeconds else { return }
+        scrubThumbnailSeconds = second
+        if let cached = scrubThumbnailCache[second] {
+            scrubThumbnailTask?.cancel()
+            scrubThumbnail = cached
+            return
+        }
+        scrubThumbnailTask?.cancel()
+        // Avoid making one network request per animation tick.
+        scrubThumbnailTask = Task {
+            try? await Task.sleep(for: .milliseconds(130))
+            guard !Task.isCancelled,
+                  let url = URL(string: "/api/player/\(plex.id)/preview?at=\(second)",
+                                relativeTo: plex.serverURL)?.absoluteURL else { return }
+            do {
+                let (bytes, response) = try await URLSession.shared.data(from: url)
+                guard !Task.isCancelled,
+                      (response as? HTTPURLResponse)?.statusCode == 200,
+                      let image = UIImage(data: bytes) else { return }
+                scrubThumbnailCache[second] = image
+                scrubThumbnail = image
+            } catch {
+                // Missing Plex BIF indexes should never interrupt playback.
+            }
+        }
+    }
+
     private func exitPlayback() {
+        cancelPlexScrub()
         guard !explicitlyClosing else { return }
         explicitlyClosing = true
         hideControlsTask?.cancel()
