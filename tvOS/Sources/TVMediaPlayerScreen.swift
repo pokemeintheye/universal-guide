@@ -533,14 +533,33 @@ struct TVMediaPlayerScreen: View {
         hideControlsTask?.cancel()
     }
 
+    // AVPlayer's HLS timeline can begin at a nonzero media timestamp
+    // after the Unraid proxy trims the leading Plex transcode segments.
+    // The player's currentTime is NOT guaranteed to be relative to the
+    // requested Plex offset. Normalize it to the seekable range origin.
+    private func currentPlexPosition(_ plex: PlexPlaybackSession) -> Double {
+        let current = CMTimeGetSeconds(player.currentTime())
+        let seekableStart = player.currentItem?.seekableTimeRanges.first.map {
+            CMTimeGetSeconds($0.timeRangeValue.start)
+        }
+        let origin = seekableStart.flatMap { $0.isFinite ? $0 : nil } ?? 0
+        let relative = current.isFinite ? max(0, current - origin) : 0
+        let length = plexMetadata?.duration_seconds ?? Double.greatestFiniteMagnitude
+        return min(max(0, length - 1), plex.offsetSeconds + relative)
+    }
+
     private func selectPlexOption(_ index: Int) {
         guard !changingTrack, let plex = plexSession else { return }
         if trackMenu == "chapters" {
             guard let chapters = plexMetadata?.chapters, chapters.indices.contains(index) else { return }
             trackMenu = nil
             let target = chapters[index].start_seconds
-            if plex.offsetSeconds == 0 && target <= maximum {
-                seekTo(target)
+            let origin = player.currentItem?.seekableTimeRanges.first.map {
+                CMTimeGetSeconds($0.timeRangeValue.start)
+            } ?? 0
+            let local = target - plex.offsetSeconds + (origin.isFinite ? origin : 0)
+            if target >= plex.offsetSeconds && local >= minimum && local <= maximum {
+                seekTo(local)
             } else {
                 Task { await replacePlexStream(at: target, audio: audioID,
                                                captions: subtitleID, change: nil) }
@@ -552,7 +571,7 @@ struct TVMediaPlayerScreen: View {
             let chosen = tracks[index].id
             trackMenu = nil
             if chosen != audioID {
-                Task { await replacePlexStream(at: plex.offsetSeconds + elapsed,
+                Task { await replacePlexStream(at: currentPlexPosition(plex),
                                                audio: chosen, captions: subtitleID,
                                                change: "audio") }
             }
