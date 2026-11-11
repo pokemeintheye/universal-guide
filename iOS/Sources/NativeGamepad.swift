@@ -37,16 +37,14 @@ import GameController
             Self.emit(.ugGamepadDirection, "right") }}
         pad.buttonA.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadSelect) }}
+        // B emulates the Apple TV remote's Back/Menu button.
         pad.buttonB.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadBack) }}
+        // Y represents the remote's dedicated Play/Pause key during iPhone testing.
         pad.buttonY.pressedChangedHandler = { _,_,down in if down {
             Self.emit(.ugGamepadPlayPause) }}
-        // X reaches the bottom information panel's Watch buttons.
-        pad.buttonX.pressedChangedHandler = { _,_,down in if down {
-            Self.emit(.ugGamepadDirection, "details") }}
-        pad.leftShoulder.pressedChangedHandler = { _,_,down in if down {
-            Self.emit(.ugGamepadDirection, "rail") }}
-        pad.rightShoulder.pressedChangedHandler = { _,_,down in if down {
-            Self.emit(.ugGamepadDirection, "guide") }}
+        // The target TV remote uses directional keys, OK, Back, Play/Pause,
+        // Rewind and Fast Forward. No face/shoulder shortcut is required.
+
     }
 }
