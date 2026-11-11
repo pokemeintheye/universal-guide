@@ -476,9 +476,18 @@ struct TVGuideScreen: View {
             }
             return
         }
-        if direction == "left" && selectedProgram == 0 {
-            phoneSelection = "rail-search"
-            return
+        // The guide may contain earlier off-screen airings. Moving left
+        // from the earliest *visible* program should enter the sidebar,
+        // not require dozens of presses through past slots.
+        if direction == "left", channels.indices.contains(selectedChannel) {
+            let entries = channels[selectedChannel].programs
+            let visibleStart = entries.firstIndex(where: {
+                ($0.endDate ?? .distantPast) > anchor
+            }) ?? 0
+            if selectedProgram <= visibleStart {
+                phoneSelection = "rail-search"
+                return
+            }
         }
         guard !channels.isEmpty else {return}
         switch direction {
@@ -493,7 +502,8 @@ struct TVGuideScreen: View {
             return
         }
         if direction == "up" || direction == "down" {
-            selectedProgram = entries.firstIndex(where: {$0.isOnNow}) ?? 0
+            selectedProgram = entries.firstIndex(where: {$0.isOnNow}) ??
+                entries.firstIndex(where: {($0.endDate ?? .distantPast) > anchor}) ?? 0
         } else if direction == "left" {
             selectedProgram = max(0,selectedProgram-1)
         } else if direction == "right" {
