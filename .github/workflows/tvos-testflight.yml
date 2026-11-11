@@ -162,6 +162,14 @@ jobs:
             echo "::error::Archive build version does not match expected $BUILD_NUMBER"
             exit 1
           fi
+          # Explicitly assert the signed tvOS app declares exempt encryption;
+          # merely listing it in project.yml is not enough if XcodeGen changes.
+          ENCRYPTION=$(/usr/libexec/PlistBuddy -c 'Print :ITSAppUsesNonExemptEncryption' "$ARCHIVE_INFO" || true)
+          echo "Archived ITSAppUsesNonExemptEncryption: $ENCRYPTION"
+          if [ "$ENCRYPTION" != "false" ] && [ "$ENCRYPTION" != "NO" ]; then
+            echo "::error::Signed Apple TV app is missing ITSAppUsesNonExemptEncryption=NO"
+            exit 1
+          fi
 
       - name: Export signed IPA
         shell: bash
@@ -184,14 +192,43 @@ jobs:
             -exportPath "$RUNNER_TEMP/Export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Upload to App Store Connect for TestFlight
+      - name: Prepare App Store Connect API key
+        id: appstore_api_key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY_FILE="$HOME/.private_keys/AuthKey_${API_KEY_ID}.p8"
+          test -s "$KEY_FILE"
+          DELIMITER="UG_TV_KEY_$(openssl rand -hex 16)"
+          {
+            echo "private_key<<$DELIMITER"
+            cat "$KEY_FILE"
+            echo
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Locate Apple TV IPA
+        id: ipa
         shell: bash
         run: |
           set -euo pipefail
           IPA="$(find "$RUNNER_TEMP/Export" -maxdepth 1 -name '*.ipa' -print -quit)"
-          test -n "$IPA"
-          xcrun altool --upload-app -f "$IPA" -t tvos \
-            --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+          test -s "$IPA"
+          echo "app_path=$IPA" >> "$GITHUB_OUTPUT"
+          echo "Apple TV IPA prepared: $(du -h "$IPA" | cut -f1)"
+
+      - name: Upload Apple TV to TestFlight using App Store Connect API
+        timeout-minutes: 20
+        uses: apple-actions/upload-testflight-build@v5
+        with:
+          app-path: ${{ steps.ipa.outputs.app_path }}
+          app-type: tvos
+          backend: AppStoreAPI
+          issuer-id: ${{ env.API_ISSUER_ID }}
+          api-key-id: ${{ env.API_KEY_ID }}
+          api-private-key: ${{ steps.appstore_api_key.outputs.private_key }}
+          uses-non-exempt-encryption: 'false'
+          wait-for-processing: 'false'
 
       - name: Clean local signing materials
         if: always()
