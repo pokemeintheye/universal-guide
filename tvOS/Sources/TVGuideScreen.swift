@@ -42,7 +42,8 @@ struct TVGuideScreen: View {
     // Keep a separately-rendered selection so the purple ring always follows
     // the Backbone even when UIKit declines to focus SwiftUI buttons.
     @State private var phoneSelection = ""
-    private var selectedFocus: String? { isCompact ? phoneSelection : focus }
+    @State private var tvSelection = ""
+    private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
     @State private var now = Date()
     #if os(iOS)
     private let minutePixels: CGFloat = 3.5
@@ -103,49 +104,42 @@ struct TVGuideScreen: View {
             .padding(.horizontal, isCompact ? 8 : 20)
             .padding(.vertical, isCompact ? 5 : 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Only one tvOS focus target receives remote presses.
+            // It consumes direction/OK before the spatial focus engine can
+            // advance again, fixing two jumps for a single remote press.
+            if !isCompact && selectedAction == nil && !showFilters &&
+                !showSearch && !showSettings && mediaSession == nil {
+                UniversalTVGuideRemoteReceiver(
+                    onMove: moveTVFocus,
+                    onSelect: activateFocused,
+                    onBack: focusSelectedTVProgram
+                )
+                .ignoresSafeArea()
+            }
             if loadingPlayback {
                 Color.black.opacity(0.55).ignoresSafeArea()
                 ProgressView("Preparing video…")
                     .font(.title2)
             }
-            if selectedAction == .plex {
-                Color.black.opacity(0.68).ignoresSafeArea()
-                VStack(spacing: 14) {
-                    Text("Watch on Plex")
-                        .font(.title2.bold())
-                    Text(selected?.1.title ?? "Selected program")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Button("Watch from Beginning") { playPlex("beginning") }
-                        .buttonStyle(.borderedProminent)
-                        .focused($focus, equals: "plex-beginning")
-                        .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(selectedFocus == "plex-beginning" ?
-                                    TVPalette.purple : .clear, lineWidth: 4))
-                    if selected?.1.isOnNow == true {
-                        Button("Watch from Current Point") { playPlex("join") }
-                            .buttonStyle(.borderedProminent)
-                            .focused($focus, equals: "plex-now")
-                            .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(selectedFocus == "plex-now" ?
-                                        TVPalette.purple : .clear, lineWidth: 4))
-                    }
-                    Button("Cancel") { dismissPlexChoice() }
-                        .focused($focus, equals: "plex-cancel")
-                }
-                .padding(24)
-                .frame(width: isCompact ? 320 : 540)
-                .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20)
-                    .stroke(TVPalette.purple.opacity(0.9), lineWidth: 3))
-                .shadow(color: .black.opacity(0.7), radius: 25)
-            }
+
         }
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
         .modifier(UniversalGuideFullscreenLayout())
-        .modifier(UniversalGuideRemoteMove { direction in
-            moveTVFocus(direction)
-        })
+        // A true modal presentation isolates the Plex choice focus from
+        // the guide. The former ZStack overlay allowed the guide to keep
+        // processing remote directions and lose the chosen program.
+        .fullScreenCover(isPresented: Binding(get: {
+            selectedAction == .plex
+        }, set: { shown in
+            if !shown { dismissPlexChoice() }
+        })) {
+            UniversalPlexChoiceScreen(title: selected?.1.title ?? "Plex",
+                canJoin: selected?.1.isOnNow == true,
+                onBeginning: { playPlex("beginning") },
+                onNow: { playPlex("join") },
+                onCancel: { dismissPlexChoice() })
+        }
         .fullScreenCover(item: $mediaSession) { session in
             TVMediaPlayerScreen(session: session)
         }
@@ -188,7 +182,7 @@ struct TVGuideScreen: View {
         }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
         .onChange(of: focus) { _, next in
-            if let next, next.hasPrefix("program-") {
+            if isCompact, let next, next.hasPrefix("program-") {
                 let parts = next.split(separator: "-")
                 if parts.count == 3,
                    let ch = Int(parts[1]), let pg = Int(parts[2]),
@@ -199,13 +193,15 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if mediaSession == nil && !showFilters && !showSettings && !showSearch,
+            if mediaSession == nil && selectedAction == nil &&
+               !showFilters && !showSettings && !showSearch,
                let raw = event.object as? String { movePhoneDirection(raw) }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if mediaSession == nil && !showFilters && !showSettings && !showSearch { activateFocused() }
+            if mediaSession == nil && selectedAction == nil &&
+               !showFilters && !showSettings && !showSearch { activateFocused() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
@@ -498,7 +494,7 @@ struct TVGuideScreen: View {
         selectedProgram = channels.first?.programs.firstIndex(where: { $0.isOnNow }) ?? 0
         let target = "program-\(selectedChannel)-\(selectedProgram)"
         if isCompact { phoneSelection = target }
-        else { focus = target }
+        else { tvSelection = target }
     }
     private func goToday() {
         now = Date()
@@ -578,31 +574,31 @@ struct TVGuideScreen: View {
     private func moveTVFocus(_ direction: String) {
         guard !isCompact && !showFilters && !showSearch && !showSettings,
               !loadingPlayback && mediaSession == nil else { return }
-        // The choice dialog and native TV filters own their own focus.
+        // The choice dialog and native TV filters own their own tvSelection.
         if selectedAction == .plex { return }
         let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
-        if let focus, let index = keys.firstIndex(of: focus) {
+        if let index = keys.firstIndex(of: tvSelection) {
             switch direction {
-            case "up": self.focus = keys[max(0,index-1)]
-            case "down": self.focus = keys[min(keys.count-1,index+1)]
+            case "up": self.tvSelection = keys[max(0,index-1)]
+            case "down": self.tvSelection = keys[min(keys.count-1,index+1)]
             case "right": focusSelectedTVProgram()
             default: break
             }
             return
         }
-        if let focus, ["watch-primary","watch-live","watch-philo"].contains(focus) {
+        if ["watch-primary","watch-live","watch-philo"].contains(tvSelection) {
             switch direction {
             case "up", "left":
-                if focus == "watch-primary" || selected?.1.plex == nil {
+                if tvSelection == "watch-primary" || selected?.1.plex == nil {
                     focusSelectedTVProgram()
                 } else {
-                    self.focus = "watch-primary"
+                    self.tvSelection = "watch-primary"
                 }
             case "right", "down":
-                if focus == "watch-primary", selected?.0.source == "philo" {
-                    self.focus = "watch-philo"
-                } else if focus == "watch-primary", selected?.0.source == "tablo" {
-                    self.focus = "watch-live"
+                if tvSelection == "watch-primary", selected?.0.source == "philo" {
+                    self.tvSelection = "watch-philo"
+                } else if tvSelection == "watch-primary", selected?.0.source == "tablo" {
+                    self.tvSelection = "watch-live"
                 }
             default: break
             }
@@ -619,7 +615,7 @@ struct TVGuideScreen: View {
         switch direction {
         case "left":
             guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
-                focus = "rail-search"
+                tvSelection = "rail-search"
                 return
             }
             selectedProgram = visible[index-1]
@@ -631,9 +627,9 @@ struct TVGuideScreen: View {
             let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
             if !channels.indices.contains(nextRow) {
                 if direction == "down" {
-                    if selected?.1.plex != nil { focus = "watch-primary" }
-                    else if selected?.0.source == "tablo" { focus = "watch-live" }
-                    else if selected?.0.source == "philo" { focus = "watch-philo" }
+                    if selected?.1.plex != nil { tvSelection = "watch-primary" }
+                    else if selected?.0.source == "tablo" { tvSelection = "watch-live" }
+                    else if selected?.0.source == "philo" { tvSelection = "watch-philo" }
                 }
                 return
             }
@@ -666,7 +662,7 @@ struct TVGuideScreen: View {
     private func focusSelectedTVProgram() {
         guard channels.indices.contains(selectedChannel),
               channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
-        focus = "program-\(selectedChannel)-\(selectedProgram)"
+        tvSelection = "program-\(selectedChannel)-\(selectedProgram)"
     }
 
     private func selectPhoneProgram() {
@@ -758,13 +754,12 @@ struct TVGuideScreen: View {
     }
     private func openPlexChoice() {
         selectedAction = .plex
-        if isCompact { phoneSelection = "plex-beginning" }
-        else { focus = "plex-beginning" }
+        // Modal screen takes ownership of focus and controller commands.
     }
     private func dismissPlexChoice() {
         selectedAction = nil
         if isCompact { selectPhoneProgram() }
-        else { focus = "program-\(selectedChannel)-\(selectedProgram)" }
+        else { focusSelectedTVProgram() }
     }
     private func activateFocused() {
         if selectedAction == .plex {
@@ -775,7 +770,7 @@ struct TVGuideScreen: View {
             }
             return
         }
-        switch phoneSelection {
+        switch isCompact ? phoneSelection : tvSelection {
         case "rail-search": showSearch = true
         case "rail-filter": showFilters = true
         case "rail-settings": showSettings = true
@@ -799,7 +794,7 @@ struct TVGuideScreen: View {
             // Never automatically launch Philo when Plex also matches.
             // OK moves to the bottom source choices, just like the web guide.
             if isCompact { phoneSelection = "watch-primary" }
-            else { focus = "watch-primary" }
+            else { tvSelection = "watch-primary" }
         } else if channel.source == "philo" {
             openPhilo(channel, program)
         } else if channel.source == "tablo" && program.isOnNow {
@@ -973,19 +968,146 @@ private struct UniversalGuideFullscreenLayout: ViewModifier {
     }
 }
 
-private struct UniversalGuideRemoteMove: ViewModifier {
-    let onMove: (String) -> Void
-    @ViewBuilder func body(content: Content) -> some View {
-        #if os(tvOS)
-        content.onMoveCommand { command in
-            switch command {
-            case .up: onMove("up")
-            case .down: onMove("down")
-            case .left: onMove("left")
-            case .right: onMove("right")
+
+private final class UniversalTVGuideRemoteView: UIView {
+    var onMove: ((String) -> Void)?
+    var onSelect: (() -> Void)?
+    var onBack: (() -> Void)?
+    override var canBecomeFocused: Bool { true }
+    #if os(tvOS)
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in
+                self?.setNeedsFocusUpdate()
+                self?.updateFocusIfNeeded()
+            }
+        }
+    }
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        // Prevent the UIKit spatial engine from moving onto the next tile
+        // after our explicit one-step navigator has already handled the D-pad.
+        if context.previouslyFocusedView === self,
+           context.nextFocusedView !== self { return false }
+        return super.shouldUpdateFocus(in: context)
+    }
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+        for press in presses {
+            switch press.type {
+            case .upArrow: onMove?("up"); handled = true
+            case .downArrow: onMove?("down"); handled = true
+            case .leftArrow: onMove?("left"); handled = true
+            case .rightArrow: onMove?("right"); handled = true
+            case .select: onSelect?(); handled = true
+            case .menu: onBack?(); handled = true
             default: break
             }
         }
+        if !handled { super.pressesBegan(presses, with: event) }
+    }
+    #endif
+}
+
+private struct UniversalTVGuideRemoteReceiver: UIViewRepresentable {
+    let onMove: (String) -> Void
+    let onSelect: () -> Void
+    let onBack: () -> Void
+    func makeUIView(context: Context) -> UniversalTVGuideRemoteView {
+        let view = UniversalTVGuideRemoteView()
+        view.backgroundColor = .clear
+        return view
+    }
+    func updateUIView(_ view: UniversalTVGuideRemoteView, context: Context) {
+        view.onMove = onMove
+        view.onSelect = onSelect
+        view.onBack = onBack
+    }
+}
+
+
+private struct UniversalPlexChoiceScreen: View {
+    let title: String
+    let canJoin: Bool
+    let onBeginning: () -> Void
+    let onNow: () -> Void
+    let onCancel: () -> Void
+    @FocusState private var nativeFocus: Int?
+    @State private var phoneIndex = 0
+    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private var isPhone: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private var selectedIndex: Int { isPhone ? phoneIndex : (nativeFocus ?? 0) }
+    private var actions: [String] {
+        canJoin ? ["Watch from Beginning", "Watch from Current Point", "Cancel"] :
+                  ["Watch from Beginning", "Cancel"]
+    }
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("Watch on Plex").font(.system(size: isPhone ? 22 : 36, weight: .bold))
+                Text(title).font(.headline).foregroundStyle(.secondary)
+                ForEach(Array(actions.enumerated()), id: \.offset) { index, label in
+                    Button { activate(index) } label: {
+                        Text(label)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, isPhone ? 12 : 19)
+                            .foregroundStyle(.white)
+                            .background(selectedIndex == index ? purple.opacity(0.35) :
+                                        Color.white.opacity(0.08),
+                                        in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(selectedIndex == index ? purple : .clear, lineWidth: 4))
+                    }
+                    .buttonStyle(.plain)
+                    .focused($nativeFocus, equals: index)
+                }
+            }
+            .padding(32)
+            .frame(width: isPhone ? 330 : 620)
+            .background(Color(red: 0.11, green: 0.12, blue: 0.22),
+                        in: RoundedRectangle(cornerRadius: 20))
+        }
+        .onAppear { nativeFocus = 0; phoneIndex = 0 }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            guard let direction = event.object as? String else { return }
+            if direction == "down" || direction == "right" {
+                phoneIndex = min(actions.count-1, phoneIndex+1)
+            } else if direction == "up" || direction == "left" {
+                phoneIndex = max(0, phoneIndex-1)
+            }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            activate(phoneIndex)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            onCancel()
+            #endif
+        }
+        .modifier(UniversalPlexChoiceBack(onCancel: onCancel))
+    }
+    private func activate(_ index: Int) {
+        if index == 0 { onBeginning() }
+        else if canJoin && index == 1 { onNow() }
+        else { onCancel() }
+    }
+}
+private struct UniversalPlexChoiceBack: ViewModifier {
+    let onCancel: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.onExitCommand(perform: onCancel)
         #else
         content
         #endif

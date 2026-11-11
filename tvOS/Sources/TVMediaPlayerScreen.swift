@@ -139,19 +139,11 @@ struct TVMediaPlayerScreen: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             if !controlsVisible {
-                // Without a focusable surface, the TV remote's OK button
-                // never arrives. This invisible, genuinely focusable button
-                // opens transport controls on the first Select press.
-                Button { reveal() } label: {
-                    Color.clear
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                // The full-screen transparent Button was receiving tvOS's
-                // giant opaque *focused button* effect, obscuring video.
-                // Keep the remote's OK activation but suppress the effect.
-                .modifier(UniversalDisableFocusEffect())
-                .focused($focused, equals: "reveal")
+                // A transparent SwiftUI Button still receives tvOS's giant
+                // focused-button visual treatment, producing the white box.
+                // A focusable UIKit UIView handles OK with no button chrome.
+                UniversalRevealFocusSurface(onSelect: reveal)
+                    .ignoresSafeArea()
             }
             if controlsVisible {
                 VStack {
@@ -250,7 +242,6 @@ struct TVMediaPlayerScreen: View {
             player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
             player.play()
             isPaused = false
-            focused = "reveal"
         }
         .onDisappear {
             hideControlsTask?.cancel()
@@ -349,7 +340,7 @@ struct TVMediaPlayerScreen: View {
         hideControlsTask?.cancel()
         controlsVisible = false
         selectedControl = "pause"
-        focused = "reveal"
+        focused = nil
     }
     private func scheduleHideControls() {
         hideControlsTask?.cancel()
@@ -497,12 +488,30 @@ private struct UniversalVideoSurface: UIViewRepresentable {
     }
 }
 
-private struct UniversalDisableFocusEffect: ViewModifier {
-    @ViewBuilder func body(content: Content) -> some View {
-        #if os(tvOS)
-        content.focusEffectDisabled()
-        #else
-        content
-        #endif
+
+private final class UniversalRevealFocusView: UIView {
+    var onSelect: (() -> Void)?
+    override var canBecomeFocused: Bool { true }
+    #if os(tvOS)
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.type == .select }) {
+            onSelect?()
+        } else {
+            super.pressesEnded(presses, with: event)
+        }
+    }
+    #endif
+}
+
+private struct UniversalRevealFocusSurface: UIViewRepresentable {
+    let onSelect: () -> Void
+    func makeUIView(context: Context) -> UniversalRevealFocusView {
+        let view = UniversalRevealFocusView()
+        view.backgroundColor = .clear
+        view.onSelect = onSelect
+        return view
+    }
+    func updateUIView(_ uiView: UniversalRevealFocusView, context: Context) {
+        uiView.onSelect = onSelect
     }
 }
