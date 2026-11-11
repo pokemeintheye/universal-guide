@@ -250,6 +250,7 @@ struct TVGuideScreen: View {
             refreshSelectedArtwork()
         }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
+        .onChange(of: searchText) { _, _ in resetSelection() }
         .onChange(of: focus) { _, next in
             if isCompact, let next, next.hasPrefix("program-") {
                 let parts = next.split(separator: "-")
@@ -1068,6 +1069,150 @@ private struct TVGuideFilterPanel: View {
         case 3: onFilter("Philo")
         case 4: onFavorites()
         default: onClose()
+        }
+    }
+}
+
+// D-pad/OK text entry shared by iPhone controller and Apple TV remote.
+// The TextField remains available for touch or a physical keyboard, but is
+// not required to complete either Search or Settings.
+private enum TVGuideTextMode {
+    case search
+    case server
+}
+
+private struct TVGuideRemoteTextPanel: View {
+    let title: String
+    let prompt: String
+    @Binding var value: String
+    let mode: TVGuideTextMode
+    let onClose: () -> Void
+    @State private var selectedKey = 0
+    private let columns = 10
+    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private var compact: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+    private var keys: [String] {
+        let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/._-").map { String($0) }
+        return letters + ["SPACE", "DELETE", "CLEAR", "DONE", "CANCEL"]
+    }
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.038, green: 0.052, blue: 0.102).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: compact ? 7 : 18) {
+                HStack {
+                    Text(title)
+                        .font(.system(size: compact ? 21 : 38, weight: .bold))
+                    Spacer()
+                    Text("Arrows · OK · Back")
+                        .font(.system(size: compact ? 10 : 17))
+                        .foregroundStyle(.secondary)
+                }
+                Text(prompt)
+                    .font(.system(size: compact ? 11 : 19))
+                    .foregroundStyle(.secondary)
+                TextField(prompt, text: $value)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: compact ? 15 : 28))
+                    .padding(compact ? 9 : 18)
+                    .background(Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 11))
+                    .accessibilityLabel(prompt)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5),
+                                         count: columns), spacing: compact ? 5 : 10) {
+                    ForEach(Array(keys.enumerated()), id: \.offset) { index, key in
+                        Button { activate(index) } label: {
+                            Text(key == "SPACE" ? "␣" :
+                                 key == "DELETE" ? "⌫" :
+                                 key == "CLEAR" ? "CLR" :
+                                 key == "CANCEL" ? "ESC" : key)
+                                .font(.system(size: compact ? 12 : 24,
+                                              weight: .semibold))
+                                .minimumScaleFactor(0.65)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: compact ? 31 : 60)
+                                .foregroundStyle(.white)
+                                .background(selectedKey == index ?
+                                            purple.opacity(0.35) :
+                                            Color.white.opacity(0.08),
+                                            in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8)
+                                    .stroke(selectedKey == index ? purple : .clear,
+                                            lineWidth: compact ? 2 : 3))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                HStack {
+                    Text(mode == .server ? "Use your Unraid guide URL" :
+                         "Search titles and channel names")
+                        .font(.system(size: compact ? 10 : 16))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Done") { onClose() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(compact ? 18 : 38)
+            .frame(maxWidth: compact ? 740 : 1050)
+            #if os(tvOS)
+            UniversalTVGuideRemoteReceiver(
+                onMove: move,
+                onSelect: { activate(selectedKey) },
+                onBack: onClose
+            )
+            .ignoresSafeArea()
+            #endif
+        }
+        .preferredColorScheme(.dark)
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            if let direction = event.object as? String { move(direction) }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            activate(selectedKey)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            onClose()
+            #endif
+        }
+        #if os(tvOS)
+        .onExitCommand(perform: onClose)
+        #endif
+    }
+
+    private func move(_ direction: String) {
+        let row = selectedKey / columns
+        let column = selectedKey % columns
+        switch direction {
+        case "left": selectedKey = max(0, selectedKey - 1)
+        case "right": selectedKey = min(keys.count - 1, selectedKey + 1)
+        case "up": selectedKey = max(0, (row - 1) * columns + column)
+        case "down": selectedKey = min(keys.count - 1, (row + 1) * columns + column)
+        default: break
+        }
+    }
+
+    private func activate(_ index: Int) {
+        guard keys.indices.contains(index) else { return }
+        switch keys[index] {
+        case "SPACE": value += " "
+        case "DELETE": if !value.isEmpty { value.removeLast() }
+        case "CLEAR": value = ""
+        case "DONE", "CANCEL": onClose()
+        default: value += mode == .server ? keys[index].lowercased() : keys[index]
         }
     }
 }
