@@ -448,6 +448,12 @@ struct TVGuideScreen: View {
         let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
         if direction == "rail" { phoneSelection = "rail-search"; return }
         if direction == "guide" { selectPhoneProgram(); return }
+        if direction == "details" {
+            if selected?.1.plex != nil { phoneSelection = "watch-primary" }
+            else if selected?.0.source == "tablo" &&
+                    selected?.1.isOnNow == true { phoneSelection = "watch-live" }
+            return
+        }
         if let index = rail.firstIndex(of: phoneSelection) {
             switch direction {
             case "up": phoneSelection = rail[max(0,index-1)]
