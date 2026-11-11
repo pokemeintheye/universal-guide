@@ -424,7 +424,7 @@ struct TVGuideScreen: View {
                             Color(red: 0.32, green: 0.29, blue: 0.45),
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
-                    .stroke(focus == key ? TVPalette.purple : .clear, lineWidth: 3))
+                    .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
@@ -468,25 +468,19 @@ struct TVGuideScreen: View {
         selectedProgram = min(selectedProgram, entries.count-1)
         phoneSelection = "program-\(selectedChannel)-\(selectedProgram)"
     }
+    // Use the same visible regions as the Apple TV layout, reachable entirely
+    // with a four-way D-pad. No shoulder or extra face buttons are necessary.
     private func movePhoneDirection(_ direction: String) {
         if selectedAction == .plex {
-            if direction == "left" || direction == "up" {
-                phoneSelection = "plex-beginning"
-            } else if direction == "right" || direction == "down" {
-                phoneSelection = selected?.1.isOnNow == true ?
-                    "plex-now" : "plex-cancel"
-            }
+            let choices = selected?.1.isOnNow == true ?
+                ["plex-beginning", "plex-now", "plex-cancel"] :
+                ["plex-beginning", "plex-cancel"]
+            let index = choices.firstIndex(of: phoneSelection) ?? 0
+            let delta = (direction == "up" || direction == "left") ? -1 : 1
+            phoneSelection = choices[max(0,min(choices.count-1,index+delta))]
             return
         }
         let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
-        if direction == "rail" { phoneSelection = "rail-search"; return }
-        if direction == "guide" { selectPhoneProgram(); return }
-        if direction == "details" {
-            if selected?.1.plex != nil { phoneSelection = "watch-primary" }
-            else if selected?.0.source == "tablo" &&
-                    selected?.1.isOnNow == true { phoneSelection = "watch-live" }
-            return
-        }
         if let index = rail.firstIndex(of: phoneSelection) {
             switch direction {
             case "up": phoneSelection = rail[max(0,index-1)]
@@ -496,50 +490,53 @@ struct TVGuideScreen: View {
             }
             return
         }
+        let hasPlex = selected?.1.plex != nil
+        let hasTablo = selected?.0.source == "tablo" && selected?.1.isOnNow == true
         if phoneSelection == "watch-primary" || phoneSelection == "watch-live" {
             switch direction {
             case "up": selectPhoneProgram()
             case "left":
-                if selected?.1.plex != nil { phoneSelection = "watch-primary" }
-                else {selectPhoneProgram()}
+                if phoneSelection == "watch-live" && hasPlex {
+                    phoneSelection = "watch-primary"
+                } else {
+                    selectPhoneProgram()
+                }
             case "right":
-                if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                if phoneSelection == "watch-primary" && hasTablo {
                     phoneSelection = "watch-live"
                 }
             case "down":
-                if phoneSelection == "watch-primary" &&
-                   selected?.0.source == "tablo" && selected?.1.isOnNow == true {
+                if phoneSelection == "watch-primary" && hasTablo {
                     phoneSelection = "watch-live"
                 }
             default: break
             }
             return
         }
-        // The guide may contain earlier off-screen airings. Moving left
-        // from the earliest *visible* program should enter the sidebar,
-        // not require dozens of presses through past slots.
+        // At the first visible airing, Left leads to the sidebar.
         if direction == "left", channels.indices.contains(selectedChannel) {
             let entries = channels[selectedChannel].programs
-            let visibleStart = entries.firstIndex(where: {
+            let firstVisible = entries.firstIndex(where: {
                 ($0.endDate ?? .distantPast) > anchor
             }) ?? 0
-            if selectedProgram <= visibleStart {
+            if selectedProgram <= firstVisible {
                 phoneSelection = "rail-search"
                 return
             }
         }
-        guard !channels.isEmpty else {return}
-        switch direction {
-        case "up": selectedChannel = max(0,selectedChannel-1)
-        case "down": selectedChannel = min(channels.count-1,selectedChannel+1)
-        default: break
+        // Down from the last channel moves to the bottom viewing actions.
+        if direction == "down" && !channels.isEmpty &&
+            selectedChannel >= channels.count-1 {
+            if hasPlex { phoneSelection = "watch-primary"; return }
+            if hasTablo { phoneSelection = "watch-live"; return }
         }
-        guard channels.indices.contains(selectedChannel) else {return}
+        // In the guide, the playback choices are always also reachable
+        // by pressing OK on a program with Plex or live Tablo.
+        guard !channels.isEmpty else { return }
+        if direction == "up" { selectedChannel = max(0,selectedChannel-1) }
+        if direction == "down" { selectedChannel = min(channels.count-1,selectedChannel+1) }
         let entries = channels[selectedChannel].programs
-        guard !entries.isEmpty else {
-            selectedProgram = 0
-            return
-        }
+        guard !entries.isEmpty else { selectedProgram = 0; return }
         if direction == "up" || direction == "down" {
             selectedProgram = entries.firstIndex(where: {$0.isOnNow}) ??
                 entries.firstIndex(where: {($0.endDate ?? .distantPast) > anchor}) ?? 0
