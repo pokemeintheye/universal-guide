@@ -76,6 +76,16 @@ struct TVGuideScreen: View {
         guard ch.programs.indices.contains(selectedProgram) else { return nil }
         return (ch, ch.programs[selectedProgram])
     }
+    private var playerMetadata: TVPlaybackMetadata {
+        guard let (channel,program) = selected else {
+            return TVPlaybackMetadata(channelName: nil, title: "", subtitle: nil,
+                                      season: nil, episode: nil, year: nil, isMovie: false)
+        }
+        return TVPlaybackMetadata(channelName: channel.network ?? channel.label,
+                                  title: program.title, subtitle: program.subtitle,
+                                  season: program.season, episode: program.episode,
+                                  year: program.year, isMovie: program.programKind == "movie")
+    }
     private var durationMinutes: Double { 480 }
 
     var body: some View {
@@ -126,6 +136,13 @@ struct TVGuideScreen: View {
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
         .modifier(UniversalGuideFullscreenLayout())
+        .modifier(UniversalGuideBackNavigation {
+            if selectedAction == .plex {
+                dismissPlexChoice()
+            } else {
+                focusSelectedTVProgram()
+            }
+        })
         // A true modal presentation isolates the Plex choice focus from
         // the guide. The former ZStack overlay allowed the guide to keep
         // processing remote directions and lose the chosen program.
@@ -141,12 +158,12 @@ struct TVGuideScreen: View {
                 onCancel: { dismissPlexChoice() })
         }
         .fullScreenCover(item: $mediaSession) { session in
-            TVMediaPlayerScreen(session: session)
+            TVMediaPlayerScreen(session: session, metadata: playerMetadata)
         }
-        .sheet(isPresented: $showSettings, onDismiss: {
+        .fullScreenCover(isPresented: $showSettings, onDismiss: {
             Task { await refreshGuide() }
         }) { GuideSettingsView(serverURL: $serverURL) }
-        .sheet(isPresented: $showSearch) {
+        .fullScreenCover(isPresented: $showSearch) {
             NavigationStack {
                 Form {
                     TextField("Search channels or programs", text: $searchText)
@@ -237,10 +254,10 @@ struct TVGuideScreen: View {
             }
             .foregroundStyle(selectedFocus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
             .frame(width: isCompact ? 56 : 80, height: isCompact ? 48 : 72)
-            .background(selectedFocus == key ? TVPalette.purple.opacity(0.38) : Color.clear,
+            .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
-                .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
+                .stroke(selectedFocus == key ? TVPalette.purple.opacity(0.9) : .clear, lineWidth: 2))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
@@ -319,14 +336,26 @@ struct TVGuideScreen: View {
             }
             .onChange(of: selectedChannel) { _, value in
                 if channels.indices.contains(value) {
-                    // Avoid two competing scroll animations for one remote press.
                     vertical.scrollTo("row-\(value)", anchor: .center)
                 }
             }
             .onChange(of: selectedProgram) { _, value in
-                // A single immediate scroll per selection is much quicker
-                // than simultaneous animated focus and position changes.
-                vertical.scrollTo("program-\(selectedChannel)-\(value)", anchor: .center)
+                // Keep native and Backbone selection anchored to visible rows,
+                // including when moving between episodes in the same channel.
+                let ch = selectedChannel
+                DispatchQueue.main.async {
+                    vertical.scrollTo("program-\(ch)-\(value)", anchor: .center)
+                }
+            }
+            .onChange(of: selectedFocus) { _, target in
+                guard let target, target.hasPrefix("program-") else { return }
+                let channel = selectedChannel
+                // Materialize the lazily loaded channel row before targeting
+                // its nested horizontally positioned program tile.
+                vertical.scrollTo("row-\(channel)", anchor: .center)
+                DispatchQueue.main.async {
+                    vertical.scrollTo(target, anchor: .center)
+                }
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
@@ -377,9 +406,8 @@ struct TVGuideScreen: View {
                                     in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    TVPalette.purple : .clear, lineWidth: 3))
-                        .shadow(color: selectedFocus == "program-\(index)-\(pi)" ?
-                                TVPalette.purple.opacity(0.55) : .clear, radius: 7)
+                                    TVPalette.purple.opacity(0.9) : .clear, lineWidth: 2))
+                        .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
                            height: rowHeight-(isCompact ? 10 : 14))
@@ -475,8 +503,7 @@ struct TVGuideScreen: View {
             Text(label).font(.system(size: isCompact ? 11 : 17, weight: .bold))
                 .frame(maxWidth: .infinity).padding(.vertical, isCompact ? 7 : 13)
                 .foregroundStyle(.white)
-                .background(selectedFocus == key ? TVPalette.purple.opacity(0.55) :
-                            Color(red: 0.32, green: 0.29, blue: 0.45),
+                .background(Color(red: 0.22, green: 0.20, blue: 0.31),
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
                     .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
@@ -1108,6 +1135,17 @@ private struct UniversalPlexChoiceBack: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         #if os(tvOS)
         content.onExitCommand(perform: onCancel)
+        #else
+        content
+        #endif
+    }
+}
+
+private struct UniversalGuideBackNavigation: ViewModifier {
+    let action: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.onExitCommand(perform: action)
         #else
         content
         #endif

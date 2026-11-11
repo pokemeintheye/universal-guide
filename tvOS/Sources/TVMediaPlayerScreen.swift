@@ -103,8 +103,32 @@ enum TVMediaSession: Identifiable {
     }
 }
 
+
+struct TVPlaybackMetadata {
+    let channelName: String?
+    let title: String
+    let subtitle: String?
+    let season: Int?
+    let episode: Int?
+    let year: Int?
+    let isMovie: Bool
+
+    var detailLine: String {
+        var parts: [String] = []
+        if isMovie {
+            if let year, year > 0 { parts.append(String(year)) }
+        } else {
+            if let season, season > 0 { parts.append("S\(season)") }
+            if let episode, episode > 0 { parts.append("E\(episode)") }
+        }
+        if let subtitle, !subtitle.isEmpty, subtitle != title { parts.append(subtitle) }
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct TVMediaPlayerScreen: View {
     let session: TVMediaSession
+    let metadata: TVPlaybackMetadata
     @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
     @State private var controlsVisible = false
@@ -112,11 +136,14 @@ struct TVMediaPlayerScreen: View {
     @State private var elapsed: Double = 0
     @State private var minimum: Double = 0
     @State private var maximum: Double = 1
-    @State private var isPaused = false
     @State private var seekProgress: Double = 0
-    @State private var isScrubbing = false
+    @State private var isPaused = false
+    @State private var videoReady = false
+    @State private var streamStartedAt = Date()
+    @State private var recoveredOnce = false
+    @State private var checkedPlayback = false
+    @State private var streamError: String?
     @State private var hideControlsTask: Task<Void, Never>?
-    @FocusState private var focused: String?
     private let purple = Color(red: 0.72, green: 0.53, blue: 1)
     private var isCompact: Bool {
         #if os(iOS)
@@ -126,120 +153,152 @@ struct TVMediaPlayerScreen: View {
         #endif
     }
     private func isSelected(_ key: String) -> Bool {
-        controlsVisible && (isCompact ? selectedControl == key : focused == key)
+        controlsVisible && selectedControl == key
+    }
+    private var playbackTitle: String {
+        metadata.title.isEmpty ? session.title : metadata.title
+    }
+    private var sourceName: String {
+        session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX"
+    }
+    private var remoteButtons: [String] {
+        session.isTablo ? ["back", "pause", "forward", "live"] :
+                          ["back", "pause", "forward"]
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            // AVKit VideoPlayer can summon its own opaque system transport
-            // panel (the white sheet observed on tvOS). AVPlayerLayer renders
-            // video only; our controls are the sole overlay.
-            UniversalVideoSurface(player: player)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            if !controlsVisible {
-                // A transparent SwiftUI Button still receives tvOS's giant
-                // focused-button visual treatment, producing the white box.
-                // A focusable UIKit UIView handles OK with no button chrome.
-                UniversalRevealFocusSurface(onSelect: reveal)
-                    .ignoresSafeArea()
+            UniversalVideoSurface(player: player) { ready in
+                videoReady = ready
             }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
             if controlsVisible {
-                VStack {
-                    HStack {
-                        Text(session.isTablo ? "TABLO DVR" : "PLEX")
-                            .foregroundStyle(purple).font(.caption.bold())
-                        Text(session.title).font(.system(size: 26, weight: .bold))
+                VStack(spacing: 0) {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(sourceName.uppercased())
+                                .font(.system(size: isCompact ? 13 : 20, weight: .bold))
+                                .foregroundStyle(purple)
+                            Text(playbackTitle)
+                                .font(.system(size: isCompact ? 21 : 32, weight: .bold))
+                                .lineLimit(2)
+                            if !metadata.detailLine.isEmpty {
+                                Text(metadata.detailLine)
+                                    .font(.system(size: isCompact ? 13 : 19))
+                                    .foregroundStyle(.white.opacity(0.75))
+                                    .lineLimit(2)
+                            }
+                        }
                         Spacer()
                         Button { dismiss() } label: {
-                            Image(systemName: "xmark").font(.title3)
+                            Image(systemName: "xmark")
+                                .font(.system(size: isCompact ? 20 : 28))
+                                .foregroundStyle(.white)
+                                .padding(8)
+                                .overlay(RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isSelected("close") ? purple : .clear,
+                                            lineWidth: 2))
                         }
-                        .focused($focused, equals: "close")
                         .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 68)
-                    .padding(.top, 46)
-                    Spacer()
-                    HStack(spacing: 55) {
-                        playerButton("rewind20", key: "back", size: 68) { skip(-20) }
-                        playerButton(isPaused ? "play.fill" : "pause.fill", key: "pause", size: 90) { playPause() }
-                        playerButton("goforward.30", key: "forward", size: 68) { skip(30) }
-                    }
-                    Spacer()
-                    VStack(spacing: 10) {
+                    .padding(.horizontal, isCompact ? 20 : 74)
+                    .padding(.top, isCompact ? 14 : 42)
+                    Spacer(minLength: 30)
+
+                    // The seek bar is ABOVE the three transport controls.
+                    VStack(spacing: isCompact ? 10 : 17) {
                         HStack {
-                            Text(time(elapsed - minimum))
+                            Text(time(max(0, elapsed-minimum)))
                             Spacer()
-                            Text(session.isTablo && maximum-elapsed < 8 ?
-                                 "LIVE" : "-\(time(max(0,maximum-elapsed)))")
+                            Text(session.isTablo && maximum-elapsed < 8 ? "LIVE" :
+                                 "-\(time(max(0,maximum-elapsed)))")
                         }
-                        .font(.system(size: 17, weight: .semibold))
-                        if maximum > minimum {
-                            // tvOS has no SwiftUI Slider: a native focusable
-                            // timeline responds to Left/Right 20/30-second seeks.
-                            Button {
-                                seekTo(elapsed + 30)
-                            } label: {
-                                GeometryReader { geometry in
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(.white.opacity(0.25))
-                                            .frame(height: 7)
-                                        Capsule().fill(purple)
-                                            .frame(width: max(0,geometry.size.width*seekProgress),
-                                                   height: 7)
-                                        Circle().fill(.white)
-                                            .frame(width: 22,height: 22)
-                                            .overlay(Circle().stroke(
-                                                isSelected("seek") ? purple : .clear,
-                                                lineWidth: 4))
-                                            .offset(x: max(0,(geometry.size.width-22)*seekProgress))
-                                    }
-                                    .frame(height: geometry.size.height)
+                        .font(.system(size: isCompact ? 13 : 18, weight: .medium))
+                        .foregroundStyle(.white)
+
+                        Button { seekTo(elapsed + 30) } label: {
+                            GeometryReader { geometry in
+                                let usable = max(0, geometry.size.width-24)
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.36))
+                                        .frame(height: 6)
+                                    Capsule().fill(purple.opacity(0.6))
+                                        .frame(width: geometry.size.width*seekProgress,
+                                               height: 6)
+                                    Circle().fill(.white)
+                                        .frame(width: 24, height: 24)
+                                        .overlay(Circle().stroke(
+                                            isSelected("seek") ? purple : .clear,
+                                            lineWidth: 4))
+                                        .offset(x: usable*seekProgress)
                                 }
-                                .frame(height: 28)
-                                .padding(.horizontal, 9)
+                                .frame(height: geometry.size.height)
                             }
-                            .buttonStyle(.plain)
-                            .focused($focused, equals: "seek")
+                            .frame(height: 32)
                         }
-                        HStack {
+                        .buttonStyle(.plain)
+
+                        HStack(spacing: isCompact ? 18 : 58) {
+                            transport("rewind20", key: "back", size: isCompact ? 48 : 66) {
+                                skip(-20)
+                            }
+                            transport(isPaused ? "play.fill" : "pause.fill",
+                                      key: "pause", size: isCompact ? 60 : 78) {
+                                playPause()
+                            }
+                            transport("goforward.30", key: "forward",
+                                      size: isCompact ? 48 : 66) {
+                                skip(30)
+                            }
                             if session.isTablo {
                                 Button {
-                                    seekTo(maximum - 2)
-                                    player.play()
-                                    isPaused = false
+                                    goLive()
                                 } label: {
                                     Label("Go Live", systemImage: "bolt.fill")
-                                        .font(.headline.bold())
+                                        .font(.system(size: isCompact ? 12 : 18, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .padding(10)
+                                        .overlay(RoundedRectangle(cornerRadius: 9)
+                                            .stroke(isSelected("live") ? purple : .clear,
+                                                    lineWidth: 2))
                                 }
-                                .focused($focused, equals: "live")
+                                .buttonStyle(.plain)
                             }
-                            Spacer()
-                            Text("OK to select · Back to close")
-                                .font(.caption).foregroundStyle(.secondary)
                         }
+                        .frame(maxWidth: .infinity)
+                        Text(selectedControl == "seek" ?
+                             "Left / Right to seek · Down for playback controls" :
+                             "Up for timeline · Back to hide controls")
+                            .font(.system(size: isCompact ? 10 : 13))
+                            .foregroundStyle(.white.opacity(0.55))
                     }
-                    .padding(.horizontal, 68)
-                    .padding(.bottom, 45)
+                    .padding(.horizontal, isCompact ? 22 : 80)
+                    .padding(.bottom, isCompact ? 16 : 36)
                 }
-                .background(LinearGradient(colors: [.black.opacity(0.58), .clear, .black.opacity(0.8)],
-                                           startPoint: .top, endPoint: .bottom))
+                .background(LinearGradient(
+                    colors: [.black.opacity(0.62), .clear, .black.opacity(0.82)],
+                    startPoint: .top, endPoint: .bottom))
                 .transition(.opacity)
             }
+            #if os(tvOS)
+            UniversalMediaRemoteReceiver(
+                onMove: remoteDirection,
+                onSelect: { if controlsVisible { activateCurrent() } else { reveal() } },
+                onBack: remoteExit,
+                onPlayPause: playPause
+            )
+            .ignoresSafeArea()
+            #endif
         }
         .tint(purple)
         .preferredColorScheme(.dark)
-        .onChange(of: focused) { _, target in
-            #if os(tvOS)
-            if let target {
-                selectedControl = target
-                if controlsVisible { scheduleHideControls() }
-            }
-            #endif
-        }
         .onAppear {
-            player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
+            streamStartedAt = Date()
+            let item = AVPlayerItem(url: session.playlist)
+            player.replaceCurrentItem(with: item)
             player.play()
             isPaused = false
         }
@@ -251,12 +310,8 @@ struct TVMediaPlayerScreen: View {
         }
         .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
             updateProgress()
+            monitorPlexStartup()
         }
-        .modifier(UniversalMediaInput(
-            direction: { direction in self.remoteDirection(direction) },
-            exit: { self.remoteExit() },
-            playPause: { self.playPause() }
-        ))
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
             if let direction = event.object as? String { remoteDirection(direction) }
@@ -264,8 +319,7 @@ struct TVMediaPlayerScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if !controlsVisible { reveal() }
-            else { activateCurrent() }
+            if controlsVisible { activateCurrent() } else { reveal() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
@@ -278,69 +332,109 @@ struct TVMediaPlayerScreen: View {
             playPause()
             #endif
         }
-        .onTapGesture { if !controlsVisible { reveal() } }
+        .alert("Plex playback couldn't start",
+               isPresented: Binding(get: { streamError != nil },
+                                    set: { if !$0 { streamError = nil } })) {
+            Button("Retry") { restartVideo() }
+            Button("Return to Guide") { dismiss() }
+        } message: {
+            Text(streamError ?? "The player did not receive a video frame.")
+        }
+    }
+
+    private func transport(_ symbol: String, key: String, size: CGFloat,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if symbol == "rewind20" {
+                    ZStack {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: size*0.50, weight: .medium))
+                        Text("20")
+                            .font(.system(size: size*0.20, weight: .bold))
+                    }
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: size*0.52))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(isSelected(key) ? purple : .clear,
+                                     lineWidth: 3))
+        }
+        .buttonStyle(.plain)
     }
 
     private func remoteDirection(_ direction: String) {
-        if controlsVisible { scheduleHideControls() }
         if !controlsVisible {
-            if direction == "left" { skip(-20) }
-            else if direction == "right" { skip(30) }
-            else { reveal() }
+            switch direction {
+            case "left": skip(-20)
+            case "right": skip(30)
+            default: reveal()
+            }
             return
         }
-        #if os(iOS)
-        // iOS receives Backbone events, not a reliable native FocusState.
-        // Explicitly select only real, currently visible controls.
-        if selectedControl == "seek" && direction == "left" { skip(-20); return }
-        if selectedControl == "seek" && direction == "right" { skip(30); return }
-        let row = ["back", "pause", "forward"]
-        let upper = ["close"]
-        let lower = session.isTablo ? ["seek", "live"] : ["seek"]
-        switch direction {
-        case "left", "right":
-            let candidate = selectedControl == "close" ? upper :
-                lower.contains(selectedControl) ? lower : row
-            let index = candidate.firstIndex(of: selectedControl) ?? 1
-            let delta = direction == "left" ? -1 : 1
-            selectedControl = candidate[max(0,min(candidate.count-1,index+delta))]
-        case "up":
-            selectedControl = selectedControl == "close" ? "pause" :
-                lower.contains(selectedControl) ? "pause" : "close"
-        case "down":
-            selectedControl = selectedControl == "close" ? "pause" : "seek"
-        default: break
+        scheduleHideControls()
+        if selectedControl == "seek" {
+            switch direction {
+            case "left": skip(-20); return
+            case "right": skip(30); return
+            case "down": selectedControl = "pause"; return
+            case "up": selectedControl = "close"; return
+            default: return
+            }
         }
-        // Keep tvOS and iOS renderers on the same named playback controls.
-        focused = selectedControl
-        #else
-        // Let Apple's tvOS focus engine move between actual buttons.
-        // Its focus changes are displayed by the same isSelected() helper.
-        _ = direction
-        #endif
+        if direction == "up" {
+            selectedControl = "seek"
+            return
+        }
+        if direction == "down" {
+            if selectedControl == "close" { selectedControl = "seek" }
+            else if selectedControl == "live" { selectedControl = "pause" }
+            return
+        }
+        if direction == "left" || direction == "right" {
+            let row = remoteButtons
+            guard let current = row.firstIndex(of: selectedControl) else {
+                selectedControl = "pause"
+                return
+            }
+            let delta = direction == "left" ? -1 : 1
+            selectedControl = row[max(0, min(row.count-1,current+delta))]
+        }
     }
+
     private func activateCurrent() {
         scheduleHideControls()
-        switch isCompact ? selectedControl : (focused ?? selectedControl) {
+        switch selectedControl {
         case "back": skip(-20)
         case "pause": playPause()
         case "forward": skip(30)
-        case "seek": skip(30)
-        case "live": if session.isTablo { seekTo(maximum-2) }
+        case "seek": seekTo(elapsed)
+        case "live": goLive()
         case "close": dismiss()
         default: reveal()
         }
     }
     private func remoteExit() {
-        if controlsVisible {
-            hideControls()
-        } else { dismiss() }
+        if controlsVisible { hideControls() } else { dismiss() }
+    }
+    private func goLive() {
+        guard session.isTablo else { return }
+        seekTo(maximum - 2)
+        player.play()
+        isPaused = false
+    }
+    private func reveal() {
+        controlsVisible = true
+        selectedControl = "pause"
+        scheduleHideControls()
     }
     private func hideControls() {
         hideControlsTask?.cancel()
         controlsVisible = false
         selectedControl = "pause"
-        focused = nil
     }
     private func scheduleHideControls() {
         hideControlsTask?.cancel()
@@ -349,43 +443,6 @@ struct TVMediaPlayerScreen: View {
             guard !Task.isCancelled else { return }
             hideControls()
         }
-    }
-
-    private func playerButton(_ symbol: String, key: String, size: CGFloat,
-                              action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if symbol == "rewind20" {
-                    // SF Symbols doesn't provide a universal gobackward.20
-                    // glyph. Draw a readable 20-second icon on both platforms.
-                    ZStack {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: size*0.57, weight: .medium))
-                        Text("20")
-                            .font(.system(size: size*0.23, weight: .bold))
-                    }
-                } else {
-                    Image(systemName: symbol)
-                        .font(.system(size: size*0.55, weight: .medium))
-                }
-            }
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            // No circles at rest: a single purple ring identifies whichever
-            // control the remote has selected.
-            .background(isSelected(key) ? purple.opacity(0.25) : .clear,
-                        in: Circle())
-            .overlay(Circle().stroke(isSelected(key) ? purple : .clear,
-                                     lineWidth: 3))
-        }
-        .buttonStyle(.plain)
-        .focused($focused, equals: key)
-    }
-    private func reveal() {
-        controlsVisible = true
-        selectedControl = "pause"
-        focused = "pause"
-        scheduleHideControls()
     }
     private func playPause() {
         if controlsVisible { scheduleHideControls() }
@@ -407,8 +464,6 @@ struct TVMediaPlayerScreen: View {
         guard let item = player.currentItem else { return }
         let current = CMTimeGetSeconds(player.currentTime())
         if current.isFinite { elapsed = current }
-        // The Tablo source is a continuously appended disk HLS window. Only
-        // allow seeking where AVPlayer actually reports data is available.
         let ranges = item.seekableTimeRanges
         if let first = ranges.first, let last = ranges.last {
             let low = CMTimeGetSeconds(first.timeRangeValue.start)
@@ -423,7 +478,7 @@ struct TVMediaPlayerScreen: View {
                 minimum = 0; maximum = duration
             }
         }
-        if !isScrubbing && maximum > minimum {
+        if maximum > minimum {
             seekProgress = min(1,max(0,(elapsed-minimum)/(maximum-minimum)))
         }
         isPaused = player.rate == 0
@@ -433,36 +488,112 @@ struct TVMediaPlayerScreen: View {
         seekTo(elapsed + seconds)
     }
     private func seekTo(_ seconds: Double) {
-        let safeEnd = max(minimum,maximum-1.5)
+        let safeEnd = max(minimum, maximum-1.5)
         guard safeEnd > minimum else { return }
         let target = max(minimum,min(safeEnd,seconds))
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
+    private func restartVideo() {
+        streamError = nil
+        checkedPlayback = false
+        recoveredOnce = true
+        videoReady = false
+        streamStartedAt = Date()
+        player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
+        player.play()
+    }
+    private func monitorPlexStartup() {
+        guard !session.isTablo, !videoReady, !checkedPlayback else { return }
+        let age = Date().timeIntervalSince(streamStartedAt)
+        if age >= 10 && !recoveredOnce {
+            recoveredOnce = true
+            // Retry an HLS master that may have been opened before Plex
+            // finished generating its first playable media segments.
+            player.replaceCurrentItem(with: AVPlayerItem(url: session.playlist))
+            player.play()
+            streamStartedAt = Date()
+            return
+        }
+        if age >= 20 {
+            checkedPlayback = true
+            Task {
+                var message = player.currentItem?.error?.localizedDescription ??
+                    "No video frame was received from the Plex HLS stream."
+                if case .plex(let plexSession) = session {
+                    if let url = URL(string: "/api/player/\(plexSession.id)/diagnostics",
+                                     relativeTo: plexSession.serverURL)?.absoluteURL,
+                       let (data, _) = try? await URLSession.shared.data(from: url),
+                       let info = try? JSONSerialization.jsonObject(with: data)
+                                  as? [String: Any] {
+                        let lastHTTP = info["last_http"].map { String(describing: $0) } ?? "unknown"
+                        let playlists = info["playlists"].map { String(describing: $0) } ?? "0"
+                        let segments = info["segments"].map { String(describing: $0) } ?? "0"
+                        let error = info["last_error"].map { String(describing: $0) } ?? "none"
+                        message += "\nServer: HTTP \(lastHTTP), playlists \(playlists), segments \(segments), error \(error)."
+                    }
+                }
+                if !videoReady { streamError = message }
+            }
+        }
+    }
 }
 
-private struct UniversalMediaInput: ViewModifier {
-    let direction: (String) -> Void
-    let exit: () -> Void
-    let playPause: () -> Void
-
-    @ViewBuilder func body(content: Content) -> some View {
-        #if os(tvOS)
-        content
-            .onMoveCommand { directionValue in
-                switch directionValue {
-                case .left: direction("left")
-                case .right: direction("right")
-                case .up: direction("up")
-                case .down: direction("down")
-                default: break
-                }
+private final class UniversalMediaRemoteView: UIView {
+    var onMove: ((String) -> Void)?
+    var onSelect: (() -> Void)?
+    var onBack: (() -> Void)?
+    var onPlayPause: (() -> Void)?
+    override var canBecomeFocused: Bool { true }
+    #if os(tvOS)
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in
+                self?.setNeedsFocusUpdate()
+                self?.updateFocusIfNeeded()
             }
-            .onExitCommand(perform: exit)
-            .onPlayPauseCommand(perform: playPause)
-        #else
-        content
-        #endif
+        }
+    }
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if context.previouslyFocusedView === self,
+           context.nextFocusedView !== self { return false }
+        return super.shouldUpdateFocus(in: context)
+    }
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+        for press in presses {
+            switch press.type {
+            case .upArrow: onMove?("up"); handled = true
+            case .downArrow: onMove?("down"); handled = true
+            case .leftArrow: onMove?("left"); handled = true
+            case .rightArrow: onMove?("right"); handled = true
+            case .select: onSelect?(); handled = true
+            case .menu: onBack?(); handled = true
+            case .playPause: onPlayPause?(); handled = true
+            default: break
+            }
+        }
+        if !handled { super.pressesBegan(presses, with: event) }
+    }
+    #endif
+}
+
+private struct UniversalMediaRemoteReceiver: UIViewRepresentable {
+    let onMove: (String) -> Void
+    let onSelect: () -> Void
+    let onBack: () -> Void
+    let onPlayPause: () -> Void
+    func makeUIView(context: Context) -> UniversalMediaRemoteView {
+        let view = UniversalMediaRemoteView()
+        view.backgroundColor = .clear
+        return view
+    }
+    func updateUIView(_ view: UniversalMediaRemoteView, context: Context) {
+        view.onMove = onMove
+        view.onSelect = onSelect
+        view.onBack = onBack
+        view.onPlayPause = onPlayPause
     }
 }
 
@@ -475,43 +606,26 @@ private final class UniversalVideoLayerView: UIView {
 /// are intentionally never created, preventing unexpected opaque white sheets.
 private struct UniversalVideoSurface: UIViewRepresentable {
     let player: AVPlayer
+    let onReady: (Bool) -> Void
+    final class Coordinator {
+        var observation: NSKeyValueObservation?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UniversalVideoLayerView {
         let view = UniversalVideoLayerView()
         view.isUserInteractionEnabled = false
         view.backgroundColor = .black
         view.videoLayer.videoGravity = .resizeAspect
         view.videoLayer.player = player
+        context.coordinator.observation = view.videoLayer.observe(
+            \.isReadyForDisplay, options: [.initial, .new]) { layer, _ in
+                DispatchQueue.main.async { onReady(layer.isReadyForDisplay) }
+            }
         return view
     }
-    func updateUIView(_ uiView: UniversalVideoLayerView, context: Context) {
-        if uiView.videoLayer.player !== player { uiView.videoLayer.player = player }
-    }
-}
-
-
-private final class UniversalRevealFocusView: UIView {
-    var onSelect: (() -> Void)?
-    override var canBecomeFocused: Bool { true }
-    #if os(tvOS)
-    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        if presses.contains(where: { $0.type == .select }) {
-            onSelect?()
-        } else {
-            super.pressesEnded(presses, with: event)
+    func updateUIView(_ view: UniversalVideoLayerView, context: Context) {
+        if view.videoLayer.player !== player {
+            view.videoLayer.player = player
         }
-    }
-    #endif
-}
-
-private struct UniversalRevealFocusSurface: UIViewRepresentable {
-    let onSelect: () -> Void
-    func makeUIView(context: Context) -> UniversalRevealFocusView {
-        let view = UniversalRevealFocusView()
-        view.backgroundColor = .clear
-        view.onSelect = onSelect
-        return view
-    }
-    func updateUIView(_ uiView: UniversalRevealFocusView, context: Context) {
-        uiView.onSelect = onSelect
     }
 }

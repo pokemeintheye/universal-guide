@@ -29,6 +29,8 @@ struct GuideProgram: Decodable, Identifiable {
     let stop: String
     let description: String?
     let year: Int?
+    let season: Int?
+    let episode: Int?
     let programKind: String?
     let plex: PlexMatch?
     let philoLinks: PhiloLinks?
@@ -36,7 +38,7 @@ struct GuideProgram: Decodable, Identifiable {
     var id: String { "\(title)|\(start)|\(stop)" }
 
     enum CodingKeys: String, CodingKey {
-        case title, subtitle, start, stop, description, year, plex
+        case title, subtitle, start, stop, description, year, season, episode, plex
         case philoLinks = "philo_links"
         case programKind = "program_kind"
     }
