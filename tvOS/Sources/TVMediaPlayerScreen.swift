@@ -731,10 +731,11 @@ struct TVMediaPlayerScreen: View {
             replaced = true
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
             if !trackChange { player.play() }
-            else { elapsed = max(0, position) }
             audioID = audio
             subtitleID = captions
-            elapsed = 0
+            // Show the preserved movie timestamp while the new stream loads.
+            // The periodic observer will update it after the local seek.
+            elapsed = trackChange ? max(0, position) : 0
             minimum = 0
             maximum = max(1, (plexMetadata?.duration_seconds ?? 1)-next.offsetSeconds)
             checkedPlayback = false
