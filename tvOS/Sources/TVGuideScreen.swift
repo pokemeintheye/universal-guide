@@ -146,17 +146,17 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if let raw = event.object as? String { movePhoneDirection(raw) }
+            if mediaSession == nil, let raw = event.object as? String { movePhoneDirection(raw) }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            activateFocused()
+            if mediaSession == nil { activateFocused() }
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
             #if os(iOS)
-            focus = "program-\(selectedChannel)-\(selectedProgram)"
+            if mediaSession == nil { focus = "program-\(selectedChannel)-\(selectedProgram)" }
             #endif
         }
     }
@@ -431,6 +431,7 @@ struct TVGuideScreen: View {
     // controls. tvOS uses its native focus engine, never this second handler.
     private func movePhoneDirection(_ direction: String) {
         let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        if direction == "rail" { focus = "rail-search"; return }
         if let value = focus, let i = rail.firstIndex(of: value) {
             if direction == "down" { focus = rail[min(rail.count-1,i+1)] }
             if direction == "up" { focus = rail[max(0,i-1)] }
