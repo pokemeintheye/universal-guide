@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Test first pass of the matching purple six-row iPhone and Apple TV guide.
+  # Test compact guide fonts, horizontally aligned actions, and sticky timeline ruler.
   push:
     branches: [main]
     paths:
