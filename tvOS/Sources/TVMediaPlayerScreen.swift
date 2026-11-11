@@ -166,6 +166,9 @@ struct TVMediaPlayerScreen: View {
     @State private var pendingTrackSeek: Double?
     @State private var applyingTrackSeek = false
     @State private var playbackTimeObserver: Any?
+    @State private var pauseBeganAt: Date?
+    @State private var pausePosition: Double?
+    @State private var restoringLongPause = false
     @State private var audioID: Int?
     @State private var subtitleID: Int?
     @State private var trackMenu: String?
@@ -186,6 +189,17 @@ struct TVMediaPlayerScreen: View {
     }
     private var playbackTitle: String {
         metadata.title.isEmpty ? session.title : metadata.title
+    }
+    private var playerDetailLine: String {
+        if session.isTablo || !metadata.isMovie { return metadata.detailLine }
+        let year = plexMetadata?.year ?? metadata.year ?? 0
+        let existing = metadata.detailLine
+        guard year > 0 else { return existing }
+        let yearText = String(year)
+        if existing.split(separator: "·").map({ $0.trimmingCharacters(in: .whitespaces) }).contains(yearText) {
+            return existing
+        }
+        return ([yearText, existing].filter { !$0.isEmpty }).joined(separator: " · ")
     }
     private var sourceName: String {
         session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX"
@@ -264,8 +278,8 @@ struct TVMediaPlayerScreen: View {
                             Text(playbackTitle)
                                 .font(.system(size: isCompact ? 21 : 32, weight: .bold))
                                 .lineLimit(2)
-                            if !metadata.detailLine.isEmpty {
-                                Text(metadata.detailLine)
+                            if !playerDetailLine.isEmpty {
+                                Text(playerDetailLine)
                                     .font(.system(size: isCompact ? 13 : 19))
                                     .foregroundStyle(.white.opacity(0.75))
                                     .lineLimit(2)
@@ -539,10 +553,29 @@ struct TVMediaPlayerScreen: View {
                 }
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: isCompact ? 5 : 10) {
+                        LazyVStack(spacing: isCompact ? 5 : 10) {
                             ForEach(0..<menuCount, id: \.self) { index in
                                 Button { selectPlexOption(index) } label: {
-                                    HStack {
+                                    HStack(spacing: isCompact ? 12 : 22) {
+                                        if trackMenu == "chapters",
+                                           plexMetadata?.preview_available == true,
+                                           let plex = plexSession,
+                                           let chapters = plexMetadata?.chapters,
+                                           chapters.indices.contains(index),
+                                           let url = URL(
+                                              string: "/api/player/\(plex.id)/preview?at=\(Int(chapters[index].start_seconds))",
+                                              relativeTo: plex.serverURL
+                                           )?.absoluteURL {
+                                            AsyncImage(url: url) { image in
+                                                image.resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                            } placeholder: {
+                                                Color.white.opacity(0.10)
+                                            }
+                                            .frame(width: isCompact ? 96 : 160,
+                                                   height: isCompact ? 54 : 90)
+                                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                                        }
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(optionLabel(index))
                                                 .font(.system(size: isCompact ? 15 : 23, weight: .semibold))
@@ -711,7 +744,8 @@ struct TVMediaPlayerScreen: View {
             }
             // Avoid resume-offset HLS timeline ambiguity for track switches:
             // load the full-movie stream then seek locally to the saved time.
-            let trackChange = change == "audio" || change == "captions"
+            let trackChange = change == "audio" || change == "captions" ||
+                              change == "long-pause"
             let next = try await PlexPlaybackService.start(
                 serverURL: plex.serverURL.absoluteString, ratingKey: plex.ratingKey,
                 mode: trackChange ? "beginning" : "resume",
@@ -1041,10 +1075,32 @@ struct TVMediaPlayerScreen: View {
     }
     private func playPause() {
         if controlsVisible { scheduleHideControls() }
+        guard !changingTrack, !restoringLongPause else { return }
         if player.rate == 0 {
-            player.play(); isPaused = false
+            let pausedTooLong = pauseBeganAt.map {
+                Date().timeIntervalSince($0) >= 90
+            } ?? false
+            let resumeAt = pausePosition
+            pauseBeganAt = nil
+            pausePosition = nil
+            if !session.isTablo, pausedTooLong, let position = resumeAt {
+                restoringLongPause = true
+                Task {
+                    await replacePlexStream(at: position, audio: audioID,
+                                            captions: subtitleID, change: "long-pause")
+                    restoringLongPause = false
+                }
+            } else {
+                player.play()
+                isPaused = false
+            }
         } else {
-            player.pause(); isPaused = true
+            if let plex = plexSession {
+                pausePosition = currentPlexPosition(plex)
+            }
+            pauseBeganAt = Date()
+            player.pause()
+            isPaused = true
         }
     }
     private func time(_ seconds: Double) -> String {
