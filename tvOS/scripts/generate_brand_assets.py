@@ -29,6 +29,14 @@ def imageset(path,images):
     write(path/"Contents.json",{"images":manifest,"info":INFO})
 
 def iconstack(name,image,size,scales):
+    # The approved source includes baked-in padding around its rounded border.
+    # tvOS adds another parallax/rounded-mask inset. Trim only that outer
+    # padding, then fill the full native 5:3 icon canvas. Keep the artwork,
+    # lettering and black-purple palette unchanged.
+    w,h=image.size
+    image=image.crop((round(w*0.055),round(h*0.065),
+                      round(w*0.945),round(h*0.935))).resize(
+                          (w,h),Image.Resampling.LANCZOS)
     stack=BRAND/(name+".imagestack")
     write(stack/"Contents.json",{
         "layers":[{"filename":"Front.imagestacklayer"},{"filename":"Back.imagestacklayer"}],
