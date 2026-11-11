@@ -275,10 +275,13 @@ struct TVMediaPlayerScreen: View {
                     // The seek bar is ABOVE the three transport controls.
                     VStack(spacing: isCompact ? 10 : 17) {
                         HStack {
-                            Text(time(max(0, elapsed-minimum)))
+                            Text(time(session.isTablo ? max(0, elapsed-minimum) :
+                                      (plexSession.map { currentPlexPosition($0) } ?? elapsed)))
                             Spacer()
                             Text(session.isTablo && maximum-elapsed < 8 ? "LIVE" :
-                                 "-\(time(max(0,maximum-elapsed)))")
+                                 "-\(time(session.isTablo ? max(0,maximum-elapsed) :
+                                   max(0,plexScrubDuration -
+                                       (plexSession.map { currentPlexPosition($0) } ?? elapsed))))")
                         }
                         .font(.system(size: isCompact ? 13 : 18, weight: .medium))
                         .foregroundStyle(.white)
