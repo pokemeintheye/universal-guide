@@ -500,10 +500,19 @@ struct PhoneGuideWebView: UIViewRepresentable {
         const rail=['opensearch','openfilters','opensettings'];
         const i=rail.indexOf(active()?.id);
         if(i>=0){
+          if(command==='up' && i===0){
+            // Search is the top of the permanent rail. From there, Up
+            // reaches the Today control instead of stopping at the edge.
+            focus($('now'));return;
+          }
           if(command==='up'||command==='down'){
             focus($(rail[Math.max(0,Math.min(2,i+(command==='down'?1:-1)))]));
             return;
           }
+          if(command==='right'){guideFocus();return}
+        }
+        if(active()?.id==='now'){
+          if(command==='down'||command==='left'){focus($('opensearch'));return}
           if(command==='right'){guideFocus();return}
         }
         if($('guidedetail')?.contains(active())){
@@ -520,65 +529,72 @@ struct PhoneGuideWebView: UIViewRepresentable {
         // Use the existing web guide's keyboard algorithm for EPG navigation.
         key(directions[command]);
       }
-      // Safari native HLS sometimes starts a Plex join at the correct
-      // requested time, then silently seeks far ahead on its first segments.
-      // Detect only a sudden, unrequested time jump during the first seconds
-      // of a "Join" session. Restore the prior playable position once, and
-      // leave all manual scrubbing, normal playback, and Tablo DVR untouched.
-      let plexStartupSession=null, plexStartupStarted=0;
-      let plexStartupLast=null, plexStartupLastAt=0;
-      let plexStartupSamples=0, plexStartupCorrected=false;
+      // Native Safari HLS sometimes initially plays a Plex Join clip at the
+      // requested offset, then jumps forward again. The previous safeguard
+      // stopped after ONE correction and ignored all jumps after 25 seconds.
+      // Monitor playback continuity for the first 90 seconds instead.
+      let plexJoinSession=null, plexJoinStart=0;
+      let plexJoinLast=null, plexJoinLastWall=0;
+      let plexJoinCorrections=0, plexJoinSuppressUntil=0;
       let lastExplicitSeekAt=0;
+      const markExplicitSeek = () => {lastExplicitSeekAt=Date.now()};
       document.addEventListener('pointerdown',event=>{
-        if(event.target?.closest('#plexseek,#plexback,#plexforward'))
-          lastExplicitSeekAt=Date.now();
+        if(event.target?.closest('#plexseek,#plexback,#plexforward,#plextrackpanel'))
+          markExplicitSeek();
       },true);
-      const plexJoinClock = () => {
+      const plexJoinClock=()=>{
         const video=$('plexvideo');
-        if(!video || !plex() || !player())return;
+        if(!video||!player()||!plex()||!Number.isFinite(video.currentTime))return;
         if(!($('playertitle')?.textContent||'').includes('Join at ~'))return;
         const sid=(typeof playerSession!=='undefined')?playerSession:null;
         if(!sid)return;
-        const now=Date.now(),position=video.currentTime;
-        if(!Number.isFinite(position))return;
-        if(sid!==plexStartupSession){
-          plexStartupSession=sid;
-          plexStartupStarted=now;
-          plexStartupLast=null;
-          plexStartupSamples=0;
-          plexStartupCorrected=false;
+        const wall=Date.now(),at=video.currentTime;
+        if(sid!==plexJoinSession){
+          plexJoinSession=sid;plexJoinStart=wall;
+          plexJoinLast=null;plexJoinLastWall=0;
+          plexJoinCorrections=0;plexJoinSuppressUntil=0;
         }
-        if(now-plexStartupStarted>25000 || plexStartupCorrected)return;
-        if(plexStartupLast!==null && plexStartupSamples>=2 &&
-           now-plexStartupLastAt<3500 &&
-           now-lastExplicitSeekAt>5000 &&
-           position-plexStartupLast>25 &&
-           plexStartupLast<35){
-          const target=plexStartupLast+Math.min(2,(now-plexStartupLastAt)/1000);
-          const ranges=video.seekable;
-          let seekable=false;
-          for(let i=0;i<(ranges?.length||0);i++){
-            if(ranges.start(i)<=target && target<=ranges.end(i)){
-              seekable=true;break;
+        if(wall-plexJoinStart>90000)return;
+        if(plexJoinLast!==null && wall-plexJoinLastWall<4000 &&
+           wall>plexJoinSuppressUntil &&
+           wall-lastExplicitSeekAt>5000 && plexJoinCorrections<3){
+          const elapsed=Math.max(0,(wall-plexJoinLastWall)/1000);
+          const discontinuity=at-plexJoinLast-elapsed;
+          // A normal HLS timeupdate can vary by a second or two; only
+          // treat jumps beyond six seconds as unintended discontinuities.
+          if(discontinuity>6){
+            const expected=plexJoinLast+elapsed;
+            const seekable=video.seekable;
+            let valid=false;
+            for(let i=0;i<(seekable?.length||0);i++){
+              if(expected>=seekable.start(i)+0.1 &&
+                 expected<=seekable.end(i)-0.1){valid=true;break}
             }
-          }
-          if(seekable){
-            video.currentTime=target;
-            plexStartupCorrected=true;
-            console.warn('Universal Guide: corrected unexpected Safari Plex join jump',
-              {from:plexStartupLast,to:position,restored:target});
-          }else{
-            // Avoid an invalid seek that could restart the native HLS stream.
-            console.warn('Universal Guide: Safari join advanced outside buffered range',
-              {from:plexStartupLast,to:position});
-            plexStartupCorrected=true;
+            plexJoinCorrections++;
+            plexJoinSuppressUntil=wall+3500;
+            if(valid){
+              video.currentTime=expected;
+              plexJoinLast=expected;plexJoinLastWall=wall;
+              console.warn('Plex join HLS discontinuity corrected',
+                {from:at,restored:expected,correction:plexJoinCorrections});
+              return;
+            }
+            // Do not seek into data that Safari says is unavailable.
+            // Retain diagnostics so a server-side playlist repair can use
+            // the reported seekable ranges instead of an arbitrary seek.
+            console.warn('Plex join HLS discontinuity outside seekable range',
+              {before:plexJoinLast,after:at,expected,
+               rangeCount:seekable?.length||0});
           }
         }
-        plexStartupLast=position;
-        plexStartupLastAt=now;
-        plexStartupSamples++;
+        plexJoinLast=at;plexJoinLastWall=wall;
       };
-      $('plexvideo')?.addEventListener('timeupdate',plexJoinClock);
+      // The existing Tablo player replaces the HTMLVideoElement when it
+      // switches HLS sources. Capture media events at document level so the
+      // Plex guard still works after returning from Tablo to Plex.
+      document.addEventListener('timeupdate',event=>{
+        if(event.target?.id==='plexvideo')plexJoinClock();
+      },true);
       // Reliable controller targets, without touching the backend or redefining
       // the web HLS playback implementation.
       window.universalGuideGamepad=function(command){
@@ -613,7 +629,7 @@ struct PhoneGuideWebView: UIViewRepresentable {
             return;
           }
           if(command==='left'||command==='right'){
-            if(plex())lastExplicitSeekAt=Date.now();
+            if(plex())markExplicitSeek();
             if(!overlayVisible){
               transportClick(tablo()?(command==='left'?'tablodvrback':'tablodvrforward'):
                 (command==='left'?'plexback':'plexforward'));
