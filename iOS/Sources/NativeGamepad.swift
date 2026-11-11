@@ -18,23 +18,32 @@ import GameController
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
+    // GameController callbacks may arrive off the main thread; SwiftUI
+    // view state must receive every gamepad event on the main run loop.
+    nonisolated private static func emit(_ name: Notification.Name, _ payload: String? = nil) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: name, object: payload)
+        }
+    }
     private func connect() {
         guard let pad = GCController.controllers().compactMap({$0.extendedGamepad}).first else {return}
         pad.dpad.up.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadDirection,object:"up") }}
+            Self.emit(.ugGamepadDirection, "up") }}
         pad.dpad.down.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadDirection,object:"down") }}
+            Self.emit(.ugGamepadDirection, "down") }}
         pad.dpad.left.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadDirection,object:"left") }}
+            Self.emit(.ugGamepadDirection, "left") }}
         pad.dpad.right.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadDirection,object:"right") }}
+            Self.emit(.ugGamepadDirection, "right") }}
         pad.buttonA.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadSelect,object:nil) }}
+            Self.emit(.ugGamepadSelect) }}
         pad.buttonB.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadBack,object:nil) }}
+            Self.emit(.ugGamepadBack) }}
         pad.buttonY.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadPlayPause,object:nil) }}
+            Self.emit(.ugGamepadPlayPause) }}
         pad.leftShoulder.pressedChangedHandler = { _,_,down in if down {
-            NotificationCenter.default.post(name: .ugGamepadDirection,object:"rail") }}
+            Self.emit(.ugGamepadDirection, "rail") }}
+        pad.rightShoulder.pressedChangedHandler = { _,_,down in if down {
+            Self.emit(.ugGamepadDirection, "guide") }}
     }
 }
