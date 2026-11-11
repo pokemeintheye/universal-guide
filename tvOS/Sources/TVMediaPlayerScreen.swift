@@ -585,7 +585,7 @@ struct TVMediaPlayerScreen: View {
             }
             trackMenu = nil
             if chosen != (subtitleID ?? 0) {
-                Task { await replacePlexStream(at: plex.offsetSeconds + elapsed,
+                Task { await replacePlexStream(at: currentPlexPosition(plex),
                                                audio: audioID, captions: chosen,
                                                change: "captions") }
             }
