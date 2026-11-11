@@ -577,7 +577,7 @@ struct TVGuideScreen: View {
         // The choice dialog and native TV filters own their own tvSelection.
         if selectedAction == .plex { return }
         let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
-        if let tvSelection, let index = keys.firstIndex(of: tvSelection) {
+        if let index = keys.firstIndex(of: tvSelection) {
             switch direction {
             case "up": self.tvSelection = keys[max(0,index-1)]
             case "down": self.tvSelection = keys[min(keys.count-1,index+1)]
@@ -586,7 +586,7 @@ struct TVGuideScreen: View {
             }
             return
         }
-        if let tvSelection, ["watch-primary","watch-live","watch-philo"].contains(tvSelection) {
+        if ["watch-primary","watch-live","watch-philo"].contains(tvSelection) {
             switch direction {
             case "up", "left":
                 if tvSelection == "watch-primary" || selected?.1.plex == nil {
