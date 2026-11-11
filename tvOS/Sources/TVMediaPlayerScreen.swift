@@ -147,6 +147,9 @@ struct TVMediaPlayerScreen: View {
     @State private var scrubThumbnailSeconds: Int?
     @State private var scrubThumbnailTask: Task<Void, Never>?
     @State private var scrubThumbnailCache: [Int: UIImage] = [:]
+    @State private var scrubThumbnailLoading = false
+    @State private var scrubLastThumbnailAttempt = Date.distantPast
+    @State private var scrubThumbnailRequestID = 0
     @State private var isPaused = false
     @State private var videoReady = false
     @State private var streamStartedAt = Date()
@@ -273,35 +276,6 @@ struct TVMediaPlayerScreen: View {
                         .font(.system(size: isCompact ? 13 : 18, weight: .medium))
                         .foregroundStyle(.white)
 
-                        if !session.isTablo, let preview = scrubPosition {
-                            HStack(spacing: 12) {
-                                if let thumbnail = scrubThumbnail {
-                                    Image(uiImage: thumbnail)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: isCompact ? 112 : 190,
-                                               height: isCompact ? 63 : 107)
-                                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                                } else if plexMetadata?.preview_available == true {
-                                    RoundedRectangle(cornerRadius: 7)
-                                        .fill(Color.white.opacity(0.12))
-                                        .frame(width: isCompact ? 112 : 190,
-                                               height: isCompact ? 63 : 107)
-                                        .overlay(ProgressView())
-                                }
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(time(preview))
-                                        .font(.system(size: isCompact ? 17 : 28, weight: .bold))
-                                    Text(scrubSpeed == 0 ?
-                                         (scrubNeedsConfirm ? "Press OK to jump here" : "Select a direction") :
-                                         "\(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×")
-                                        .font(.system(size: isCompact ? 11 : 17))
-                                        .foregroundStyle(purple)
-                                }
-                                Spacer()
-                            }
-                            .frame(height: isCompact ? 68 : 112)
-                        }
                         Button {
                             if session.isTablo { seekTo(elapsed + 30) }
                             else { handlePlexScrubOK() }
@@ -309,6 +283,39 @@ struct TVMediaPlayerScreen: View {
                             GeometryReader { geometry in
                                 let usable = max(0, geometry.size.width-24)
                                 ZStack(alignment: .leading) {
+                                    if !session.isTablo, let preview = scrubPosition {
+                                        // The preview card follows the timeline thumb,
+                                        // rather than remaining anchored to the left.
+                                        VStack(spacing: 5) {
+                                            if let thumbnail = scrubThumbnail {
+                                                Image(uiImage: thumbnail)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                                    .frame(width: isCompact ? 145 : 240,
+                                                           height: isCompact ? 82 : 135)
+                                                    .clipped()
+                                            } else {
+                                                RoundedRectangle(cornerRadius: 7)
+                                                    .fill(Color.black.opacity(0.75))
+                                                    .frame(width: isCompact ? 145 : 240,
+                                                           height: isCompact ? 82 : 135)
+                                                    .overlay(Text("Preview").font(.caption))
+                                            }
+                                            Text(time(preview) + (scrubSpeed > 0 ?
+                                                "   \(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×" :
+                                                "   OK to seek"))
+                                                .font(.system(size: isCompact ? 12 : 18, weight: .bold))
+                                                .foregroundStyle(.white)
+                                        }
+                                        .padding(6)
+                                        .background(Color.black.opacity(0.91),
+                                                    in: RoundedRectangle(cornerRadius: 10))
+                                        .position(x: min(max(isCompact ? 85 : 135,
+                                                             geometry.size.width * shownSeekProgress),
+                                                         geometry.size.width-(isCompact ? 85 : 135)),
+                                                  y: -(isCompact ? 61 : 97))
+                                        .allowsHitTesting(false)
+                                    }
                                     Capsule().fill(Color.white.opacity(0.36))
                                         .frame(height: 6)
                                     Capsule().fill(purple.opacity(0.6))
@@ -832,9 +839,11 @@ struct TVMediaPlayerScreen: View {
         let now = Date()
         let delta = min(0.25, max(0, now.timeIntervalSince(scrubLastTick ?? now)))
         scrubLastTick = now
-        // 1× is a 15-second-per-second preview scan; 4× is 60 s/s.
-        // This changes only the highlighted preview cursor, never AVPlayer.
-        let next = min(max(0, position + Double(scrubDirection * scrubSpeed) * 15 * delta),
+        // Scale to title duration: 4× traverses the entire title in ~15 s,
+        // 3× in ~30 s, 2× in ~60 s and 1× in ~120 s.
+        // Only the preview cursor moves; the video keeps playing.
+        let secondsPerSecond = plexScrubDuration / (15.0 * pow(2.0, Double(4-scrubSpeed)))
+        let next = min(max(0, position + Double(scrubDirection) * secondsPerSecond * delta),
                        max(0, plexScrubDuration - 0.5))
         scrubPosition = next
         requestPlexThumbnail()
@@ -886,6 +895,8 @@ struct TVMediaPlayerScreen: View {
         scrubLastTick = nil
         scrubNeedsConfirm = false
         scrubThumbnailTask?.cancel()
+        scrubThumbnailRequestID += 1
+        scrubThumbnailLoading = false
         scrubThumbnail = nil
         scrubThumbnailSeconds = nil
     }
@@ -893,30 +904,41 @@ struct TVMediaPlayerScreen: View {
     private func requestPlexThumbnail() {
         guard let plex = plexSession, let position = scrubPosition,
               plexMetadata?.preview_available == true else { return }
-        let second = max(0, Int(position / 5) * 5)
+        // Limit image requests to one every ~350ms and allow an in-flight
+        // request to finish instead of cancelling it every animation tick.
+        let now = Date()
+        guard !scrubThumbnailLoading,
+              now.timeIntervalSince(scrubLastThumbnailAttempt) >= 0.35 else { return }
+        let second = max(0, Int(position / 10) * 10)
         guard second != scrubThumbnailSeconds else { return }
         scrubThumbnailSeconds = second
+        scrubLastThumbnailAttempt = now
         if let cached = scrubThumbnailCache[second] {
-            scrubThumbnailTask?.cancel()
             scrubThumbnail = cached
             return
         }
-        scrubThumbnailTask?.cancel()
-        // Avoid making one network request per animation tick.
+        scrubThumbnailLoading = true
+        let requestID = scrubThumbnailRequestID
         scrubThumbnailTask = Task {
-            try? await Task.sleep(for: .milliseconds(130))
-            guard !Task.isCancelled,
-                  let url = URL(string: "/api/player/\(plex.id)/preview?at=\(second)",
+            defer { scrubThumbnailLoading = false }
+            guard let url = URL(string: "/api/player/\(plex.id)/preview?at=\(second)",
                                 relativeTo: plex.serverURL)?.absoluteURL else { return }
             do {
-                let (bytes, response) = try await URLSession.shared.data(from: url)
-                guard !Task.isCancelled,
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 5
+                let (bytes, response) = try await URLSession.shared.data(for: request)
+                guard !Task.isCancelled, requestID == scrubThumbnailRequestID,
                       (response as? HTTPURLResponse)?.statusCode == 200,
                       let image = UIImage(data: bytes) else { return }
+                if scrubThumbnailCache.count >= 80 { scrubThumbnailCache.removeAll() }
                 scrubThumbnailCache[second] = image
-                scrubThumbnail = image
+                // Ignore completed requests for distant, stale slider positions.
+                if let current = scrubPosition, abs(current-Double(second)) <=
+                    max(40, plexScrubDuration / 30) {
+                    scrubThumbnail = image
+                }
             } catch {
-                // Missing Plex BIF indexes should never interrupt playback.
+                // Not all Plex movies have generated preview indexes.
             }
         }
     }
