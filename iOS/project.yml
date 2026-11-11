@@ -11,6 +11,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: ../Shared/GuideModels.swift
+      - path: ../tvOS/Sources/TVGuideScreen.swift
+      - path: ../tvOS/Sources/TVMediaPlayerScreen.swift
+      - path: ../tvOS/Sources/PlexPlaybackView.swift
       - path: Assets.xcassets
     info:
       path: Info.plist
