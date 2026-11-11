@@ -676,7 +676,17 @@ struct TVMediaPlayerScreen: View {
                                    captions: Int?, change: String?) async {
         guard let plex = plexSession, !changingTrack else { return }
         changingTrack = true
-        defer { changingTrack = false; scheduleHideControls() }
+        // Creating and preflighting a new transcode can take several seconds.
+        // Hold the current frame so it cannot advance past the exact
+        // position used for the replacement stream.
+        let wasPlaying = player.rate > 0
+        player.pause()
+        var replaced = false
+        defer {
+            changingTrack = false
+            scheduleHideControls()
+            if !replaced && wasPlaying { player.play() }
+        }
         do {
             if change == "audio" {
                 try await PlexPlaybackService.selectTracks(plex, audioID: audio)
@@ -696,6 +706,7 @@ struct TVMediaPlayerScreen: View {
             videoReady = false
             plexPlaybackOrigin = nil
             replacementPlex = next
+            replaced = true
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
             player.play()
             audioID = audio
