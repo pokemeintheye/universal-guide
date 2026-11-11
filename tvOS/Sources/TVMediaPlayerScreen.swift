@@ -160,6 +160,9 @@ struct TVMediaPlayerScreen: View {
     @State private var replacementPlex: PlexPlaybackSession?
     @State private var retiringPlex: PlexPlaybackSession?
     @State private var plexMetadata: PlexPlaybackMetadata?
+    // First playable AVPlayer timestamp for the current Plex transcode.
+    // Its timestamp may be zero OR an absolute HLS media timestamp.
+    @State private var plexPlaybackOrigin: Double?
     @State private var audioID: Int?
     @State private var subtitleID: Int?
     @State private var trackMenu: String?
@@ -319,7 +322,7 @@ struct TVMediaPlayerScreen: View {
                                             }
                                             Text(time(preview) + (scrubSpeed > 0 ?
                                                 "   \(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×" :
-                                                "   OK to seek"))
+                                                ""))
                                                 .font(.system(size: isCompact ? 12 : 18, weight: .bold))
                                                 .foregroundStyle(.white)
                                         }
@@ -392,13 +395,6 @@ struct TVMediaPlayerScreen: View {
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        Text(selectedControl == "seek" && !session.isTablo ?
-                             "Direction: 1×–4× · Opposite: slow down · OK: stop, then seek" :
-                             selectedControl == "seek" ?
-                             "Left / Right to seek · Down for playback controls" :
-                             "Up for timeline · Back to hide controls")
-                            .font(.system(size: isCompact ? 10 : 13))
-                            .foregroundStyle(.white.opacity(0.55))
                     }
                     .padding(.horizontal, isCompact ? 22 : 80)
                     .padding(.bottom, isCompact ? 16 : 36)
@@ -439,6 +435,7 @@ struct TVMediaPlayerScreen: View {
                     }
                 }
             }
+            plexPlaybackOrigin = nil
             let item = AVPlayerItem(url: currentSession.playlist)
             player.replaceCurrentItem(with: item)
             player.play()
@@ -616,17 +613,15 @@ struct TVMediaPlayerScreen: View {
         hideControlsTask?.cancel()
     }
 
-    // AVPlayer's HLS timeline can begin at a nonzero media timestamp
-    // after the Unraid proxy trims the leading Plex transcode segments.
-    // The player's currentTime is NOT guaranteed to be relative to the
-    // requested Plex offset. Normalize it to the seekable range origin.
+    // Plex's transcode offset and AVPlayer's HLS media timestamp use
+    // different coordinate systems. Capture the AVPlayer time when the
+    // new session FIRST becomes playable, then add only the subsequent
+    // change in AVPlayer time to the requested absolute movie offset.
+    // This works whether an HLS manifest begins at 0 or at 3600 seconds.
     private func currentPlexPosition(_ plex: PlexPlaybackSession) -> Double {
         let current = CMTimeGetSeconds(player.currentTime())
-        let seekableStart = player.currentItem?.seekableTimeRanges.first.map {
-            CMTimeGetSeconds($0.timeRangeValue.start)
-        }
-        let origin = seekableStart.flatMap { $0.isFinite ? $0 : nil } ?? 0
-        let relative = current.isFinite ? max(0, current - origin) : 0
+        let relative = current.isFinite && plexPlaybackOrigin != nil ?
+            max(0, current - plexPlaybackOrigin!) : 0
         let length = plexMetadata?.duration_seconds ?? Double.greatestFiniteMagnitude
         return min(max(0, length - 1), plex.offsetSeconds + relative)
     }
@@ -697,6 +692,7 @@ struct TVMediaPlayerScreen: View {
             // frame is actually displayed, not merely until a manifest loads.
             retiringPlex = plex
             videoReady = false
+            plexPlaybackOrigin = nil
             replacementPlex = next
             player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
             player.play()
@@ -1025,7 +1021,13 @@ struct TVMediaPlayerScreen: View {
     private func updateProgress() {
         guard let item = player.currentItem else { return }
         let current = CMTimeGetSeconds(player.currentTime())
-        if current.isFinite { elapsed = current }
+        if current.isFinite {
+            elapsed = current
+            if !session.isTablo, plexPlaybackOrigin == nil, videoReady,
+               player.currentItem?.status == .readyToPlay {
+                plexPlaybackOrigin = current
+            }
+        }
         let ranges = item.seekableTimeRanges
         if let first = ranges.first, let last = ranges.last {
             let low = CMTimeGetSeconds(first.timeRangeValue.start)
@@ -1061,6 +1063,7 @@ struct TVMediaPlayerScreen: View {
         checkedPlayback = false
         recoveredOnce = true
         videoReady = false
+        plexPlaybackOrigin = nil
         streamStartedAt = Date()
         player.replaceCurrentItem(with: AVPlayerItem(url: currentSession.playlist))
         player.play()
@@ -1072,6 +1075,7 @@ struct TVMediaPlayerScreen: View {
             recoveredOnce = true
             // Retry an HLS master that may have been opened before Plex
             // finished generating its first playable media segments.
+            plexPlaybackOrigin = nil
             player.replaceCurrentItem(with: AVPlayerItem(url: currentSession.playlist))
             player.play()
             streamStartedAt = Date()
@@ -1084,6 +1088,7 @@ struct TVMediaPlayerScreen: View {
                 // destroy a known-good Plex playback session.
                 retiringPlex = nil
                 replacementPlex = previous
+                plexPlaybackOrigin = nil
                 player.replaceCurrentItem(with: AVPlayerItem(url: previous.playlistURL))
                 player.play()
                 videoReady = false
