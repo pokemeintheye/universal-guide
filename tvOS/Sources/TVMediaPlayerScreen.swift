@@ -157,11 +157,31 @@ struct TVMediaPlayerScreen: View {
                         }
                         .font(.system(size: 17, weight: .semibold))
                         if maximum > minimum {
-                            Slider(value: $seekProgress, in: 0...1, onEditingChanged: { editing in
-                                isScrubbing = editing
-                                if !editing { seekTo(minimum + seekProgress * (maximum-minimum)) }
-                            })
-                            .tint(purple)
+                            // tvOS has no SwiftUI Slider: a native focusable
+                            // timeline responds to Left/Right 20/30-second seeks.
+                            Button {
+                                seekTo(elapsed + 30)
+                            } label: {
+                                GeometryReader { geometry in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(.white.opacity(0.25))
+                                            .frame(height: 7)
+                                        Capsule().fill(purple)
+                                            .frame(width: max(0,geometry.size.width*seekProgress),
+                                                   height: 7)
+                                        Circle().fill(.white)
+                                            .frame(width: 22,height: 22)
+                                            .overlay(Circle().stroke(
+                                                focused == "seek" ? purple : .clear,
+                                                lineWidth: 4))
+                                            .offset(x: max(0,(geometry.size.width-22)*seekProgress))
+                                    }
+                                    .frame(height: geometry.size.height)
+                                }
+                                .frame(height: 28)
+                                .padding(.horizontal, 9)
+                            }
+                            .buttonStyle(.plain)
                             .focused($focused, equals: "seek")
                         }
                         HStack {
@@ -213,6 +233,10 @@ struct TVMediaPlayerScreen: View {
                 default: reveal()
                 }
             } else {
+                if focused == "seek" {
+                    if direction == .left { skip(-20); return }
+                    if direction == .right { skip(30); return }
+                }
                 let order = ["back", "pause", "forward", "seek", "live", "close"]
                 guard let index = order.firstIndex(of: focused ?? "pause") else {
                     focused = "pause"; return
