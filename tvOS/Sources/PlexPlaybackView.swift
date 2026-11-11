@@ -32,6 +32,10 @@ private struct PlexServerError: Decodable {
     let detail: String?
 }
 
+private struct PlexProxyCapabilities: Decodable {
+    let native_hls_resources: Int
+}
+
 enum PlexPlaybackService {
     static func baseURL(_ address: String) throws -> URL {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,6 +51,31 @@ enum PlexPlaybackService {
     static func start(serverURL: String, ratingKey: Int, mode: String,
                       airingStart: String, airingEnd: String) async throws -> PlexPlaybackSession {
         let base = try baseURL(serverURL)
+        guard let checkURL = URL(string: "/api/player/capabilities",
+                                 relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidServer
+        }
+        var checkRequest = URLRequest(url: checkURL)
+        checkRequest.timeoutInterval = 10
+        checkRequest.cachePolicy = .reloadIgnoringLocalCacheData
+        let capabilities: PlexProxyCapabilities?
+        do {
+            let (body, response) = try await URLSession.shared.data(for: checkRequest)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                capabilities = try? JSONDecoder().decode(PlexProxyCapabilities.self,
+                                                         from: body)
+            } else {
+                capabilities = nil
+            }
+        } catch {
+            capabilities = nil
+        }
+        guard (capabilities?.native_hls_resources ?? 0) >= 2 else {
+            throw PlexPlaybackError.server(
+                "The Universal Guide Docker container on Unraid needs to be " +
+                "updated for native Plex playback. Update the container from " +
+                "ghcr.io/pokemeintheye/universal-guide:latest and try again.")
+        }
         guard let startURL = URL(string: "/api/player/start", relativeTo: base)?.absoluteURL else {
             throw PlexPlaybackError.invalidServer
         }
