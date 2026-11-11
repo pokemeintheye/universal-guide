@@ -65,16 +65,17 @@ struct TVGuideScreen: View {
     private var detailHeight: CGFloat { 300 * uiScale }
 
     private var anchor: Date {
+        let hour = Calendar.current.dateInterval(of: .hour, for: now)?.start ?? now
         let minute = Calendar.current.component(.minute, from: now)
-        return Calendar.current.date(byAdding: .minute, value: -(minute % 30),
-                                     to: Calendar.current.date(bySetting: .second, value: 0, of: now) ?? now) ?? now
+        return Calendar.current.date(byAdding: .minute,
+                                     value: minute >= 30 ? 30 : 0, to: hour) ?? hour
     }
     private var channels: [GuideChannel] {
         store.channels.filter { ch in
             (!favoriteOnly || ch.favorite == true) &&
             (filter == "All" || filter == "In Plex" && ch.programs.contains(where: {$0.plex != nil}) ||
-             filter == "Tablo" && ch.source == "tablo" ||
-             filter == "Philo" && ch.source == "philo") &&
+             filter == "Tablo" && ch.source.lowercased().contains("tablo") ||
+             filter == "Philo" && ch.source.lowercased().contains("philo")) &&
             (searchText.isEmpty ||
              ch.label.localizedCaseInsensitiveContains(searchText) ||
              ch.programs.contains(where: {$0.title.localizedCaseInsensitiveContains(searchText)}))
@@ -121,8 +122,26 @@ struct TVGuideScreen: View {
                         ProgressView("Loading Universal Guide…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        timeline
-                        detailBar
+                        if channels.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.system(size: isCompact ? 24 : 44))
+                                    .foregroundStyle(TVPalette.purple)
+                                Text("No channels match this filter")
+                                    .font(.system(size: isCompact ? 14 : 25, weight: .semibold))
+                                Button("Show All Channels") {
+                                    filter = "All"
+                                    favoriteOnly = false
+                                    searchText = ""
+                                    resetSelection()
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            timeline
+                            detailBar
+                        }
                     }
                 }
             }
@@ -207,6 +226,7 @@ struct TVGuideScreen: View {
             TVGuideFilterPanel(currentFilter: filter, favoritesOnly: favoriteOnly,
                 onFilter: { name in
                     filter = name
+                    favoriteOnly = false
                     resetSelection()
                     showFilters = false
                 },
@@ -573,7 +593,10 @@ struct TVGuideScreen: View {
     }
     private func resetSelection() {
         selectedChannel = 0
-        selectedProgram = channels.first?.programs.firstIndex(where: { $0.isOnNow }) ?? 0
+        selectedProgram = channels.first?.programs.firstIndex(where: { $0.isOnNow }) ??
+                          channels.first?.programs.firstIndex(where: {
+                              ($0.endDate ?? .distantPast) > anchor
+                          }) ?? 0
         let target = "program-\(selectedChannel)-\(selectedProgram)"
         if isCompact { phoneSelection = target }
         else { tvSelection = target }
