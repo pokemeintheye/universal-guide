@@ -33,6 +33,10 @@ struct TVGuideScreen: View {
     @State private var mediaSession: TVMediaSession?
     @State private var playbackError: String?
     @State private var loadingPlayback = false
+    @State private var selectedArtworkURL: URL?
+    @State private var artworkTask: Task<Void, Never>?
+    @State private var artworkCache: [String: URL] = [:]
+    @State private var noArtwork: Set<String> = []
     @FocusState private var focus: String?
     // iOS gamepad input is not part of tvOS's native FocusState engine.
     // Keep a separately-rendered selection so the purple ring always follows
@@ -96,8 +100,9 @@ struct TVGuideScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, isCompact ? 8 : 18)
-            .padding(.vertical, isCompact ? 5 : 12)
+            .padding(.horizontal, isCompact ? 8 : 20)
+            .padding(.vertical, isCompact ? 5 : 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if loadingPlayback {
                 Color.black.opacity(0.55).ignoresSafeArea()
                 ProgressView("Preparing video…")
@@ -137,6 +142,7 @@ struct TVGuideScreen: View {
         }
         .tint(TVPalette.purple)
         .preferredColorScheme(.dark)
+        .modifier(UniversalGuideFullscreenLayout())
         .fullScreenCover(item: $mediaSession) { session in
             TVMediaPlayerScreen(session: session)
         }
@@ -170,7 +176,13 @@ struct TVGuideScreen: View {
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
-        .task { await refreshGuide() }
+        .task { await refreshGuide(); refreshSelectedArtwork() }
+        .onChange(of: selected?.1.id) { _, _ in refreshSelectedArtwork() }
+        .onChange(of: serverURL) { _, _ in
+            artworkCache.removeAll()
+            noArtwork.removeAll()
+            refreshSelectedArtwork()
+        }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
         .onChange(of: focus) { _, next in
             if let next, next.hasPrefix("program-") {
@@ -348,11 +360,7 @@ struct TVGuideScreen: View {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
-                        if channel.source == "philo" { openPhilo(channel,program) }
-                        else if program.plex != nil { openPlexChoice() }
-                        else if channel.source == "tablo" && program.isOnNow {
-                            playTablo()
-                        }
+                        activateGuideProgram(channel, program)
                     } label: {
                         VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                             Text(program.title)
@@ -408,13 +416,28 @@ struct TVGuideScreen: View {
     }
 
     private var detailBar: some View {
-        HStack(spacing: 25) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(LinearGradient(colors: [TVPalette.purple.opacity(0.5), TVPalette.panel],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(Image(systemName: "tv").font(.system(size: 48)).foregroundStyle(.white.opacity(0.5)))
-                .frame(width: isCompact ? 0 : 180, height: isCompact ? 0 : 132)
-                .opacity(isCompact ? 0 : 1)
+        HStack(spacing: isCompact ? 7 : 22) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(red: 0.08, green: 0.10, blue: 0.17))
+                if let selectedArtworkURL {
+                    AsyncImage(url: selectedArtworkURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFit()
+                        } else {
+                            Image(systemName: "tv")
+                                .font(.system(size: isCompact ? 22 : 45))
+                                .foregroundStyle(.white.opacity(0.28))
+                        }
+                    }
+                } else {
+                    Image(systemName: "tv")
+                        .font(.system(size: isCompact ? 22 : 45))
+                        .foregroundStyle(.white.opacity(0.28))
+                }
+            }
+            .frame(width: isCompact ? 64 : 150, height: isCompact ? 90 : 207)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(program.title).font(.system(size: isCompact ? 15 : 25, weight: .bold)).lineLimit(1)
@@ -422,7 +445,7 @@ struct TVGuideScreen: View {
                         .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
                     Text(program.description ?? "Select a program to see viewing options.")
                         .font(.system(size: isCompact ? 10 : 15)).foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
-                        .lineLimit(2)
+                        .lineLimit(isCompact ? 2 : 4)
                     Spacer(minLength: 0)
                     if program.plex != nil {
                         Text("✓ In Plex").font(.caption.bold())
@@ -452,7 +475,7 @@ struct TVGuideScreen: View {
             }
         }
         .padding(isCompact ? 7 : 18)
-        .frame(height: isCompact ? 102 : 158)
+        .frame(height: isCompact ? 112 : 248)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
 
     }
@@ -623,16 +646,24 @@ struct TVGuideScreen: View {
         case "watch-philo":
             if let (channel,program) = selected { openPhilo(channel,program) }
         default:
-            // One A/OK press must do something. Opening the Plex choice
-            // dialog directly avoids a second unhighlighted focus step.
-            if selected?.0.source == "philo", let (channel,program) = selected {
-                openPhilo(channel,program)
-            } else if selected?.1.plex != nil { openPlexChoice() }
-            else if selected?.0.source == "tablo" && selected?.1.isOnNow == true {
-                playTablo()
+            if let (channel,program) = selected {
+                activateGuideProgram(channel,program)
             }
         }
     }
+    private func activateGuideProgram(_ channel: GuideChannel, _ program: GuideProgram) {
+        if program.plex != nil {
+            // Never automatically launch Philo when Plex also matches.
+            // OK moves to the bottom source choices, just like the web guide.
+            if isCompact { phoneSelection = "watch-primary" }
+            else { focus = "watch-primary" }
+        } else if channel.source == "philo" {
+            openPhilo(channel, program)
+        } else if channel.source == "tablo" && program.isOnNow {
+            playTablo()
+        }
+    }
+
     private func openPhilo(_ channel: GuideChannel, _ program: GuideProgram) {
         let source = program.philoLinks?.channel?.url ?? channel.philoChannelURL
         guard let raw = source,
