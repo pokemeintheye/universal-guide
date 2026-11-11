@@ -258,6 +258,58 @@ struct PhoneGuideWebView: UIViewRepresentable {
         height: 100% !important; max-height: 100% !important;
         overflow: auto !important;
       }
+      /* WebKit's synthetic controller focus doesn't always trigger
+         :focus-visible. Mark the actual remote selection explicitly. */
+      html.ug-phone .ug-pad-focus,
+      html.ug-phone :is(button,a,input,summary):focus {
+        outline: 4px solid #52e4ff !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 3px #070d19, 0 0 22px #41d8ffbb !important;
+        position: relative;
+        z-index: 12 !important;
+      }
+      html.ug-phone .guide-top-actions .ug-pad-focus,
+      html.ug-phone .guide-detail-actions .ug-pad-focus,
+      html.ug-phone .guide-popover .ug-pad-focus {
+        background: #38568a !important;
+        border-color: #67e9ff !important;
+        color: white !important;
+      }
+      html.ug-phone .player-backdrop .ug-pad-focus {
+        background: #27496ac0 !important;
+        border-radius: 14px;
+        transform: scale(1.075);
+      }
+      html.ug-phone .player-backdrop .tablo-transport.ug-pad-focus {
+        border-radius: 50% !important;
+        transform: scale(1.1) !important;
+      }
+      /* Text emoji ⏸ draws a solid blue square on iOS. Draw the same
+         clean, outlined transport style as rewind and fast-forward. */
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause) {
+        border-radius: 50% !important;
+        border: 2px solid #ffffffa6 !important;
+        background: #07132535 !important;
+        box-shadow: 0 2px 9px #0007;
+        color: #fff !important;
+        font-size: 0 !important;
+        position: relative;
+      }
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause)[data-pad-state="pause"]::before,
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause)[data-pad-state="pause"]::after {
+        content: ""; position: absolute; display: block;
+        background: #fff; width: 10%; height: 42%; top: 29%;
+        border-radius: 2px;
+      }
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause)[data-pad-state="pause"]::before {left: 36%}
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause)[data-pad-state="pause"]::after {right: 36%}
+      html.ug-phone .player-backdrop :is(#tablodvrpause,#plexpause)[data-pad-state="play"]::before {
+        content: ""; position: absolute; left: 40%; top: 27%;
+        width: 0; height: 0;
+        border-left: 24px solid white;
+        border-top: 17px solid transparent;
+        border-bottom: 17px solid transparent;
+      }
       `;
       document.head.appendChild(compactStyle);
       const panel = $('guidedetail');
@@ -274,18 +326,49 @@ struct PhoneGuideWebView: UIViewRepresentable {
         if(!expanded && typeof remoteGuideFocus === 'function') remoteGuideFocus();
       });
       panel?.appendChild(detailToggle);
+      // Preserve the app's existing pause/play logic and use its aria-label
+      // or glyph to set an icon state. Replace the emoji, not the button.
+      for(const id of ['tablodvrpause','plexpause']){
+        const btn=$(id);
+        if(!btn)continue;
+        const sync=()=>{
+          const value=btn.getAttribute('aria-label') || btn.textContent || '';
+          const state=/^play$|^resume$/i.test(value.trim()) || value.includes('▶')
+            ? 'play' : 'pause';
+          btn.dataset.padState=state;
+          if(btn.textContent)btn.textContent='';
+        };
+        const observer=new MutationObserver(sync);
+        observer.observe(btn,{subtree:true,childList:true,characterData:true,
+          attributes:true,attributeFilter:['aria-label']});
+        sync();
+      }
       const active = () => document.activeElement;
       const shown = node => !!node && !node.disabled &&
         !node.hidden && !node.closest('[hidden]') &&
         node.getClientRects().length > 0 &&
         getComputedStyle(node).visibility !== 'hidden' &&
         getComputedStyle(node).display !== 'none';
+      let lastPadFocus=null;
+      const markFocus=node=>{
+        if(lastPadFocus && lastPadFocus!==node)
+          lastPadFocus.classList.remove('ug-pad-focus');
+        lastPadFocus=node;
+        if(node && shown(node))node.classList.add('ug-pad-focus');
+      };
       const focus = node => {
         if(!shown(node))return false;
         node.focus({preventScroll:true});
+        markFocus(node);
         node.scrollIntoView({block:'nearest',inline:'nearest'});
         return true;
       };
+      // Existing web guide navigation changes focus via .focus() directly.
+      // Track those transitions as well as explicit controller navigation.
+      document.addEventListener('focusin', e=>markFocus(e.target),true);
+      document.addEventListener('focusout', e=>{
+        if(lastPadFocus===e.target && !e.relatedTarget)markFocus(null);
+      },true);
       const click = id => {
         const node=$(id);
         if(!shown(node))return false;
