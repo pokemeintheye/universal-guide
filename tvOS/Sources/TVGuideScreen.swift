@@ -495,7 +495,7 @@ struct TVGuideScreen: View {
                         .foregroundStyle(.white.opacity(0.28))
                 }
             }
-            .frame(width: 185 * uiScale, height: 268 * uiScale)
+            .frame(width: 185 * uiScale, height: 250 * uiScale)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
                 VStack(alignment: .leading, spacing: 6) {
@@ -644,7 +644,7 @@ struct TVGuideScreen: View {
               !loadingPlayback && mediaSession == nil else { return }
         // The choice dialog and native TV filters own their own tvSelection.
         if selectedAction == .plex { return }
-        let keys = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        let keys = ["rail-search", "rail-filter", "rail-settings"]
         if let index = keys.firstIndex(of: tvSelection) {
             switch direction {
             case "up": self.tvSelection = keys[max(0,index-1)]
@@ -752,7 +752,7 @@ struct TVGuideScreen: View {
             phoneSelection = choices[max(0,min(choices.count-1,index+delta))]
             return
         }
-        let rail = ["rail-search", "rail-filter", "rail-settings", "rail-today"]
+        let rail = ["rail-search", "rail-filter", "rail-settings"]
         if let index = rail.firstIndex(of: phoneSelection) {
             switch direction {
             case "up": phoneSelection = rail[max(0,index-1)]
