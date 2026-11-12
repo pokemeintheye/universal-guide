@@ -223,6 +223,18 @@ struct TVGuideScreen: View {
                                         .foregroundStyle(.white.opacity(0.68))
                                         .lineLimit(1)
                                 }
+                                if program.season != nil || program.episode != nil {
+                                    HStack(spacing: 6) {
+                                        if let season = program.season {
+                                            Text("S\(season)")
+                                        }
+                                        if let episode = program.episode {
+                                            Text("E\(episode)")
+                                        }
+                                    }
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.52))
+                                }
                                 Spacer(minLength: 0)
                                 if program.plex != nil {
                                     Text("IN PLEX")
