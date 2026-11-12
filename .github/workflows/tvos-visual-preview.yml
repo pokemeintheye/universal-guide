@@ -151,8 +151,12 @@ jobs:
           if [ "$VISIBLE" != 1 ]; then
             echo "::error::Guide never appeared on TVOut; preserving screenshots and simulator diagnostics."
             xcrun simctl spawn "$SIMULATOR_UDID" log show --last 3m --style compact \
-              --predicate 'process == "UniversalGuideTV" OR eventMessage CONTAINS "co.thejonesfamily.universalguide"' \
+              --predicate 'process == "UniversalGuideTV" OR eventMessage CONTAINS "co.thejonesfamily.universalguide" OR eventMessage CONTAINS "UG_PREVIEW_STAGE" OR eventMessage CONTAINS "watchdog" OR eventMessage CONTAINS "scene-create"' \
               > visual-preview/simulator-app.log 2>&1 || true
+            echo "---- Guide preview lifecycle markers ----"
+            grep -E 'UG_PREVIEW_STAGE|watchdog|scene-create|crash' visual-preview/simulator-app.log | tail -80 || true
+            echo "---- Simulator application process ----"
+            xcrun simctl spawn "$SIMULATOR_UDID" launchctl list | grep -i universalguide || true
             exit 1
           fi
           sips -g pixelWidth -g pixelHeight visual-preview/apple-tv-guide.png
