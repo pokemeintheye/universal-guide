@@ -148,6 +148,46 @@ struct TVGuideScreen: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        if TVVisualPreview.enabled {
+            // Preview-only structural isolation: instantiate TVGuideScreen and
+            // its state, but bypass production modifiers, sheets and timeline.
+            previewIsolatedBody
+        } else {
+            productionBody
+        }
+        #else
+        productionBody
+        #endif
+    }
+
+    #if os(tvOS)
+    private var previewIsolatedBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("UNIVERSAL GUIDE • STRUCTURAL ISOLATION")
+                .font(.system(size: 30, weight: .bold))
+                .frame(height: 75)
+            ForEach(0..<7, id: \.self) { index in
+                HStack(spacing: 24) {
+                    Text("CHANNEL \(index + 1)")
+                        .frame(width: 220, alignment: .leading)
+                    Text("Preview rendering diagnostic")
+                    Spacer()
+                }
+                .font(.system(size: 27))
+                .padding(.horizontal, 30)
+                .frame(height: 120)
+                .background(index.isMultiple(of: 2) ? Color(white: 0.16) : Color(white: 0.21))
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea())
+        .onAppear { NSLog("UG_PREVIEW_STAGE isolated-root-visible") }
+    }
+    #endif
+
+    private var productionBody: some View {
         ZStack {
             (isCompact ? TVPalette.background : Color(red: 0.090, green: 0.103, blue: 0.122)).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
