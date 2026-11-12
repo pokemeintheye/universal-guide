@@ -225,9 +225,26 @@ struct TVGuideScreen: View {
                                         .font(.system(size: 12, weight: .bold))
                                         .foregroundStyle(.yellow)
                                 }
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.28))
-                                    .frame(height: 3)
+                                // The thin indicator shows elapsed airtime only
+                                // for the currently airing fixture; future shows
+                                // retain a quiet, unfilled baseline.
+                                GeometryReader { progressGeometry in
+                                    ZStack(alignment: .leading) {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.22))
+                                        if let start = program.startDate,
+                                           let end = program.endDate,
+                                           start <= now, now < end {
+                                            Rectangle()
+                                                .fill(Color(red: 0.73, green: 0.65, blue: 0.89))
+                                                .frame(width: progressGeometry.size.width *
+                                                    CGFloat(min(1, max(0,
+                                                        now.timeIntervalSince(start) /
+                                                        end.timeIntervalSince(start)))))
+                                        }
+                                    }
+                                }
+                                .frame(height: 3)
                             }
                             .padding(13)
                             .frame(width: max(0, tileWidth - 2), alignment: .leading)
