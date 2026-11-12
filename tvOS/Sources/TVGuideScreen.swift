@@ -180,10 +180,10 @@ struct TVGuideScreen: View {
             HStack(spacing: 0) {
                 Text("CHANNEL")
                     .frame(width: 205, alignment: .leading)
-                ForEach(0..<4, id: \.self) { slot in
+                ForEach(0..<8, id: \.self) { slot in
                     Text(anchor.addingTimeInterval(Double(slot * 1800))
                         .formatted(date: .omitted, time: .shortened))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: 162, alignment: .leading)
                 }
             }
             .font(.system(size: 18, weight: .semibold))
@@ -201,8 +201,14 @@ struct TVGuideScreen: View {
                             .font(.system(size: 25, weight: .semibold))
                     }
                     .frame(width: 205, alignment: .leading)
-                    HStack(spacing: 3) {
-                        ForEach(Array(channel.programs.prefix(3).enumerated()), id: \.element.id) { _, program in
+                    // Use actual program times, not three equal columns: a 90-minute
+                    // program must span three 30-minute ruler slots.
+                    HStack(spacing: 2) {
+                        ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { _, program in
+                            let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
+                            let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
+                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 5.4
+                            if tileWidth > 0 {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(program.title)
                                     .font(.system(size: 22, weight: .semibold))
@@ -224,13 +230,16 @@ struct TVGuideScreen: View {
                                     .frame(height: 3)
                             }
                             .padding(13)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(width: max(0, tileWidth - 2), alignment: .leading)
                             .background(Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22))
+                            }
                         }
                     }
+                    .frame(width: 1296, alignment: .leading)
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 120)
+                .clipped()
                 .background(index.isMultiple(of: 2) ? Color(white: 0.13) : Color(white: 0.16))
             }
             Spacer(minLength: 0)
