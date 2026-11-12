@@ -855,6 +855,7 @@ struct TVGuideScreen: View {
                            height: rowHeight-(isCompact ? 6 : 14))
                     .padding(.trailing, 7)
                     .buttonStyle(TVFocusCard())
+                    .accessibilityIdentifier("guide.program.\(index).\(pi)")
                     .focused($focus, equals: "program-\(index)-\(pi)")
                     .id("program-\(index)-\(pi)")
                 }
