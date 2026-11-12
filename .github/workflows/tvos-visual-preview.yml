@@ -83,6 +83,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p visual-preview
+          # CoreSimulator can report boot complete before TVOut has a usable
+          # surface on hosted macOS runners. Retry screenshot acquisition
+          # instead of failing the entire workflow on the first code-60 timeout.
+          capture_tvout() {
+            local destination="$1"
+            local attempt
+            for attempt in 1 2 3 4; do
+              if xcrun simctl io "$SIMULATOR_UDID" screenshot "$destination"; then
+                return 0
+              fi
+              echo "::warning::TVOut screenshot attempt $attempt failed for $destination; waiting for display surfaces"
+              xcrun simctl list devices | grep -F "$SIMULATOR_UDID" || true
+              sleep 10
+              open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID" || true
+            done
+            echo "::error::TVOut screenshot remained unavailable after four attempts: $destination"
+            xcrun simctl diagnose -h >/dev/null 2>&1 || true
+            return 1
+          }
           xcrun simctl boot "$SIMULATOR_UDID"
           xcrun simctl bootstatus "$SIMULATOR_UDID" -b
           # Open the GUI window so TVOut is actually driven by the simulator,
@@ -92,13 +111,13 @@ jobs:
           APP="tvOS/build/Build/Products/Debug-appletvsimulator/UniversalGuideTV.app"
           test -d "$APP"
           xcrun simctl install "$SIMULATOR_UDID" "$APP"
-          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/before-launch.png
+          capture_tvout visual-preview/before-launch.png
 
           # First establish whether this hosted runner can present ANY scene
           # from our app on TVOut. Probe and guide share bundle and runtime.
           xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview-shell
           sleep 12
-          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/simulator-probe.png
+          capture_tvout visual-preview/simulator-probe.png
           "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
           from PIL import Image, ImageFilter, ImageStat
           im = Image.open("visual-preview/simulator-probe.png").convert("L").resize((480, 270))
@@ -129,7 +148,7 @@ jobs:
           VISIBLE=0
           for attempt in 1 2 3 4 5; do
             sleep 12
-            xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
+            capture_tvout visual-preview/apple-tv-guide.png
             if "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
           from PIL import Image, ImageFilter, ImageStat
           # A transition from tvOS home to its blurred wallpaper used to
