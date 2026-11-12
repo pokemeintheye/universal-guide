@@ -56,7 +56,7 @@ struct TVGuideScreen: View {
     #else
     @State private var viewportHeight: CGFloat = 1080
     private let minutePixels: CGFloat = 7
-    private let stationWidth: CGFloat = 232
+    private let stationWidth: CGFloat = 192
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
     private var rowHeight: CGFloat { (isCompact ? 94 : 120) * uiScale }
@@ -116,7 +116,7 @@ struct TVGuideScreen: View {
 
     var body: some View {
         ZStack {
-            TVPalette.background.ignoresSafeArea()
+            (isCompact ? TVPalette.background : Color(red: 0.090, green: 0.103, blue: 0.122)).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
@@ -389,7 +389,9 @@ struct TVGuideScreen: View {
                         }
                     }
                     .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
-                    .background(Color(red: 0.105, green: 0.11, blue: 0.19))
+                    .background(isCompact ?
+                                Color(red: 0.105, green: 0.11, blue: 0.19) :
+                                Color(red: 0.17, green: 0.19, blue: 0.23))
                     .overlay(alignment: .leading) {
                         Rectangle()
                             .fill(TVPalette.purple)
@@ -417,12 +419,18 @@ struct TVGuideScreen: View {
                             }
                             .padding(.leading, isCompact ? 7 : 12)
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
-                            .background(Color(red: 0.135, green: 0.145, blue: 0.225))
+                            .background(isCompact ?
+                                        Color(red: 0.135, green: 0.145, blue: 0.225) :
+                                        Color(red: 0.19, green: 0.21, blue: 0.25))
                             timelineRow(channel, index: channelIndex)
                         }
                         .frame(height: rowHeight)
-                        .background(channelIndex.isMultiple(of: 2) ?
-                                    TVPalette.background : TVPalette.panel.opacity(0.6))
+                        .background(isCompact ?
+                                    (channelIndex.isMultiple(of: 2) ?
+                                        TVPalette.background : TVPalette.panel.opacity(0.6)) :
+                                    (channelIndex.isMultiple(of: 2) ?
+                                        Color(red: 0.13, green: 0.15, blue: 0.18) :
+                                        Color(red: 0.15, green: 0.17, blue: 0.20)))
                         .id("row-\(channelIndex)")
                     }
                 }
@@ -439,7 +447,9 @@ struct TVGuideScreen: View {
                 followSelectedTime(horizontal)
             }
         }
-        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
+        .background(isCompact ? TVPalette.panel :
+                    Color(red: 0.14, green: 0.16, blue: 0.19),
+                    in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13)
             .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
         .frame(height: timelineHeight, alignment: .top)
