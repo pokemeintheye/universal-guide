@@ -322,26 +322,42 @@ struct TVGuideScreen: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Universal Guide")
-                    .font(.system(size: isCompact ? 17 : 41, weight: .heavy))
-                Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
-                    .font(.system(size: isCompact ? 10 : 22))
+        HStack(spacing: 18) {
+            if isCompact {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Universal Guide")
+                        .font(.system(size: 17, weight: .heavy))
+                    Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(now.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 12, weight: .semibold))
+            } else {
+                Text("Today")
+                    .font(.system(size: 28, weight: .bold))
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(TVPalette.purple)
+                Text(now.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 23, weight: .medium))
                     .foregroundStyle(.secondary)
+                Spacer()
+                Text("UNIVERSAL GUIDE")
+                    .font(.system(size: 15, weight: .semibold))
+                    .tracking(3)
+                    .foregroundStyle(.white.opacity(0.6))
             }
-            Spacer()
-            Text(now.formatted(date: .abbreviated, time: .shortened))
-                .font(.system(size: isCompact ? 12 : 20, weight: .semibold))
-                .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
             if filter != "All" || favoriteOnly {
                 Text([filter != "All" ? filter : "", favoriteOnly ? "Favorites" : ""]
                     .filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.caption.bold()).padding(8)
-                .background(TVPalette.purple.opacity(0.26), in: Capsule())
+                    .font(.caption.bold())
+                    .padding(8)
+                    .background(TVPalette.purple.opacity(0.18), in: Capsule())
             }
         }
-        .frame(height: 60 * uiScale)
+        .frame(height: (isCompact ? 60 : 52) * uiScale)
     }
 
     private var timeline: some View {
