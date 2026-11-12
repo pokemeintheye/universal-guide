@@ -60,10 +60,10 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 232
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
-    private var rowHeight: CGFloat { (isCompact ? 94 : 102) * uiScale }
+    private var rowHeight: CGFloat { (isCompact ? 94 : 98) * uiScale }
     private var timelineHeaderHeight: CGFloat { 38 * uiScale }
     private var timelineHeight: CGFloat { timelineHeaderHeight + 6 * rowHeight }
-    private var detailHeight: CGFloat { (isCompact ? 300 : 325) * uiScale }
+    private var detailHeight: CGFloat { (isCompact ? 300 : 305) * uiScale }
 
     private var anchor: Date {
         let hour = Calendar.current.dateInterval(of: .hour, for: now)?.start ?? now
