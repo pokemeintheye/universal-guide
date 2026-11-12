@@ -319,39 +319,6 @@ struct TVMediaPlayerScreen: View {
                             GeometryReader { geometry in
                                 let usable = max(0, geometry.size.width-24)
                                 ZStack(alignment: .leading) {
-                                    if !session.isTablo, let preview = scrubPosition {
-                                        // The preview card follows the timeline thumb,
-                                        // rather than remaining anchored to the left.
-                                        VStack(spacing: 5) {
-                                            if let thumbnail = scrubThumbnail {
-                                                Image(uiImage: thumbnail)
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                                    .frame(width: isCompact ? 145 : 240,
-                                                           height: isCompact ? 82 : 135)
-                                                    .clipped()
-                                            } else {
-                                                RoundedRectangle(cornerRadius: 7)
-                                                    .fill(Color.black.opacity(0.75))
-                                                    .frame(width: isCompact ? 145 : 240,
-                                                           height: isCompact ? 82 : 135)
-                                                    .overlay(Text("Preview").font(.caption))
-                                            }
-                                            Text(time(preview) + (scrubSpeed > 0 ?
-                                                "   \(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×" :
-                                                ""))
-                                                .font(.system(size: isCompact ? 12 : 18, weight: .bold))
-                                                .foregroundStyle(.white)
-                                        }
-                                        .padding(6)
-                                        .background(Color.black.opacity(0.91),
-                                                    in: RoundedRectangle(cornerRadius: 10))
-                                        .position(x: min(max(isCompact ? 85 : 135,
-                                                             geometry.size.width * shownSeekProgress),
-                                                         geometry.size.width-(isCompact ? 85 : 135)),
-                                                  y: -(isCompact ? 61 : 97))
-                                        .allowsHitTesting(false)
-                                    }
                                     Capsule().fill(Color.white.opacity(0.36))
                                         .frame(height: 6)
                                     Capsule().fill(purple.opacity(0.6))
@@ -369,6 +336,44 @@ struct TVMediaPlayerScreen: View {
                             .frame(height: 32)
                         }
                         .buttonStyle(.plain)
+                        // Render the thumbnail ABOVE the slider's 32-point hit target.
+                        // Putting the preview inside that tiny button caused tvOS to
+                        // clip everything except the bottom edge of the card.
+                        .overlay(alignment: .topLeading) {
+                            if !session.isTablo, let preview = scrubPosition {
+                                GeometryReader { geometry in
+                                    VStack(spacing: 5) {
+                                        if let thumbnail = scrubThumbnail {
+                                            Image(uiImage: thumbnail)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: isCompact ? 145 : 240,
+                                                       height: isCompact ? 82 : 135)
+                                                .clipped()
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 7)
+                                                .fill(Color.black.opacity(0.75))
+                                                .frame(width: isCompact ? 145 : 240,
+                                                       height: isCompact ? 82 : 135)
+                                                .overlay(Text("Preview").font(.caption))
+                                        }
+                                        Text(time(preview) + (scrubSpeed > 0 ?
+                                            "   \(scrubDirection < 0 ? "◀" : "▶") \(scrubSpeed)×" : ""))
+                                            .font(.system(size: isCompact ? 12 : 18, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.91),
+                                                in: RoundedRectangle(cornerRadius: 10))
+                                    .position(x: min(max(isCompact ? 85 : 135,
+                                                         geometry.size.width * shownSeekProgress),
+                                                     geometry.size.width - (isCompact ? 85 : 135)),
+                                              y: -(isCompact ? 48 : 80))
+                                }
+                                .allowsHitTesting(false)
+                            }
+                        }
+                        .zIndex(20)
 
                         ZStack(alignment: .trailing) {
                             // Center the three transport buttons on screen,
