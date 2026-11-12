@@ -182,8 +182,43 @@ struct TVGuideScreen: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
+                            #if os(tvOS)
+                            if TVVisualPreview.enabled {
+                                // Diagnostic-only isolation: render the same seven
+                                // channel rows without timeline tiles, focus targets,
+                                // or the horizontal ScrollView hierarchy.
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text("GUIDE ROW ISOLATION")
+                                        .font(.system(size: 24, weight: .semibold))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .frame(height: timelineHeaderHeight)
+                                    ForEach(visibleChannelRange, id: \.self) { channelIndex in
+                                        let channel = channels[channelIndex]
+                                        HStack {
+                                            Text(channel.number ?? channel.label)
+                                                .frame(width: stationWidth, alignment: .leading)
+                                            Text(channel.label)
+                                            Spacer()
+                                            Text("\(channel.programs.count) programs")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .font(.system(size: 23))
+                                        .padding(.horizontal, 16)
+                                        .frame(height: rowHeight)
+                                        .background(channelIndex.isMultiple(of: 2) ?
+                                                    Color(white: 0.15) : Color(white: 0.20))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .accessibilityIdentifier("preview.row-isolation")
+                            } else {
+                                timeline
+                                    .id("epg-\(filter)-\(favoriteOnly)-\(searchText)")
+                            }
+                            #else
                             timeline
                                 .id("epg-\(filter)-\(favoriteOnly)-\(searchText)")
+                            #endif
                             if isCompact { detailBar }
                         }
                     }
