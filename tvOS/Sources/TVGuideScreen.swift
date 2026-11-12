@@ -59,17 +59,18 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 232
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
-    private var rowHeight: CGFloat { 94 * uiScale }
-    private var timelineHeaderHeight: CGFloat { 38 * uiScale }
-    private var timelineHeight: CGFloat { timelineHeaderHeight + 6 * rowHeight }
+    private var rowHeight: CGFloat { (isCompact ? 94 : 120) * uiScale }
+    private var timelineHeaderHeight: CGFloat { (isCompact ? 38 : 44) * uiScale }
+    private var guideRowCount: Int { isCompact ? 6 : 7 }
+    private var timelineHeight: CGFloat { timelineHeaderHeight + CGFloat(guideRowCount) * rowHeight }
     private var detailHeight: CGFloat { (isCompact ? 300 : 335) * uiScale }
     // Always render the selected row inside the six-row viewport. This
     // avoids SwiftUI's asynchronous 2-axis scrolling losing the cursor
     // during rapid remote presses.
     private var visibleChannelRange: Range<Int> {
         let count = channels.count
-        let window = min(6, count)
-        let start = min(max(0, selectedChannel - 2), max(0, count - window))
+        let window = min(guideRowCount, count)
+        let start = min(max(0, selectedChannel - (isCompact ? 2 : 3)), max(0, count - window))
         return start..<(start + window)
     }
 
@@ -116,10 +117,10 @@ struct TVGuideScreen: View {
     var body: some View {
         ZStack {
             TVPalette.background.ignoresSafeArea()
-            HStack(spacing: isCompact ? 7 : 14) {
+            HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
-                VStack(spacing: isCompact ? 7 : 13) {
+                VStack(spacing: isCompact ? 7 : 6) {
                     header
                     if let error = store.error, store.channels.isEmpty {
                         VStack(spacing: 20) {
@@ -150,13 +151,13 @@ struct TVGuideScreen: View {
                         } else {
                             timeline
                                 .id("epg-\(filter)-\(favoriteOnly)-\(searchText)")
-                            detailBar
+                            if isCompact { detailBar }
                         }
                     }
                 }
             }
-            .padding(.horizontal, isCompact ? 8 : 20)
-            .padding(.vertical, isCompact ? 5 : 14)
+            .padding(.horizontal, isCompact ? 8 : 16)
+            .padding(.vertical, isCompact ? 5 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 GeometryReader { geometry in
@@ -299,8 +300,8 @@ struct TVGuideScreen: View {
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
             Spacer()
         }
-        .padding(10)
-        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 20))
+        .padding(isCompact ? 10 : 7)
+        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func railButton(_ icon: String, name: String, key: String,
@@ -680,7 +681,7 @@ struct TVGuideScreen: View {
         false
         #endif
     }
-    private var railWidth: CGFloat { isCompact ? 48 : 94 }
+    private var railWidth: CGFloat { isCompact ? 48 : 68 }
 
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
