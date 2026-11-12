@@ -78,21 +78,52 @@ jobs:
           print("Selected simulator:", selected[0], file=sys.stderr)
           PY
 
-      - name: Boot simulator and capture guide screenshot
+      - name: Boot simulator and capture visible guide screenshot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p visual-preview
           xcrun simctl boot "$SIMULATOR_UDID"
           xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          # Open the GUI window so TVOut is actually driven by the simulator,
+          # not just a booted headless CoreSimulator device.
+          open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID"
+          sleep 5
           APP="tvOS/build/Build/Products/Debug-appletvsimulator/UniversalGuideTV.app"
           test -d "$APP"
           xcrun simctl install "$SIMULATOR_UDID" "$APP"
+          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/before-launch.png
           xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
           xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview
-          sleep 12
-          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
-          test -s visual-preview/apple-tv-guide.png
+          # GitHub previously marked a wallpaper-only image as success.
+          # Recheck until the captured screen visibly changes from home.
+          VISIBLE=0
+          for attempt in 1 2 3 4 5; do
+            sleep 12
+            xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
+            if "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
+          from PIL import Image, ImageChops, ImageStat
+          before = Image.open("visual-preview/before-launch.png").convert("RGB").resize((320, 180))
+          after = Image.open("visual-preview/apple-tv-guide.png").convert("RGB").resize((320, 180))
+          delta = ImageStat.Stat(ImageChops.difference(before, after)).mean
+          score = sum(delta) / len(delta)
+          print(f"App screenshot change versus simulator home: {score:.2f} / 255")
+          if score < 12:
+              raise SystemExit("Still showing simulator home screen")
+          PY
+            then
+              VISIBLE=1
+              break
+            fi
+            echo "Attempt $attempt: guide not visible; checking again."
+          done
+          if [ "$VISIBLE" != 1 ]; then
+            echo "::error::Guide never appeared on TVOut; preserving screenshots and simulator diagnostics."
+            xcrun simctl spawn "$SIMULATOR_UDID" log show --last 3m --style compact \
+              --predicate 'process == "UniversalGuideTV" OR eventMessage CONTAINS "co.thejonesfamily.universalguide"' \
+              > visual-preview/simulator-app.log 2>&1 || true
+            exit 1
+          fi
           sips -g pixelWidth -g pixelHeight visual-preview/apple-tv-guide.png
 
       - name: Upload screenshot
@@ -111,4 +142,5 @@ jobs:
           name: apple-tv-visual-preview-diagnostics
           path: |
             tvOS/xcodebuild-visual-preview.log
+            visual-preview/simulator-app.log
           if-no-files-found: ignore
