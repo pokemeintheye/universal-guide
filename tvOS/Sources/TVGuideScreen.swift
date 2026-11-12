@@ -53,6 +53,7 @@ struct TVGuideScreen: View {
     private var shouldInstallTVRemoteReceiver: Bool {
         #if os(tvOS)
         return !isCompact && !TVVisualPreview.enabled &&
+            !ProcessInfo.processInfo.arguments.contains("--navigation-test") &&
             selectedAction == nil && !showFilters && !showSearch &&
             !showSettings && mediaSession == nil
         #else
@@ -469,7 +470,7 @@ struct TVGuideScreen: View {
         }
         .task {
             #if os(tvOS)
-            if TVVisualPreview.enabled {
+            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
                 NSLog("UG_PREVIEW_STAGE guide-task-start")
 
                 store.channels = TVVisualPreview.channels()
