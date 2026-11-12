@@ -468,32 +468,112 @@ struct TVGuideScreen: View {
                         choose(index, pi)
                         activateGuideProgram(channel, program)
                     } label: {
-                        VStack(alignment: .leading, spacing: isCompact ? 2 : 7) {
-                            Text(program.title)
-                                .font(.system(size: isCompact ? 11 : 24, weight: .semibold))
-                                .lineLimit(1)
-                                .foregroundStyle(.white)
-                            if program.plex != nil {
-                                Label("IN PLEX", systemImage: "checkmark.circle.fill")
-                                    .font(.system(size: isCompact ? 8 : 14, weight: .bold))
-                                    .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
-                                    .lineLimit(1)
-                            } else if let subtitle = program.subtitle {
-                                Text(subtitle)
-                                    .font(.system(size: isCompact ? 9 : 17))
-                                    .foregroundStyle(.white.opacity(0.77))
-                                    .lineLimit(1)
+                        Group {
+                            if isCompact {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(program.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .lineLimit(1)
+                                    if program.plex != nil {
+                                        Label("IN PLEX", systemImage: "checkmark.circle.fill")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
+                                            .lineLimit(1)
+                                    } else if let subtitle = program.subtitle {
+                                        Text(subtitle)
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(.white.opacity(0.77))
+                                            .lineLimit(1)
+                                    }
+                                }
+                            } else {
+                                // The focused item becomes the details panel.
+                                // Its bounds remain fixed: no focus-driven row
+                                // reflow or jumping while using the TV remote.
+                                HStack(alignment: .center, spacing: 14) {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text(program.title)
+                                            .font(.system(size: selectedFocus == "program-\(index)-\(pi)" ? 27 : 24,
+                                                          weight: .semibold))
+                                            .lineLimit(1)
+                                        if selectedFocus == "program-\(index)-\(pi)" {
+                                            if let subtitle = program.subtitle, !subtitle.isEmpty {
+                                                Text(subtitle)
+                                                    .font(.system(size: 18))
+                                                    .foregroundStyle(.white.opacity(0.84))
+                                                    .lineLimit(1)
+                                            }
+                                            if let time = program.timeRange {
+                                                Text(time)
+                                                    .font(.system(size: 17))
+                                                    .foregroundStyle(.white.opacity(0.78))
+                                                    .lineLimit(1)
+                                            }
+                                        } else if let subtitle = program.subtitle {
+                                            Text(subtitle)
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(.white.opacity(0.8))
+                                                .lineLimit(1)
+                                        }
+                                        if program.plex != nil {
+                                            Label("IN PLEX", systemImage: "checkmark.circle.fill")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.51))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    if selectedFocus == "program-\(index)-\(pi)",
+                                       CGFloat(end-cellStart)*minutePixels > 380,
+                                       let selectedArtworkURL {
+                                        AsyncImage(url: selectedArtworkURL) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().scaledToFill()
+                                            } else {
+                                                Color.white.opacity(0.08)
+                                            }
+                                        }
+                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                }
+                                .padding(.bottom, program.isOnNow ? 10 : 0)
+                                .overlay(alignment: .bottomLeading) {
+                                    if program.isOnNow,
+                                       let startDate = program.startDate,
+                                       let endDate = program.endDate,
+                                       endDate > startDate {
+                                        GeometryReader { geometry in
+                                            let duration = endDate.timeIntervalSince(startDate)
+                                            let progress = max(0, min(1, now.timeIntervalSince(startDate) / duration))
+                                            Capsule()
+                                                .fill(Color.white.opacity(0.16))
+                                                .frame(height: 5)
+                                                .overlay(alignment: .leading) {
+                                                    Capsule()
+                                                        .fill(TVPalette.purple.opacity(0.9))
+                                                        .frame(width: geometry.size.width * progress,
+                                                               height: 5)
+                                                }
+                                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                        }
+                                        .frame(height: 6)
+                                    }
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .padding(.horizontal, isCompact ? 7 : 14)
-                        .background(program.plex != nil ?
-                                    TVPalette.purple.opacity(0.22) :
-                                    TVPalette.cell,
-                                    in: RoundedRectangle(cornerRadius: 9))
-                        .overlay(RoundedRectangle(cornerRadius: 9)
+                        .padding(.horizontal, isCompact ? 7 : 17)
+                        .padding(.vertical, isCompact ? 0 : 10)
+                        .foregroundStyle(.white)
+                        .background(isCompact ?
+                                    (program.plex != nil ? TVPalette.purple.opacity(0.22) : TVPalette.cell) :
+                                    Color(red: 0.23, green: 0.25, blue: 0.30),
+                                    in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
+                        .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    TVPalette.purple.opacity(0.9) : .clear, lineWidth: 2))
+                                    Color.white.opacity(0.9) : Color.white.opacity(0.13),
+                                    lineWidth: selectedFocus == "program-\(index)-\(pi)" ? 2.5 : 1))
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
