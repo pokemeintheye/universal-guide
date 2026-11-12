@@ -1,0 +1,114 @@
+name: Apple TV visual preview screenshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tvos-visual-preview-20261112]
+    paths:
+      - 'tvOS/**'
+      - 'Shared/**'
+      - '.github/workflows/tvos-visual-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-visual-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshot:
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect Xcode and available Apple TV simulators
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list devices available
+          xcrun simctl list runtimes
+
+      - name: Generate app assets and Xcode project
+        shell: bash
+        working-directory: tvOS
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          python3 -m venv "$RUNNER_TEMP/brand-venv"
+          "$RUNNER_TEMP/brand-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/brand-venv/bin/python" scripts/generate_brand_assets.py --optional
+          xcodegen generate
+
+      - name: Build Apple TV simulator app
+        shell: bash
+        working-directory: tvOS
+        run: |
+          set -euo pipefail
+          xcodebuild -project UniversalGuideTV.xcodeproj \
+            -scheme UniversalGuideTV \
+            -configuration Debug \
+            -sdk appletvsimulator \
+            -destination 'generic/platform=tvOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild-visual-preview.log
+
+      - name: Select a 1080p Apple TV simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/simulators.json"
+          python3 - "$RUNNER_TEMP/simulators.json" >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          matches = []
+          for runtime, devices in data.get("devices", {}).items():
+              if "tvOS" not in runtime:
+                  continue
+              for device in devices:
+                  if device.get("isAvailable", True) and "Apple TV" in device.get("name", ""):
+                      matches.append((device["name"], device["udid"]))
+          if not matches:
+              raise SystemExit("No available tvOS simulator; screenshot not created")
+          selected = next(((name, udid) for name, udid in matches
+                           if "1080p" in name), matches[0])
+          print("SIMULATOR_UDID=" + selected[1])
+          print("Selected simulator:", selected[0], file=sys.stderr)
+          PY
+
+      - name: Boot simulator and capture guide screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p visual-preview
+          xcrun simctl boot "$SIMULATOR_UDID"
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          APP="tvOS/build/Build/Products/Debug-appletvsimulator/UniversalGuideTV.app"
+          test -d "$APP"
+          xcrun simctl install "$SIMULATOR_UDID" "$APP"
+          xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
+          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview
+          sleep 12
+          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
+          test -s visual-preview/apple-tv-guide.png
+          sips -g pixelWidth -g pixelHeight visual-preview/apple-tv-guide.png
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-tv-visual-preview
+          path: visual-preview/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build log if the preview fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-tv-visual-preview-diagnostics
+          path: |
+            tvOS/xcodebuild-visual-preview.log
+          if-no-files-found: ignore
