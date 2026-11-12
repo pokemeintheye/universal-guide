@@ -179,11 +179,11 @@ struct TVGuideScreen: View {
             .frame(height: 66)
             HStack(spacing: 0) {
                 Text("CHANNEL")
-                    .frame(width: 205, alignment: .leading)
+                    .frame(width: 180, alignment: .leading)
                 ForEach(0..<8, id: \.self) { slot in
                     Text(anchor.addingTimeInterval(Double(slot * 1800))
                         .formatted(date: .omitted, time: .shortened))
-                        .frame(width: 162, alignment: .leading)
+                        .frame(width: 138, alignment: .leading)
                 }
             }
             .font(.system(size: 18, weight: .semibold))
@@ -200,14 +200,17 @@ struct TVGuideScreen: View {
                         Text(channel.number ?? channel.label)
                             .font(.system(size: 25, weight: .semibold))
                     }
-                    .frame(width: 205, alignment: .leading)
+                    .frame(width: 180, alignment: .leading)
+                    // Keep 30-minute ruler slots (138pt) and program widths (4.6pt/minute)
+                    // on the same scale. The earlier 205+1296pt row exceeded the
+                    // preview viewport and SwiftUI compressed the ruler and tiles.
                     // Use actual program times, not three equal columns: a 90-minute
                     // program must span three 30-minute ruler slots.
                     HStack(spacing: 2) {
                         ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { _, program in
                             let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                             let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
-                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 5.4
+                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 4.6
                             if tileWidth > 0 {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(program.title)
@@ -252,7 +255,7 @@ struct TVGuideScreen: View {
                             }
                         }
                     }
-                    .frame(width: 1296, alignment: .leading)
+                    .frame(width: 1104, alignment: .leading)
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 120)
