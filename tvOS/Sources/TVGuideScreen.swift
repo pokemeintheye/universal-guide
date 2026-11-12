@@ -581,8 +581,20 @@ struct TVGuideScreen: View {
                                         }
                                         .frame(width: 152 * uiScale, height: 88 * uiScale)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else
-                                    #endif
+                                    } else if selectedFocus == "program-\(index)-\(pi)",
+                                       CGFloat(end-cellStart)*minutePixels > 380,
+                                       let selectedArtworkURL {
+                                        AsyncImage(url: selectedArtworkURL) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().scaledToFill()
+                                            } else {
+                                                Color.white.opacity(0.08)
+                                            }
+                                        }
+                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    #else
                                     if selectedFocus == "program-\(index)-\(pi)",
                                        CGFloat(end-cellStart)*minutePixels > 380,
                                        let selectedArtworkURL {
@@ -596,6 +608,7 @@ struct TVGuideScreen: View {
                                         .frame(width: 152 * uiScale, height: 88 * uiScale)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     }
+                                    #endif
                                 }
                                 .padding(.bottom, program.isOnNow ? 10 : 0)
                                 .overlay(alignment: .bottomLeading) {
