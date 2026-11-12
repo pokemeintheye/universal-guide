@@ -172,7 +172,7 @@ struct TVGuideScreen: View {
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
-            if !isCompact && selectedAction == nil && !showFilters &&
+            if !isCompact && !TVVisualPreview.enabled && selectedAction == nil && !showFilters &&
                 !showSearch && !showSettings && mediaSession == nil {
                 UniversalTVGuideRemoteReceiver(
                     onMove: moveTVFocus,
