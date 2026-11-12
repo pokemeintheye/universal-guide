@@ -163,27 +163,86 @@ struct TVGuideScreen: View {
 
     #if os(tvOS)
     private var previewIsolatedBody: some View {
+        // Keep the screenshot scene lightweight while rebuilding the real
+        // seven-row EPG incrementally. These labels are fictional fixtures,
+        // never inferred channel artwork or production metadata.
         VStack(alignment: .leading, spacing: 0) {
-            Text("UNIVERSAL GUIDE • STRUCTURAL ISOLATION")
-                .font(.system(size: 30, weight: .bold))
-                .frame(height: 75)
-            ForEach(0..<7, id: \.self) { index in
-                HStack(spacing: 24) {
-                    Text("CHANNEL \(index + 1)")
-                        .frame(width: 220, alignment: .leading)
-                    Text("Preview rendering diagnostic")
-                    Spacer()
-                }
-                .font(.system(size: 27))
-                .padding(.horizontal, 30)
-                .frame(height: 120)
-                .background(index.isMultiple(of: 2) ? Color(white: 0.16) : Color(white: 0.21))
+            HStack {
+                Text("TODAY")
+                    .font(.system(size: 26, weight: .bold))
+                Spacer()
+                Text("UNIVERSAL GUIDE")
+                    .font(.system(size: 18, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(.white.opacity(0.6))
             }
+            .frame(height: 66)
+            HStack(spacing: 0) {
+                Text("CHANNEL")
+                    .frame(width: 205, alignment: .leading)
+                ForEach(0..<4, id: \.self) { slot in
+                    Text(anchor.addingTimeInterval(Double(slot * 1800))
+                        .formatted(date: .omitted, time: .shortened))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(Color(white: 0.18))
+            ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(channel.network ?? channel.label)
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.84))
+                        Text(channel.number ?? channel.label)
+                            .font(.system(size: 25, weight: .semibold))
+                    }
+                    .frame(width: 205, alignment: .leading)
+                    HStack(spacing: 3) {
+                        ForEach(Array(channel.programs.prefix(3).enumerated()), id: \.element.id) { _, program in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(program.title)
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .lineLimit(1)
+                                if let subtitle = program.subtitle {
+                                    Text(subtitle)
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.white.opacity(0.68))
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                if program.plex != nil {
+                                    Text("IN PLEX")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.yellow)
+                                }
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.28))
+                                    .frame(height: 3)
+                            }
+                            .padding(13)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22))
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 120)
+                .background(index.isMultiple(of: 2) ? Color(white: 0.13) : Color(white: 0.16))
+            }
+            Spacer(minLength: 0)
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea())
-        .onAppear { NSLog("UG_PREVIEW_STAGE isolated-root-visible") }
+        .task {
+            store.channels = TVVisualPreview.channels()
+            NSLog("UG_PREVIEW_STAGE lightweight-epg-loaded channels=%ld", store.channels.count)
+        }
     }
     #endif
 
