@@ -510,12 +510,10 @@ struct TVGuideScreen: View {
                                                     .foregroundStyle(.white.opacity(0.84))
                                                     .lineLimit(1)
                                             }
-                                            if let time = program.timeRange {
-                                                Text(time)
-                                                    .font(.system(size: 17))
-                                                    .foregroundStyle(.white.opacity(0.78))
-                                                    .lineLimit(1)
-                                            }
+                                            Text(program.timeRange)
+                                                .font(.system(size: 17))
+                                                .foregroundStyle(.white.opacity(0.78))
+                                                .lineLimit(1)
                                         } else if let subtitle = program.subtitle {
                                             Text(subtitle)
                                                 .font(.system(size: 16))
