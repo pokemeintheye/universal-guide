@@ -1,6 +1,11 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - tvos-testflight-stable-guide-20261111
+    paths:
+      - '.github/workflows/tvos-testflight.yml'
 permissions:
   contents: read
 concurrency:
