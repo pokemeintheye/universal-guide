@@ -102,14 +102,16 @@ jobs:
             sleep 12
             xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
             if "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
-          from PIL import Image, ImageChops, ImageStat
-          before = Image.open("visual-preview/before-launch.png").convert("RGB").resize((320, 180))
-          after = Image.open("visual-preview/apple-tv-guide.png").convert("RGB").resize((320, 180))
-          delta = ImageStat.Stat(ImageChops.difference(before, after)).mean
-          score = sum(delta) / len(delta)
-          print(f"App screenshot change versus simulator home: {score:.2f} / 255")
-          if score < 12:
-              raise SystemExit("Still showing simulator home screen")
+          from PIL import Image, ImageFilter, ImageStat
+          # A transition from tvOS home to its blurred wallpaper used to
+          # produce a false positive. Verify actual high-frequency UI detail.
+          after = Image.open("visual-preview/apple-tv-guide.png").convert("L").resize((480, 270))
+          edges = after.filter(ImageFilter.FIND_EDGES)
+          edge_mean = ImageStat.Stat(edges).mean[0]
+          edge_spread = ImageStat.Stat(edges).stddev[0]
+          print(f"Visible guide detail: mean edge={edge_mean:.2f}, spread={edge_spread:.2f}")
+          if edge_mean < 5 or edge_spread < 14:
+              raise SystemExit("No visible guide UI; likely tvOS blurred wallpaper")
           PY
             then
               VISIBLE=1
