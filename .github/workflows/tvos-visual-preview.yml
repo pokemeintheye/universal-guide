@@ -93,7 +93,23 @@ jobs:
           test -d "$APP"
           xcrun simctl install "$SIMULATOR_UDID" "$APP"
           xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/before-launch.png
-          xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
+
+          # First establish whether this hosted runner can present ANY scene
+          # from our app on TVOut. Probe and guide share bundle and runtime.
+          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --simulator-probe
+          sleep 12
+          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/simulator-probe.png
+          "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
+          from PIL import Image, ImageFilter, ImageStat
+          im = Image.open("visual-preview/simulator-probe.png").convert("L").resize((480, 270))
+          edges = ImageStat.Stat(im.filter(ImageFilter.FIND_EDGES))
+          print(f"Probe edge mean={edges.mean[0]:.2f}, spread={edges.stddev[0]:.2f}")
+          if edges.mean[0] < 3 or edges.stddev[0] < 9:
+              raise SystemExit("Simulator probe shows wallpaper: TVOut/scene presentation is broken, not guide rendering")
+          PY
+
+          xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide
+          sleep 2
           xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview
           # GitHub previously marked a wallpaper-only image as success.
           # Recheck until the captured screen visibly changes from home.
