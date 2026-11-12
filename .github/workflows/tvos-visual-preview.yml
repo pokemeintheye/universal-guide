@@ -96,16 +96,16 @@ jobs:
 
           # First establish whether this hosted runner can present ANY scene
           # from our app on TVOut. Probe and guide share bundle and runtime.
-          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --simulator-probe
+          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview-shell
           sleep 12
           xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/simulator-probe.png
           "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
           from PIL import Image, ImageFilter, ImageStat
           im = Image.open("visual-preview/simulator-probe.png").convert("L").resize((480, 270))
           edges = ImageStat.Stat(im.filter(ImageFilter.FIND_EDGES))
-          print(f"Probe edge mean={edges.mean[0]:.2f}, spread={edges.stddev[0]:.2f}")
+          print(f"Guide shell edge mean={edges.mean[0]:.2f}, spread={edges.stddev[0]:.2f}")
           if edges.mean[0] < 3 or edges.stddev[0] < 9:
-              raise SystemExit("Simulator probe shows wallpaper: TVOut/scene presentation is broken, not guide rendering")
+              raise SystemExit("Guide shell failed to render: failure occurs before TVGuideScreen construction")
           PY
 
           # The probe rendered correctly, but terminating and relaunching the
