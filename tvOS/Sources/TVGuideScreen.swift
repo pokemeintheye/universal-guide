@@ -297,11 +297,22 @@ struct TVGuideScreen: View {
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
+        .onAppear {
+            #if os(tvOS)
+            if TVVisualPreview.enabled {
+                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
+            }
+            #endif
+        }
         .task {
             #if os(tvOS)
             if TVVisualPreview.enabled {
+                NSLog("UG_PREVIEW_STAGE guide-task-start")
+
                 store.channels = TVVisualPreview.channels()
+                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
                 resetSelection()
+                NSLog("UG_PREVIEW_STAGE selection-reset")
             } else {
                 await refreshGuide()
                 refreshSelectedArtwork()
