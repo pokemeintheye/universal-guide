@@ -10,7 +10,7 @@ on:
       - '.github/workflows/tvos-visual-preview.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: tvos-visual-preview-${{ github.ref }}
@@ -179,6 +179,45 @@ jobs:
             exit 1
           fi
           sips -g pixelWidth -g pixelHeight visual-preview/apple-tv-guide.png
+
+      # Publish the fixture-only screenshot as a regular GitHub file so
+      # automated reviewers can inspect its pixels without downloading a
+      # GitHub Actions binary ZIP (unsupported by the GitHub text connector).
+      # This never touches main, credentials, or real channel data.
+      - name: Publish preview PNG to isolated branch for visual review
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, pathlib, urllib.request, urllib.error
+          path = "docs/tvos-preview/latest.png"
+          png = pathlib.Path("visual-preview/apple-tv-guide.png").read_bytes()
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/contents/{path}"
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                     "Accept": "application/vnd.github+json",
+                     "X-GitHub-Api-Version": "2022-11-28"}
+          sha = None
+          try:
+              req = urllib.request.Request(url + "?ref=" + os.environ["BRANCH"], headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  sha = json.load(response)["sha"]
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+          payload = {"message": "Update tvOS fixture screenshot for visual review",
+                     "content": base64.b64encode(png).decode(),
+                     "branch": os.environ["BRANCH"]}
+          if sha:
+              payload["sha"] = sha
+          req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                       headers={**headers, "Content-Type": "application/json"},
+                                       method="PUT")
+          with urllib.request.urlopen(req) as response:
+              print("Published fixture-only PNG:", json.load(response)["content"]["html_url"])
+          PY
 
       - name: Upload screenshot
         if: always()
