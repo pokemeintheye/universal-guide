@@ -3,13 +3,13 @@ on:
   workflow_dispatch:
   # Test exact half-hour guide ticks, scroll follow, filters and D-pad text entry.
   push:
-    branches: [main]
+    branches: [main, ios-testflight-stable-guide-20261111]
     paths:
       - '.github/workflows/ios-testflight.yml'
 permissions:
   contents: read
 concurrency:
-  group: universal-guide-ios-testflight
+  group: universal-guide-ios-testflight-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   publish:
