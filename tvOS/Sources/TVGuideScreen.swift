@@ -45,7 +45,6 @@ struct TVGuideScreen: View {
     // the Backbone even when UIKit declines to focus SwiftUI buttons.
     @State private var phoneSelection = ""
     @State private var tvSelection = ""
-    @State private var scrollRequestID = 0
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
     @State private var now = Date()
     // A shared 16:9 design canvas scales the guide's vertical proportions
@@ -64,6 +63,15 @@ struct TVGuideScreen: View {
     private var timelineHeaderHeight: CGFloat { 38 * uiScale }
     private var timelineHeight: CGFloat { timelineHeaderHeight + 6 * rowHeight }
     private var detailHeight: CGFloat { (isCompact ? 300 : 305) * uiScale }
+    // Always render the selected row inside the six-row viewport. This
+    // avoids SwiftUI's asynchronous 2-axis scrolling losing the cursor
+    // during rapid remote presses.
+    private var visibleChannelRange: Range<Int> {
+        let count = channels.count
+        let window = min(6, count)
+        let start = min(max(0, selectedChannel - 2), max(0, count - window))
+        return start..<(start + window)
+    }
 
     private var anchor: Date {
         let hour = Calendar.current.dateInterval(of: .hour, for: now)?.start ?? now
@@ -336,41 +344,16 @@ struct TVGuideScreen: View {
     }
 
     private var timeline: some View {
-        ScrollViewReader { vertical in
-            ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0,
-                           pinnedViews: [.sectionHeaders]) {
-                    Section {
-                    ForEach(Array(channels.enumerated()), id: \.element.id) { channelIndex, channel in
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let net = channel.network, !net.isEmpty {
-                                    Text(net.uppercased())
-                                        .font(.system(size: isCompact ? 9 : 16, weight: .bold))
-                                        .foregroundStyle(TVPalette.purple)
-                                }
-                                Text(channel.number ?? channel.label)
-                                    .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
-                                if channel.number != nil && channel.label != channel.number {
-                                    Text(channel.label)
-                                        .font(.system(size: isCompact ? 10 : 18))
-                                        .foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }
-                            .padding(.leading, isCompact ? 7 : 12)
-                            .frame(width: stationWidth, height: rowHeight, alignment: .leading)
-                            .background(Color(red: 0.135, green: 0.145, blue: 0.225))
-                            timelineRow(channel, index: channelIndex)
-                        }
-                        .frame(height: rowHeight)
-                        .background(channelIndex.isMultiple(of: 2) ?
-                                    TVPalette.background : TVPalette.panel.opacity(0.6))
-                        .id("row-\(channelIndex)")
-                    }
-                    } header: {
+        ScrollViewReader { horizontal in
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // The ruler never moves vertically, and only one axis
+                    // (time) scrolls. Channel navigation shifts the visible
+                    // six-row window instead of scheduling scroll animations.
                     HStack(spacing: 0) {
                         Text("CHANNEL")
-                            .font(.system(size: isCompact ? 10 : 17, weight: .bold)).foregroundStyle(.secondary)
+                            .font(.system(size: isCompact ? 10 : 17, weight: .bold))
+                            .foregroundStyle(.secondary)
                             .frame(width: stationWidth, alignment: .leading)
                             .padding(.leading, 13)
                         ForEach(0..<16, id: \.self) { slot in
@@ -390,58 +373,64 @@ struct TVGuideScreen: View {
                             .offset(x: nowTimelineX)
                             .allowsHitTesting(false)
                     }
-                            .zIndex(2)
+                    ForEach(visibleChannelRange, id: \.self) { channelIndex in
+                        let channel = channels[channelIndex]
+                        HStack(spacing: 0) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let net = channel.network, !net.isEmpty {
+                                    Text(net.uppercased())
+                                        .font(.system(size: isCompact ? 9 : 16, weight: .bold))
+                                        .foregroundStyle(TVPalette.purple)
+                                }
+                                Text(channel.number ?? channel.label)
+                                    .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
+                                if channel.number != nil && channel.label != channel.number {
+                                    Text(channel.label)
+                                        .font(.system(size: isCompact ? 10 : 18))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.leading, isCompact ? 7 : 12)
+                            .frame(width: stationWidth, height: rowHeight, alignment: .leading)
+                            .background(Color(red: 0.135, green: 0.145, blue: 0.225))
+                            timelineRow(channel, index: channelIndex)
+                        }
+                        .frame(height: rowHeight)
+                        .background(channelIndex.isMultiple(of: 2) ?
+                                    TVPalette.background : TVPalette.panel.opacity(0.6))
+                        .id("row-\(channelIndex)")
                     }
                 }
-                .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
+                .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
+                       alignment: .leading)
             }
-            // Multiple simultaneous scrollTo calls used to fight each other,
-            // occasionally leaving the outlined selection outside the viewport.
-            // First materialize the selected row, then scroll horizontally to
-            // the program, then settle vertically on the row again.
-            .onChange(of: selectedChannel) { _, _ in
-                followSelectedProgram(vertical)
-            }
+            // Only program selection may scroll the horizontal time axis.
+            // Never issue a vertical scroll: the selected channel is in
+            // visibleChannelRange by construction.
             .onChange(of: selectedProgram) { _, _ in
-                followSelectedProgram(vertical)
+                followSelectedTime(horizontal)
             }
-            .onChange(of: selectedFocus) { _, target in
-                if target?.hasPrefix("program-") == true {
-                    followSelectedProgram(vertical)
-                }
-            }
-            .onAppear {
-                followSelectedProgram(vertical)
+            .onChange(of: selectedChannel) { _, _ in
+                followSelectedTime(horizontal)
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13)
             .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
-        .frame(height: timelineHeight)
+        .frame(height: timelineHeight, alignment: .top)
     }
 
-    private func followSelectedProgram(_ proxy: ScrollViewProxy) {
+    private func followSelectedTime(_ proxy: ScrollViewProxy) {
         guard channels.indices.contains(selectedChannel),
               channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
         let channel = selectedChannel
         let program = selectedProgram
-        let row = "row-\(channel)"
-        let item = "program-\(channel)-\(program)"
-        // Only honor the latest selection; older deferred scrolls must not
-        // drag the guide back to a channel we've already navigated away from.
-        scrollRequestID += 1
-        let request = scrollRequestID
+        // Wait for the six-row window to materialize its new program tile;
+        // there is no secondary vertical scroll to race this request.
         DispatchQueue.main.async {
-            guard scrollRequestID == request else { return }
-            proxy.scrollTo(row, anchor: .center)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) {
-                guard scrollRequestID == request else { return }
-                proxy.scrollTo(item, anchor: .center)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) {
-                    guard scrollRequestID == request else { return }
-                    proxy.scrollTo(row, anchor: .center)
-                }
-            }
+            guard selectedChannel == channel, selectedProgram == program else { return }
+            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
         }
     }
 
