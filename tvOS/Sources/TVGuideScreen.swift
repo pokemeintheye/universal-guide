@@ -1324,18 +1324,21 @@ private struct UniversalPlexChoiceScreen: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, isPhone ? 12 : 19)
                             .foregroundStyle(.white)
-                            .background(selectedIndex == index ? purple.opacity(0.35) :
-                                        Color.white.opacity(0.08),
+                            .background(Color.white.opacity(selectedIndex == index ? 0.11 : 0.06),
                                         in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(selectedIndex == index ? purple : .clear, lineWidth: 4))
+                                .stroke(selectedIndex == index ?
+                                            purple.opacity(0.95) : .clear, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
+                    #if os(tvOS)
+                    .focusEffectDisabled()
+                    #endif
                     .focused($nativeFocus, equals: index)
                 }
             }
-            .padding(32)
-            .frame(width: isPhone ? 330 : 620)
+            .padding(isPhone ? 24 : 36)
+            .frame(width: isPhone ? 330 : 640)
             .background(Color(red: 0.11, green: 0.12, blue: 0.22),
                         in: RoundedRectangle(cornerRadius: 20))
         }
