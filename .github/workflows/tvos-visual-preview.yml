@@ -3,7 +3,7 @@ name: Apple TV visual preview screenshot
 on:
   workflow_dispatch:
   push:
-    branches: [tvos-visual-preview-20261112]
+    branches: [main, tvos-visual-preview-20261112]
     paths:
       - 'tvOS/**'
       - 'Shared/**'
