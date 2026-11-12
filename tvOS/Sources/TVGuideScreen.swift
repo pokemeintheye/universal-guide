@@ -45,6 +45,7 @@ struct TVGuideScreen: View {
     // the Backbone even when UIKit declines to focus SwiftUI buttons.
     @State private var phoneSelection = ""
     @State private var tvSelection = ""
+    @State private var scrollRequestID = 0
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
     @State private var now = Date()
     // A shared 16:9 design canvas scales the guide's vertical proportions
@@ -394,41 +395,54 @@ struct TVGuideScreen: View {
                 }
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels)
             }
-            .onChange(of: selectedChannel) { _, value in
-                guard channels.indices.contains(value) else { return }
-                // Always move the viewport with the selected channel.
-                // Post to the next layout pass so lazily realized rows exist.
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.16)) {
-                        vertical.scrollTo("row-\(value)", anchor: .center)
-                    }
-                }
+            // Multiple simultaneous scrollTo calls used to fight each other,
+            // occasionally leaving the outlined selection outside the viewport.
+            // First materialize the selected row, then scroll horizontally to
+            // the program, then settle vertically on the row again.
+            .onChange(of: selectedChannel) { _, _ in
+                followSelectedProgram(vertical)
             }
-            .onChange(of: selectedProgram) { _, value in
-                let ch = selectedChannel
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.16)) {
-                        vertical.scrollTo("program-\(ch)-\(value)", anchor: .center)
-                    }
-                }
+            .onChange(of: selectedProgram) { _, _ in
+                followSelectedProgram(vertical)
             }
             .onChange(of: selectedFocus) { _, target in
-                guard let target, target.hasPrefix("program-") else { return }
-                let channel = selectedChannel
-                // Materialize the lazily loaded channel row before targeting
-                // its nested horizontally positioned program tile.
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.16)) {
-                        vertical.scrollTo("row-\(channel)", anchor: .center)
-                        vertical.scrollTo(target, anchor: .center)
-                    }
+                if target?.hasPrefix("program-") == true {
+                    followSelectedProgram(vertical)
                 }
+            }
+            .onAppear {
+                followSelectedProgram(vertical)
             }
         }
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13)
             .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
         .frame(height: timelineHeight)
+    }
+
+    private func followSelectedProgram(_ proxy: ScrollViewProxy) {
+        guard channels.indices.contains(selectedChannel),
+              channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
+        let channel = selectedChannel
+        let program = selectedProgram
+        let row = "row-\(channel)"
+        let item = "program-\(channel)-\(program)"
+        // Only honor the latest selection; older deferred scrolls must not
+        // drag the guide back to a channel we've already navigated away from.
+        scrollRequestID += 1
+        let request = scrollRequestID
+        DispatchQueue.main.async {
+            guard scrollRequestID == request else { return }
+            proxy.scrollTo(row, anchor: .center)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) {
+                guard scrollRequestID == request else { return }
+                proxy.scrollTo(item, anchor: .center)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) {
+                    guard scrollRequestID == request else { return }
+                    proxy.scrollTo(row, anchor: .center)
+                }
+            }
+        }
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
