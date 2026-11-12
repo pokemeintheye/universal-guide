@@ -59,10 +59,10 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 232
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
-    private var rowHeight: CGFloat { (isCompact ? 94 : 98) * uiScale }
+    private var rowHeight: CGFloat { 94 * uiScale }
     private var timelineHeaderHeight: CGFloat { 38 * uiScale }
     private var timelineHeight: CGFloat { timelineHeaderHeight + 6 * rowHeight }
-    private var detailHeight: CGFloat { (isCompact ? 300 : 305) * uiScale }
+    private var detailHeight: CGFloat { (isCompact ? 300 : 335) * uiScale }
     // Always render the selected row inside the six-row viewport. This
     // avoids SwiftUI's asynchronous 2-axis scrolling losing the cursor
     // during rapid remote presses.
@@ -326,7 +326,7 @@ struct TVGuideScreen: View {
                 Text("Universal Guide")
                     .font(.system(size: isCompact ? 17 : 41, weight: .heavy))
                 Text("Live TV  ·  Plex  ·  Tablo  ·  Philo")
-                    .font(.system(size: isCompact ? 10 : 19))
+                    .font(.system(size: isCompact ? 10 : 22))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -511,7 +511,7 @@ struct TVGuideScreen: View {
     }
 
     private var detailBar: some View {
-        HStack(spacing: isCompact ? 7 : 22) {
+        HStack(alignment: .top, spacing: isCompact ? 7 : 28) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(red: 0.08, green: 0.10, blue: 0.17))
@@ -531,13 +531,13 @@ struct TVGuideScreen: View {
                         .foregroundStyle(.white.opacity(0.28))
                 }
             }
-            .frame(width: (isCompact ? 185 : 205) * uiScale,
-                   height: (isCompact ? 250 : 270) * uiScale)
+            .frame(width: (isCompact ? 185 : 242) * uiScale,
+                   height: (isCompact ? 250 : 290) * uiScale)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             if let (_, program) = selected {
-                VStack(alignment: .leading, spacing: isCompact ? 5 : 11) {
+                VStack(alignment: .leading, spacing: isCompact ? 5 : 14) {
                     Text(program.title)
-                        .font(.system(size: isCompact ? 13 : 30, weight: .semibold))
+                        .font(.system(size: isCompact ? 13 : 35, weight: .semibold))
                         .lineLimit(1)
                     Text([program.subtitle, program.timeRange]
                          .compactMap { $0 }.joined(separator: " · "))
@@ -545,12 +545,12 @@ struct TVGuideScreen: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Text(program.description ?? "Select a program to see viewing options.")
-                        .font(.system(size: isCompact ? 10 : 18))
+                        .font(.system(size: isCompact ? 10 : 22))
                         .foregroundStyle(Color(red: 0.83, green: 0.82, blue: 0.92))
-                        .lineLimit(isCompact ? 2 : 4)
+                        .lineLimit(isCompact ? 2 : 5)
                     if program.plex != nil {
                         Text("✓ In Plex")
-                            .font(.system(size: isCompact ? 9 : 17, weight: .semibold))
+                            .font(.system(size: isCompact ? 9 : 19, weight: .semibold))
                             .foregroundStyle(Color(red: 1, green: 0.8, blue: 0.44))
                     }
                     Spacer(minLength: 0)
@@ -585,10 +585,10 @@ struct TVGuideScreen: View {
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.system(size: isCompact ? 10 : 20, weight: .semibold))
+            Text(label).font(.system(size: isCompact ? 10 : 22, weight: .semibold))
                 .lineLimit(1)
-                .padding(.horizontal, isCompact ? 11 : 23)
-                .padding(.vertical, isCompact ? 7 : 13)
+                .padding(.horizontal, isCompact ? 11 : 27)
+                .padding(.vertical, isCompact ? 7 : 16)
                 .foregroundStyle(.white)
                 .background(Color(red: 0.22, green: 0.20, blue: 0.31),
                             in: RoundedRectangle(cornerRadius: 11))
