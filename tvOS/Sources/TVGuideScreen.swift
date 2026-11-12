@@ -215,6 +215,13 @@ struct TVGuideScreen: View {
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
                 onNow: { playPlex("join") },
+                onExtra: selected?.0.source == "philo" ? "Open in Philo" : nil,
+                onExtraAction: {
+                    if let (channel, program) = selected {
+                        dismissPlexChoice()
+                        openPhilo(channel, program)
+                    }
+                },
                 onCancel: { dismissPlexChoice() })
         }
         .fullScreenCover(item: $mediaSession) { session in
@@ -840,11 +847,8 @@ struct TVGuideScreen: View {
         case "up", "down":
             let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
             if !channels.indices.contains(nextRow) {
-                if direction == "down" {
-                    if selected?.1.plex != nil { tvSelection = "watch-primary" }
-                    else if selected?.0.source == "tablo" { tvSelection = "watch-live" }
-                    else if selected?.0.source == "philo" { tvSelection = "watch-philo" }
-                }
+                // No bottom action panel on Apple TV: OK on a program
+                // opens its available playback actions.
                 return
             }
             let current = programs[selectedProgram]
@@ -1006,10 +1010,10 @@ struct TVGuideScreen: View {
     }
     private func activateGuideProgram(_ channel: GuideChannel, _ program: GuideProgram) {
         if program.plex != nil {
-            // Never automatically launch Philo when Plex also matches.
-            // OK moves to the bottom source choices, just like the web guide.
+            // The Apple TV guide now places details within each tile.
+            // Keep the full Plex playback choice without a hidden panel.
             if isCompact { phoneSelection = "watch-primary" }
-            else { tvSelection = "watch-primary" }
+            else { openPlexChoice() }
         } else if channel.source == "philo" {
             openPhilo(channel, program)
         } else if channel.source == "tablo" && program.isOnNow {
@@ -1397,6 +1401,8 @@ private struct UniversalPlexChoiceScreen: View {
     let canJoin: Bool
     let onBeginning: () -> Void
     let onNow: () -> Void
+    let onExtra: String?
+    let onExtraAction: () -> Void
     let onCancel: () -> Void
     @FocusState private var nativeFocus: Int?
     @State private var phoneIndex = 0
@@ -1410,8 +1416,11 @@ private struct UniversalPlexChoiceScreen: View {
     }
     private var selectedIndex: Int { isPhone ? phoneIndex : (nativeFocus ?? 0) }
     private var actions: [String] {
-        canJoin ? ["Watch from Beginning", "Watch from Current Point", "Cancel"] :
-                  ["Watch from Beginning", "Cancel"]
+        var items = ["Watch from Beginning"]
+        if canJoin { items.append("Watch from Current Point") }
+        if let onExtra, !isPhone { items.append(onExtra) }
+        items.append("Cancel")
+        return items
     }
     var body: some View {
         ZStack {
@@ -1467,9 +1476,12 @@ private struct UniversalPlexChoiceScreen: View {
         .modifier(UniversalPlexChoiceBack(onCancel: onCancel))
     }
     private func activate(_ index: Int) {
-        if index == 0 { onBeginning() }
-        else if canJoin && index == 1 { onNow() }
-        else { onCancel() }
+        switch actions[index] {
+        case "Watch from Beginning": onBeginning()
+        case "Watch from Current Point": onNow()
+        case "Cancel": onCancel()
+        default: onExtraAction()
+        }
     }
 }
 private struct UniversalPlexChoiceBack: ViewModifier {
