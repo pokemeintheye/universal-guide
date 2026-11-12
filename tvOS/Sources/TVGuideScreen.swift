@@ -32,6 +32,7 @@ struct TVGuideScreen: View {
     @State private var selectedAction: TVWatchAction?
     @State private var mediaSession: TVMediaSession?
     @State private var pendingPlexSession: PlexPlaybackSession?
+    @State private var pendingTabloSession: TVMediaSession?
     @State private var plexChoiceDismissed = true
     @State private var playbackError: String?
     @State private var loadingPlayback = false
@@ -209,17 +210,25 @@ struct TVGuideScreen: View {
             if let pending = pendingPlexSession {
                 pendingPlexSession = nil
                 mediaSession = .plex(pending)
+            } else if let pending = pendingTabloSession {
+                pendingTabloSession = nil
+                mediaSession = pending
             }
         }) {
             UniversalPlexChoiceScreen(title: selected?.1.title ?? "Plex",
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
                 onNow: { playPlex("join") },
-                onExtra: selected?.0.source == "philo" ? "Open in Philo" : nil,
+                onExtra: selected?.0.source == "philo" ? "Open in Philo" :
+                         (selected?.0.source == "tablo" && selected?.1.isOnNow == true ?
+                          "Watch Live on Tablo" : nil),
                 onExtraAction: {
                     if let (channel, program) = selected {
-                        dismissPlexChoice()
-                        openPhilo(channel, program)
+                        if channel.source == "tablo" { playTablo() }
+                        else {
+                            dismissPlexChoice()
+                            openPhilo(channel, program)
+                        }
                     }
                 },
                 onCancel: { dismissPlexChoice() })
@@ -1071,12 +1080,19 @@ struct TVGuideScreen: View {
     }
     private func playTablo() {
         guard let (channel,program) = selected else { return }
+        let choiceWasOpen = selectedAction == .plex
+        if choiceWasOpen { selectedAction = nil }
         loadingPlayback = true
         Task {
             defer { loadingPlayback = false }
             do {
-                mediaSession = try await TVTabloService.start(serverURL: serverURL,
+                let session = try await TVTabloService.start(serverURL: serverURL,
                                                            channel: channel, title: program.title)
+                if !choiceWasOpen || plexChoiceDismissed {
+                    mediaSession = session
+                } else {
+                    pendingTabloSession = session
+                }
             } catch { playbackError = error.localizedDescription }
         }
     }
