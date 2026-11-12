@@ -47,6 +47,38 @@ struct TVGuideScreen: View {
     @State private var phoneSelection = ""
     @State private var tvSelection = ""
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
+
+    // TVVisualPreview is deliberately excluded from the iPhone target.
+    // Keep its availability behind a compile-time guard.
+    private var shouldInstallTVRemoteReceiver: Bool {
+        #if os(tvOS)
+        return !isCompact && !TVVisualPreview.enabled &&
+            selectedAction == nil && !showFilters && !showSearch &&
+            !showSettings && mediaSession == nil
+        #else
+        return false
+        #endif
+    }
+
+    #if os(iOS)
+    private func handlePhoneGamepadDirection(_ event: Notification) {
+        guard mediaSession == nil, selectedAction == nil, !showFilters,
+              !showSettings, !showSearch,
+              let raw = event.object as? String else { return }
+        movePhoneDirection(raw)
+    }
+
+    private func handlePhoneGamepadSelect() {
+        guard mediaSession == nil, selectedAction == nil, !showFilters,
+              !showSettings, !showSearch else { return }
+        activateFocused()
+    }
+
+    private func handlePhoneGamepadBack() {
+        if selectedAction == .plex { dismissPlexChoice() }
+        else if mediaSession == nil { selectPhoneProgram() }
+    }
+    #endif
     @State private var now = Date()
     // A shared 16:9 design canvas scales the guide's vertical proportions
     // on iPhone landscape and Apple TV, including six visible program rows.
@@ -172,8 +204,7 @@ struct TVGuideScreen: View {
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
-            if !isCompact && !TVVisualPreview.enabled && selectedAction == nil && !showFilters &&
-                !showSearch && !showSettings && mediaSession == nil {
+            if shouldInstallTVRemoteReceiver {
                 UniversalTVGuideRemoteReceiver(
                     onMove: moveTVFocus,
                     onSelect: activateFocused,
@@ -309,21 +340,17 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if mediaSession == nil && selectedAction == nil &&
-               !showFilters && !showSettings && !showSearch,
-               let raw = event.object as? String { movePhoneDirection(raw) }
+            handlePhoneGamepadDirection(event)
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if mediaSession == nil && selectedAction == nil &&
-               !showFilters && !showSettings && !showSearch { activateFocused() }
+            handlePhoneGamepadSelect()
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
             #if os(iOS)
-            if selectedAction == .plex { dismissPlexChoice() }
-            else if mediaSession == nil { selectPhoneProgram() }
+            handlePhoneGamepadBack()
             #endif
         }
     }
