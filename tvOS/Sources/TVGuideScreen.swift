@@ -266,11 +266,30 @@ struct TVGuideScreen: View {
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
-        .task { await refreshGuide(); refreshSelectedArtwork() }
+        .task {
+            #if os(tvOS)
+            if TVVisualPreview.enabled {
+                store.channels = TVVisualPreview.channels()
+                resetSelection()
+            } else {
+                await refreshGuide()
+                refreshSelectedArtwork()
+            }
+            #else
+            await refreshGuide()
+            refreshSelectedArtwork()
+            #endif
+        }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             now = Date()
         }
-        .onChange(of: selected?.1.id) { _, _ in refreshSelectedArtwork() }
+        .onChange(of: selected?.1.id) { _, _ in
+            #if os(tvOS)
+            if !TVVisualPreview.enabled { refreshSelectedArtwork() }
+            #else
+            refreshSelectedArtwork()
+            #endif
+        }
         .onChange(of: serverURL) { _, _ in
             artworkCache.removeAll()
             noArtwork.removeAll()
@@ -547,6 +566,35 @@ struct TVGuideScreen: View {
                                         }
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    #if os(tvOS)
+                                    if TVVisualPreview.enabled &&
+                                       selectedFocus == "program-\(index)-\(pi)" &&
+                                       CGFloat(end-cellStart)*minutePixels > 380 {
+                                        ZStack {
+                                            LinearGradient(colors: [
+                                                Color(red: 0.32, green: 0.23, blue: 0.42),
+                                                Color(red: 0.12, green: 0.18, blue: 0.27)
+                                            ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                            Image(systemName: "tv")
+                                                .font(.system(size: 44))
+                                                .foregroundStyle(.white.opacity(0.65))
+                                        }
+                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else if selectedFocus == "program-\(index)-\(pi)",
+                                       CGFloat(end-cellStart)*minutePixels > 380,
+                                       let selectedArtworkURL {
+                                        AsyncImage(url: selectedArtworkURL) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().scaledToFill()
+                                            } else {
+                                                Color.white.opacity(0.08)
+                                            }
+                                        }
+                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    #else
                                     if selectedFocus == "program-\(index)-\(pi)",
                                        CGFloat(end-cellStart)*minutePixels > 380,
                                        let selectedArtworkURL {
@@ -560,6 +608,7 @@ struct TVGuideScreen: View {
                                         .frame(width: 152 * uiScale, height: 88 * uiScale)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     }
+                                    #endif
                                 }
                                 .padding(.bottom, program.isOnNow ? 10 : 0)
                                 .overlay(alignment: .bottomLeading) {
