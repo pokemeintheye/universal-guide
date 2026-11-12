@@ -23,6 +23,19 @@ struct UniversalGuideTVApp: App {
                     }
                     .accessibilityIdentifier("simulator.probe")
                 }
+            } else if ProcessInfo.processInfo.arguments.contains("--visual-preview-shell") {
+                // Diagnostic: test the guide's outer scene without constructing
+                // TVGuideScreen, its state objects, or its complex view tree.
+                ZStack {
+                    Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea()
+                    VStack(spacing: 20) {
+                        Text("GUIDE SHELL DIAGNOSTIC")
+                            .font(.system(size: 48, weight: .bold))
+                        Text("SwiftUI scene is visible before guide initialization")
+                            .font(.system(size: 25))
+                    }
+                    .foregroundStyle(.white)
+                }
             } else {
                 TVGuideScreen()
             }
