@@ -313,7 +313,7 @@ struct TVGuideScreen: View {
                                            let end = program.endDate,
                                            start <= now, now < end {
                                             Rectangle()
-                                                .fill(TVPalette.blue.opacity(0.85))
+                                                .fill(Color(red: 0.98, green: 0.39, blue: 0.68))
                                                 .frame(width: progressGeometry.size.width *
                                                     CGFloat(min(1, max(0,
                                                         now.timeIntervalSince(start) /
@@ -947,7 +947,7 @@ struct TVGuideScreen: View {
                                                 .frame(height: 5)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
-                                                        .fill(TVPalette.blue.opacity(0.9))
+                                                        .fill(isCompact ? TVPalette.blue.opacity(0.9) : Color(red: 0.98, green: 0.39, blue: 0.68))
                                                         .frame(width: geometry.size.width * progress,
                                                                height: 5)
                                                 }
