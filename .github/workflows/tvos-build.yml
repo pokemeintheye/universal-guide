@@ -7,11 +7,6 @@ on:
       - 'tvOS/**'
       - 'Shared/**'
       - '.github/workflows/tvos-build.yml'
-  pull_request:
-    paths:
-      - 'tvOS/**'
-      - 'Shared/**'
-      - '.github/workflows/tvos-build.yml'
   workflow_dispatch:
 permissions:
   contents: read
