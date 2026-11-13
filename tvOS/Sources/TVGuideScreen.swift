@@ -830,7 +830,7 @@ struct TVGuideScreen: View {
         let guideAnchor = anchor
         // Real HStack geometry instead of ZStack .offset: ScrollViewReader
         // can now scroll to the tile's actual horizontal position.
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
                 let start = max(0, (program.startDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
                 let end = min(durationMinutes, (program.endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
