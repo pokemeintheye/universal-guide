@@ -358,9 +358,19 @@ struct TVGuideScreen: View {
             }
             Spacer(minLength: 0)
         }
+        // Reserve the same leading navigation rail used by the production tvOS guide.
+        .padding(.leading, railWidth + 12)
         .padding(.horizontal, 24)
         .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            // Reuse the real sidebar rather than painting preview-only icons.
+            sidebarRail
+                .frame(width: railWidth)
+                .frame(height: timelineHeight)
+                .padding(.leading, 16)
+                .padding(.top, 68)
+        }
         .background(Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea())
         .task {
             store.channels = TVVisualPreview.channels()
