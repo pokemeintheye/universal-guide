@@ -7,12 +7,6 @@ on:
       - 'tvOS/Sources/**'
       - 'Shared/**'
       - '.github/workflows/ios-build.yml'
-  pull_request:
-    paths:
-      - 'iOS/**'
-      - 'tvOS/Sources/**'
-      - 'Shared/**'
-      - '.github/workflows/ios-build.yml'
   workflow_dispatch:
 permissions:
   contents: read
