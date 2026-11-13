@@ -223,7 +223,10 @@ struct TVGuideScreen: View {
             HStack(spacing: 0) {
                 Text("CHANNEL")
                     .frame(width: 180, alignment: .leading)
-                ForEach(0..<3, id: \.self) { slot in
+                // Two half-hour ruler marks fit the one-hour tvOS viewport.
+                // A third 660pt mark expanded the entire preview beyond 1920pt,
+                // pushing the channel column and brand off the left edge.
+                ForEach(0..<2, id: \.self) { slot in
                     Text(anchor.addingTimeInterval(Double(slot * 1800))
                         .formatted(date: .omitted, time: .shortened))
                         .frame(width: 660, alignment: .leading)
