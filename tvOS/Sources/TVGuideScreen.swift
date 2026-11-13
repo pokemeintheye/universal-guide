@@ -235,8 +235,10 @@ struct TVGuideScreen: View {
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(.white.opacity(0.72))
             .padding(.horizontal, 14)
-            .frame(width: 1588, height: 46, alignment: .leading)
-            .clipped()
+            // Keep the ruler as wide as the fixture's time grid. A narrower
+            // frame clipped the third (next half-hour) label while program
+            // tiles continued to the right, leaving an abrupt header edge.
+            .frame(width: 180 + 240 * 18, height: 46, alignment: .leading)
             .background(Color(white: 0.18))
             ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
                 HStack(spacing: 0) {
