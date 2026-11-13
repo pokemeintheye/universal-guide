@@ -1259,7 +1259,8 @@ def start_background_refresh():
                     with db() as c:putmeta(c,"last_philo_attempt",datetime.now(timezone.utc).isoformat())
                     sync_philo()
             except Exception:pass
-            try:refresh_show_artwork()
-            except Exception:pass
+            # Do not prefetch/download guide posters in the background.
+            # Native tvOS guide tiles are text-only. Keep the optional
+            # artwork API and Plex player thumbnails for existing clients.
             time.sleep(60)
     threading.Thread(target=worker,daemon=True).start()
