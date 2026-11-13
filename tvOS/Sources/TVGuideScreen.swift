@@ -690,13 +690,6 @@ struct TVGuideScreen: View {
                     .background(isCompact ?
                                 Color(red: 0.105, green: 0.11, blue: 0.19) :
                                 Color(red: 0.17, green: 0.19, blue: 0.23))
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(TVPalette.blue)
-                            .frame(width: isCompact ? 1.5 : 3)
-                            .offset(x: nowTimelineX)
-                            .allowsHitTesting(false)
-                    }
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
@@ -954,13 +947,6 @@ struct TVGuideScreen: View {
         }
         .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight,
                alignment: .leading)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(TVPalette.blue.opacity(0.95))
-                .frame(width: isCompact ? 1.5 : 3)
-                .offset(x: nowTimelineX - stationWidth)
-                .allowsHitTesting(false)
-        }
         .background(alignment: .leading) {
             HStack(spacing: 0) {
                 ForEach(0..<16, id: \.self) { _ in
