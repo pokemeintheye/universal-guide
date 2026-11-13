@@ -176,9 +176,9 @@ struct TVGuideScreen: View {
     }
 
     #if os(tvOS)
+    #if os(tvOS)
     @MainActor
     private func captureGuideDiagnostic() async {
-        #if os(tvOS)
         // Dismiss Settings before rendering; ImageRenderer captures only our
         // SwiftUI guide, not the system compositor or protected video.
         try? await Task.sleep(for: .milliseconds(500))
@@ -208,8 +208,9 @@ struct TVGuideScreen: View {
         } catch {
             diagnosticCaptureStatus = "Screenshot upload failed: \\(error.localizedDescription)"
         }
-        #endif
     }
+
+    #endif
 
     private var diagnosticStartupBody: some View {
         VStack(spacing: 22) {
@@ -571,8 +572,10 @@ struct TVGuideScreen: View {
                                    value: $serverURL, mode: .server,
                                    onClose: { showSettings = false },
                                    onCapture: {
+                                       #if os(tvOS)
                                        showSettings = false
                                        Task { await captureGuideDiagnostic() }
+                                       #endif
                                    })
         }
         .fullScreenCover(isPresented: $showSearch) {
