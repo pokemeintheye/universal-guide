@@ -26,16 +26,17 @@ def main():
     images=[]
     for idiom,size,scale in specs:
         dim=1024 if idiom=="ios-marketing" else int(size.split("x")[0])*scale
+        # Use the current approved TV artwork as a full-width, square iPhone icon.
+        # Keep the complete lettering visible instead of cropping the 5:3 mark.
         background=Image.new("RGB",(dim,dim),(14,19,32))
-        # Fit original artwork without clipping the existing Universal Guide logo.
-        factor=min((dim*0.94)/source.width,(dim*0.94)/source.height)
+        factor=min(dim/source.width,dim/source.height)
         resized=source.resize((max(1,round(source.width*factor)),
                                max(1,round(source.height*factor))),
                               Image.Resampling.LANCZOS)
         background.paste(resized.convert("RGB"),
                          ((dim-resized.width)//2,(dim-resized.height)//2))
         filename=f"AppIcon-{dim}.png"
-        # The 40/58/60/80/87/120/180/1024 sizes are all distinct for this catalog.
+        # Generate all required iPhone icon sizes from the same approved artwork.
         background.save(ICONSET/filename,format="PNG",optimize=True)
         images.append({"idiom":idiom,"size":size,"scale":f"{scale}x","filename":filename})
     (ICONSET/"Contents.json").write_text(json.dumps({"images":images,"info":INFO},indent=2)+"\n")
