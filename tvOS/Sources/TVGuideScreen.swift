@@ -985,7 +985,8 @@ struct TVGuideScreen: View {
                         .foregroundStyle(.white)
                         .background(isCompact ?
                                     (program.plex != nil ? TVPalette.blue.opacity(0.22) : TVPalette.cell) :
-                                    Color(red: 0.23, green: 0.25, blue: 0.30),
+                                    (selectedFocus == "program-\(index)-\(pi)" ?
+                                        Color(white: 0.27) : Color(white: 0.205)),
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
