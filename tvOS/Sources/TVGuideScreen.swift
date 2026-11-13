@@ -716,7 +716,7 @@ struct TVGuideScreen: View {
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
                             .background(isCompact ?
                                         Color(red: 0.135, green: 0.145, blue: 0.225) :
-                                        Color(red: 0.19, green: 0.21, blue: 0.25))
+                                        tvGuideSurface)
                             timelineRow(channel, index: channelIndex)
                         }
                         .frame(height: rowHeight)
@@ -724,8 +724,7 @@ struct TVGuideScreen: View {
                                     (channelIndex.isMultiple(of: 2) ?
                                         TVPalette.background : TVPalette.panel.opacity(0.6)) :
                                     (channelIndex.isMultiple(of: 2) ?
-                                        Color(red: 0.13, green: 0.15, blue: 0.18) :
-                                        Color(red: 0.15, green: 0.17, blue: 0.20)))
+                                        tvGuideSurface : tvGuideSurface))
                         .id("row-\(channelIndex)")
                     }
                 }
