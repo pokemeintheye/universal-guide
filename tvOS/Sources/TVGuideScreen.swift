@@ -83,6 +83,8 @@ struct TVGuideScreen: View {
     #if os(tvOS)
     // Stage production EPG creation until after the lightweight initial scene appears.
     @State private var diagnosticLoadGuide = false
+    // Coalesce rapid D-pad moves into one horizontal viewport adjustment.
+    @State private var horizontalScrollTask: Task<Void, Never>?
     #endif
     @State private var now = Date()
     @State private var lastMoveWasVertical = false
@@ -803,12 +805,23 @@ struct TVGuideScreen: View {
               channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
         let channel = selectedChannel
         let program = selectedProgram
-        // Wait for the six-row window to materialize its new program tile;
-        // there is no secondary vertical scroll to race this request.
+        #if os(tvOS)
+        // A held D-pad can emit multiple focus changes per frame. Cancel the
+        // previous pending viewport move instead of forcing SwiftUI to lay out
+        // and recenter the long EPG for every intermediate selection.
+        horizontalScrollTask?.cancel()
+        horizontalScrollTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard !Task.isCancelled,
+                  selectedChannel == channel, selectedProgram == program else { return }
+            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+        }
+        #else
         DispatchQueue.main.async {
             guard selectedChannel == channel, selectedProgram == program else { return }
             proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
         }
+        #endif
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
