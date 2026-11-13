@@ -356,6 +356,34 @@ struct TVGuideScreen: View {
                 .clipped()
                 .background(index.isMultiple(of: 2) ? Color(white: 0.13) : Color(white: 0.16))
             }
+            // Preview the production-style bottom action region without artwork.
+            // The user requested text-only guide tiles; no network images or
+            // invented channel artwork should appear in the screenshot fixture.
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("THE MOUNTAIN HOUSE")
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("A New Beginning  ·  7:30 PM – 8:30 PM")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.white.opacity(0.65))
+                }
+                Spacer(minLength: 12)
+                Text("Watch Live")
+                    .font(.system(size: 19, weight: .semibold))
+                    .padding(.horizontal, 30)
+                    .frame(height: 54)
+                    .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+                Text("Watch on Plex")
+                    .font(.system(size: 19, weight: .semibold))
+                    .padding(.horizontal, 30)
+                    .frame(height: 54)
+                    .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 124)
+            .background(Color(white: 0.115))
+            .padding(.top, 8)
             Spacer(minLength: 0)
         }
         // Reserve the same leading navigation rail used by the production tvOS guide.
