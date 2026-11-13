@@ -585,7 +585,7 @@ struct TVGuideScreen: View {
                 NSLog("UG_PREVIEW_STAGE selection-reset")
             } else {
                 await refreshGuide()
-                refreshSelectedArtwork()
+                // tvOS guide tiles are text-only; do not fetch unused artwork.
             }
             #else
             await refreshGuide()
@@ -597,7 +597,7 @@ struct TVGuideScreen: View {
         }
         .onChange(of: selected?.1.id) { _, _ in
             #if os(tvOS)
-            if !TVVisualPreview.enabled { refreshSelectedArtwork() }
+            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
             #else
             refreshSelectedArtwork()
             #endif
@@ -605,7 +605,9 @@ struct TVGuideScreen: View {
         .onChange(of: serverURL) { _, _ in
             artworkCache.removeAll()
             noArtwork.removeAll()
+            #if os(iOS)
             refreshSelectedArtwork()
+            #endif
         }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
         .onChange(of: searchText) { _, _ in resetSelection() }
@@ -918,35 +920,8 @@ struct TVGuideScreen: View {
                                         }
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    #if os(tvOS)
-                                    if TVVisualPreview.enabled &&
-                                       selectedFocus == "program-\(index)-\(pi)" &&
-                                       CGFloat(end-cellStart)*minutePixels > 380 {
-                                        ZStack {
-                                            LinearGradient(colors: [
-                                                Color(red: 0.32, green: 0.23, blue: 0.42),
-                                                Color(red: 0.12, green: 0.18, blue: 0.27)
-                                            ], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            Image(systemName: "tv")
-                                                .font(.system(size: 44))
-                                                .foregroundStyle(.white.opacity(0.65))
-                                        }
-                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else if selectedFocus == "program-\(index)-\(pi)",
-                                       CGFloat(end-cellStart)*minutePixels > 380,
-                                       let selectedArtworkURL {
-                                        AsyncImage(url: selectedArtworkURL) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill()
-                                            } else {
-                                                Color.white.opacity(0.08)
-                                            }
-                                        }
-                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    }
-                                    #else
+                                    #if os(iOS)
+                                    // Keep the existing iPhone artwork treatment.
                                     if selectedFocus == "program-\(index)-\(pi)",
                                        CGFloat(end-cellStart)*minutePixels > 380,
                                        let selectedArtworkURL {
