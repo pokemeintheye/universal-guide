@@ -81,6 +81,8 @@ struct TVGuideScreen: View {
     }
     #endif
     @State private var now = Date()
+    @State private var lastMoveWasVertical = false
+    @State private var navigationTime: Date?
     // A shared 16:9 design canvas scales the guide's vertical proportions
     // on iPhone landscape and Apple TV, including six visible program rows.
     #if os(iOS)
@@ -330,7 +332,7 @@ struct TVGuideScreen: View {
 
     private var productionBody: some View {
         ZStack {
-            (isCompact ? TVPalette.background : Color(red: 0.090, green: 0.103, blue: 0.122)).ignoresSafeArea()
+            (isCompact ? TVPalette.background : tvGuideSurface).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
@@ -590,7 +592,7 @@ struct TVGuideScreen: View {
             Spacer()
         }
         .padding(isCompact ? 10 : 7)
-        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 16))
+        .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func railButton(_ icon: String, name: String, key: String,
@@ -691,7 +693,7 @@ struct TVGuideScreen: View {
                     .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
                     .background(isCompact ?
                                 Color(red: 0.105, green: 0.11, blue: 0.19) :
-                                Color(red: 0.17, green: 0.19, blue: 0.23))
+                                tvGuideSurface)
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
@@ -734,10 +736,7 @@ struct TVGuideScreen: View {
             // Never issue a vertical scroll: the selected channel is in
             // visibleChannelRange by construction.
             .onChange(of: selectedProgram) { _, _ in
-                followSelectedTime(horizontal)
-            }
-            .onChange(of: selectedChannel) { _, _ in
-                followSelectedTime(horizontal)
+                if !lastMoveWasVertical { followSelectedTime(horizontal) }
             }
         }
         .background {
@@ -745,7 +744,7 @@ struct TVGuideScreen: View {
                 RoundedRectangle(cornerRadius: 13).fill(TVPalette.panel)
             } else {
                 // A flat, edge-to-edge tvOS EPG instead of a floating rounded card.
-                Color(red: 0.14, green: 0.16, blue: 0.19)
+                tvGuideSurface
             }
         }
         .overlay {
@@ -1132,6 +1131,7 @@ struct TVGuideScreen: View {
         #endif
     }
     private var railWidth: CGFloat { isCompact ? 48 : 68 }
+    private var tvGuideSurface: Color { Color(white: 0.115) }
 
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
@@ -1180,6 +1180,7 @@ struct TVGuideScreen: View {
             (programs[$0].startDate ?? .distantFuture) <
                 anchor.addingTimeInterval(durationMinutes*60)
         }
+        lastMoveWasVertical = direction == "up" || direction == "down"
         switch direction {
         case "left":
             guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
@@ -1187,10 +1188,12 @@ struct TVGuideScreen: View {
                 return
             }
             selectedProgram = visible[index-1]
+            navigationTime = programs[selectedProgram].startDate?.addingTimeInterval(60)
         case "right":
             guard let index = visible.firstIndex(of: selectedProgram),
                   index+1 < visible.count else { return }
             selectedProgram = visible[index+1]
+            navigationTime = programs[selectedProgram].startDate?.addingTimeInterval(60)
         case "up", "down":
             let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
             if !channels.indices.contains(nextRow) {
@@ -1199,12 +1202,9 @@ struct TVGuideScreen: View {
                 return
             }
             let current = programs[selectedProgram]
-            let targetTime: Date = {
-                if let start=current.startDate, let end=current.endDate {
-                    return start.addingTimeInterval(end.timeIntervalSince(start)/2)
-                }
-                return now
-            }()
+            // Keep the same time column when moving between rows. Using a
+            // movie's midpoint could jump hours ahead and lose the viewport.
+            let targetTime = navigationTime ?? max(now, current.startDate ?? now)
             let candidates = channels[nextRow].programs
             guard !candidates.isEmpty else { return }
             let best = candidates.indices.min {
