@@ -2,7 +2,7 @@ name: Build Apple TV preview
 # Post-incident fresh runner verification; no application code changes.
 on:
   push:
-    branches: [main]
+    branches: [main, tvos-auto-visual-development]
     paths:
       - 'tvOS/**'
       - 'Shared/**'
