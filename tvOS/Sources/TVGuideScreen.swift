@@ -825,15 +825,18 @@ struct TVGuideScreen: View {
     }
 
     private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
+        // Resolve the half-hour anchor once per row. Calendar date arithmetic
+        // inside every program cell used to repeat during each focus update.
+        let guideAnchor = anchor
         // Real HStack geometry instead of ZStack .offset: ScrollViewReader
         // can now scroll to the tile's actual horizontal position.
         HStack(spacing: 0) {
             ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
-                let start = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
-                let end = min(durationMinutes, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
+                let start = max(0, (program.startDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
+                let end = min(durationMinutes, (program.endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
                 let previousEnd = pi > 0 ?
                     max(0, min(durationMinutes,
-                        (channel.programs[pi-1].endDate ?? anchor).timeIntervalSince(anchor) / 60)) : 0
+                        (channel.programs[pi-1].endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)) : 0
                 let cellStart = max(start, previousEnd)
                 if end > cellStart {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
