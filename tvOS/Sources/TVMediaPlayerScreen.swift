@@ -267,6 +267,18 @@ struct TVMediaPlayerScreen: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            #if os(iOS)
+            // Tap the native video surface to reveal the same playback controls
+            // used on Apple TV. Keep the video layer noninteractive and let the
+            // controls above it handle their own taps once visible.
+            .overlay {
+                if !controlsVisible && trackMenu == nil {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { reveal() }
+                }
+            }
+            #endif
 
             if controlsVisible {
                 VStack(spacing: 0) {
