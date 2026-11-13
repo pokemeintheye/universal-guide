@@ -168,13 +168,22 @@ struct TVGuideScreen: View {
         // seven-row EPG incrementally. These labels are fictional fixtures,
         // never inferred channel artwork or production metadata.
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("TODAY")
-                    .font(.system(size: 26, weight: .bold))
+            HStack(spacing: 18) {
+                // Match the production tvOS header rather than displaying
+                // a generic fixture-only title in screenshot reviews.
+                guideBrandMark
+                Text("Today")
+                    .font(.system(size: 28, weight: .bold))
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(TVPalette.blue)
+                Text(now.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.65))
                 Spacer()
                 Text("UNIVERSAL GUIDE")
-                    .font(.system(size: 18, weight: .semibold))
-                    .tracking(2)
+                    .font(.system(size: 15, weight: .semibold))
+                    .tracking(3)
                     .foregroundStyle(.white.opacity(0.6))
             }
             .frame(height: 66)
