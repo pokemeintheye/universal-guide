@@ -14,10 +14,26 @@ INFO={"author":"xcode","version":1}
 def main():
     if not SOURCE.is_file():
         raise SystemExit(f"Missing approved Universal Guide artwork: {SOURCE}")
-    source=Image.open(SOURCE).convert("RGBA")
+    source=Image.open(SOURCE).convert("RGB")
+    # The approved 5:3 TV artwork has a baked-in rounded rectangle.
+    # Isolate ONLY its original white/blue UG mark and arc; extending the
+    # rounded rectangle into a square would create top/bottom seams.
+    pixels=list(source.getdata())
+    alpha=[]
+    for red,green,blue in pixels:
+        peak=max(red,green,blue)
+        is_logo=(blue>red*1.45 and blue>green*1.05) or peak>155
+        alpha.append(round(max(0,min(1,(peak-78)/85))*255) if is_logo else 0)
+    mask=Image.new("L",source.size)
+    mask.putdata(alpha)
+    bounds=mask.getbbox()
+    if bounds is None:
+        raise SystemExit("Approved artwork has no visible UG logo")
+    logo=source.crop(bounds)
+    logo_mask=mask.crop(bounds)
     ICONSET.mkdir(parents=True,exist_ok=True)
     (ROOT/"Assets.xcassets"/"Contents.json").write_text(
-        json.dumps({"info":INFO},indent=2)+"\n")
+        json.dumps({"info":INFO},indent=2)+"\\n")
     specs=[("iphone","20x20",2),("iphone","20x20",3),
            ("iphone","29x29",2),("iphone","29x29",3),
            ("iphone","40x40",2),("iphone","40x40",3),
@@ -26,15 +42,12 @@ def main():
     images=[]
     for idiom,size,scale in specs:
         dim=1024 if idiom=="ios-marketing" else int(size.split("x")[0])*scale
-        # Use the current approved TV artwork as a full-width, square iPhone icon.
-        # Keep the complete lettering visible instead of cropping the 5:3 mark.
-        background=Image.new("RGB",(dim,dim),(14,19,32))
-        factor=min(dim/source.width,dim/source.height)
-        resized=source.resize((max(1,round(source.width*factor)),
-                               max(1,round(source.height*factor))),
-                              Image.Resampling.LANCZOS)
-        background.paste(resized.convert("RGB"),
-                         ((dim-resized.width)//2,(dim-resized.height)//2))
+        background=Image.new("RGB",(dim,dim),(29,32,40))
+        factor=min(dim*0.89/logo.width,dim*0.75/logo.height)
+        dimensions=(max(1,round(logo.width*factor)),max(1,round(logo.height*factor)))
+        resized=logo.resize(dimensions,Image.Resampling.LANCZOS)
+        resized_mask=logo_mask.resize(dimensions,Image.Resampling.LANCZOS)
+        background.paste(resized,((dim-dimensions[0])//2,(dim-dimensions[1])//2),resized_mask)
         filename=f"AppIcon-{dim}.png"
         # Generate all required iPhone icon sizes from the same approved artwork.
         background.save(ICONSET/filename,format="PNG",optimize=True)
