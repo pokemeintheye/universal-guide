@@ -83,6 +83,7 @@ struct TVGuideScreen: View {
     #if os(tvOS)
     // Stage production EPG creation until after the lightweight initial scene appears.
     @State private var diagnosticLoadGuide = false
+    @State private var diagnosticCaptureStatus: String?
     // Coalesce rapid D-pad moves into one horizontal viewport adjustment.
     @State private var horizontalScrollTask: Task<Void, Never>?
     #endif
@@ -175,6 +176,41 @@ struct TVGuideScreen: View {
     }
 
     #if os(tvOS)
+    @MainActor
+    private func captureGuideDiagnostic() async {
+        #if os(tvOS)
+        // Dismiss Settings before rendering; ImageRenderer captures only our
+        // SwiftUI guide, not the system compositor or protected video.
+        try? await Task.sleep(for: .milliseconds(500))
+        guard let base = URL(string: serverURL), ["http", "https"].contains(base.scheme?.lowercased() ?? ""),
+              let url = URL(string: "/api/diagnostics/guide-screenshot", relativeTo: base)?.absoluteURL else {
+            diagnosticCaptureStatus = "Set a valid Unraid server URL in Settings first."
+            return
+        }
+        let renderer = ImageRenderer(content: productionBody
+            .frame(width: 1920, height: 1080))
+        renderer.scale = 1
+        guard let png = renderer.uiImage?.pngData() else {
+            diagnosticCaptureStatus = "Guide image rendering failed."
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 25
+            let (_, response) = try await URLSession.shared.upload(for: request, from: png)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                diagnosticCaptureStatus = "Screenshot upload failed. Update the Unraid Docker backend."
+                return
+            }
+            diagnosticCaptureStatus = "Guide screenshot saved to Unraid diagnostics."
+        } catch {
+            diagnosticCaptureStatus = "Screenshot upload failed: \\(error.localizedDescription)"
+        }
+        #endif
+    }
+
     private var diagnosticStartupBody: some View {
         VStack(spacing: 22) {
             Text("UNIVERSAL GUIDE")
@@ -533,7 +569,11 @@ struct TVGuideScreen: View {
         }) {
             TVGuideRemoteTextPanel(title: "Settings", prompt: "Universal Guide server URL",
                                    value: $serverURL, mode: .server,
-                                   onClose: { showSettings = false })
+                                   onClose: { showSettings = false },
+                                   onCapture: {
+                                       showSettings = false
+                                       Task { await captureGuideDiagnostic() }
+                                   })
         }
         .fullScreenCover(isPresented: $showSearch) {
             TVGuideRemoteTextPanel(title: "Search", prompt: "Search channels or programs",
@@ -555,6 +595,14 @@ struct TVGuideScreen: View {
                 },
                 onClose: { showFilters = false })
         }
+        #if os(tvOS)
+        .alert("Guide Diagnostics", isPresented: Binding(
+            get: { diagnosticCaptureStatus != nil },
+            set: { if !$0 { diagnosticCaptureStatus = nil } }
+        )) {
+            Button("OK") { diagnosticCaptureStatus = nil }
+        } message: { Text(diagnosticCaptureStatus ?? "") }
+        #endif
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
@@ -1629,6 +1677,7 @@ private struct TVGuideRemoteTextPanel: View {
     @Binding var value: String
     let mode: TVGuideTextMode
     let onClose: () -> Void
+    var onCapture: (() -> Void)? = nil
     @State private var selectedKey = 0
     private let columns = 10
     private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
@@ -1641,7 +1690,7 @@ private struct TVGuideRemoteTextPanel: View {
     }
     private var keys: [String] {
         let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/._-").map { String($0) }
-        return letters + ["SPACE", "DELETE", "CLEAR", "DONE", "CANCEL"]
+        return letters + ["SPACE", "DELETE", "CLEAR", "DONE", "CANCEL"] + (mode == .server && !compact ? ["CAPTURE"] : [])
     }
 
     var body: some View {
@@ -1674,7 +1723,8 @@ private struct TVGuideRemoteTextPanel: View {
                             Text(key == "SPACE" ? "␣" :
                                  key == "DELETE" ? "⌫" :
                                  key == "CLEAR" ? "CLR" :
-                                 key == "CANCEL" ? "ESC" : key)
+                                 key == "CANCEL" ? "ESC" :
+                                 key == "CAPTURE" ? "PHOTO" : key)
                                 .font(.system(size: compact ? 12 : 24,
                                               weight: .semibold))
                                 .minimumScaleFactor(0.65)
@@ -1754,6 +1804,7 @@ private struct TVGuideRemoteTextPanel: View {
         case "DELETE": if !value.isEmpty { value.removeLast() }
         case "CLEAR": value = ""
         case "DONE", "CANCEL": onClose()
+        case "CAPTURE": onCapture?()
         default: value += mode == .server ? keys[index].lowercased() : keys[index]
         }
     }
