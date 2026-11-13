@@ -1,7 +1,7 @@
 name: Build iPhone Backbone preview
 on:
   push:
-    branches: ['**', '!tvos-auto-visual-development']
+    branches: ['**']
     paths:
       - 'iOS/**'
       - 'tvOS/Sources/**'
@@ -13,9 +13,6 @@ permissions:
   contents: read
 jobs:
   build:
-    # Apple TV-only visual development: skip iPhone CI for this PR branch.
-    # Keep normal iPhone builds for main and other pull requests.
-    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'tvos-auto-visual-development' }}
     runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
