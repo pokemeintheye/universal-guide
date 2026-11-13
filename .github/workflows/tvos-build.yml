@@ -2,12 +2,13 @@ name: Build Apple TV preview
 # Post-incident fresh runner verification; no application code changes.
 on:
   push:
-    branches: [main, tvos-auto-visual-development]
+    branches: ['**']
     paths:
       - 'tvOS/**'
       - 'Shared/**'
       - '.github/workflows/tvos-build.yml'
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
