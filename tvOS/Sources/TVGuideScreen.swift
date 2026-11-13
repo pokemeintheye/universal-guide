@@ -235,10 +235,12 @@ struct TVGuideScreen: View {
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(.white.opacity(0.72))
             .padding(.horizontal, 14)
-            // Keep the ruler as wide as the fixture's time grid. A narrower
-            // frame clipped the third (next half-hour) label while program
-            // tiles continued to the right, leaving an abrupt header edge.
-            .frame(width: 180 + 240 * 18, height: 46, alignment: .leading)
+            // Match the ruler's outer width to the 1408-point visible fixture grid.
+            // A 240-minute ruler (4320 points) previously expanded the entire
+            // VStack beyond TVOut and centered most rows off the left edge.
+            // The third half-hour marker still fits inside the visible ruler.
+            .frame(width: 180 + 1408, height: 46, alignment: .leading)
+            .clipped()
             .background(Color(white: 0.18))
             ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
                 HStack(spacing: 0) {
