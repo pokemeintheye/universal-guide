@@ -33,7 +33,7 @@ def main():
     logo_mask=mask.crop(bounds)
     ICONSET.mkdir(parents=True,exist_ok=True)
     (ROOT/"Assets.xcassets"/"Contents.json").write_text(
-        json.dumps({"info":INFO},indent=2)+"\\n")
+        json.dumps({"info":INFO},indent=2)+"\n")
     specs=[("iphone","20x20",2),("iphone","20x20",3),
            ("iphone","29x29",2),("iphone","29x29",3),
            ("iphone","40x40",2),("iphone","40x40",3),
