@@ -1004,6 +1004,22 @@ struct TVGuideScreen: View {
         .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight,
                alignment: .leading)
         .background(alignment: .leading) {
+            #if os(tvOS)
+            // Draw the static half-hour grid in one pass rather than creating
+            // 16 SwiftUI Rectangle views per row on every focus update.
+            Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+                let spacing = minutePixels * 30
+                guard spacing > 0 else { return }
+                for slot in 0..<16 {
+                    let x = CGFloat(slot) * spacing
+                    guard x < size.width else { break }
+                    context.fill(
+                        Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                        with: .color(.white.opacity(0.075))
+                    )
+                }
+            }
+            #else
             HStack(spacing: 0) {
                 ForEach(0..<16, id: \.self) { _ in
                     Rectangle().fill(.white.opacity(0.075))
@@ -1011,6 +1027,7 @@ struct TVGuideScreen: View {
                         .frame(width: minutePixels*30, alignment: .leading)
                 }
             }
+            #endif
         }
         .clipped()
     }
