@@ -208,7 +208,7 @@ struct TVGuideScreen: View {
                     // Use actual program times, not three equal columns: a 90-minute
                     // program must span three 30-minute ruler slots.
                     HStack(spacing: 2) {
-                        ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { _, program in
+                        ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { programIndex, program in
                             let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                             let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
                             let tileWidth = CGFloat(max(0, endMinute - startMinute)) * (176.0 / 30.0)
@@ -264,7 +264,20 @@ struct TVGuideScreen: View {
                             }
                             .padding(13)
                             .frame(width: max(0, tileWidth - 2), alignment: .leading)
-                            .background(Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22))
+                            .background(
+                                index == 1 && programIndex == 0
+                                    ? Color(red: 0.27, green: 0.29, blue: 0.34)
+                                    : Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22)
+                            )
+                            // A single selected program in the screenshot fixture
+                            // demonstrates the subtle tvOS focus treatment. This is
+                            // preview-only; production focus/navigation is unchanged.
+                            .overlay {
+                                if index == 1 && programIndex == 0 {
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .strokeBorder(Color.white.opacity(0.86), lineWidth: 2)
+                                }
+                            }
                             }
                         }
                     }
