@@ -827,6 +827,19 @@ struct TVGuideScreen: View {
                                                     .foregroundStyle(.white.opacity(0.84))
                                                     .lineLimit(1)
                                             }
+                                            if program.season != nil || program.episode != nil {
+                                                HStack(spacing: 8) {
+                                                    if let season = program.season {
+                                                        Text("S\(season)")
+                                                    }
+                                                    if let episode = program.episode {
+                                                        Text("E\(episode)")
+                                                    }
+                                                }
+                                                .font(.system(size: 15, weight: .medium))
+                                                .foregroundStyle(.white.opacity(0.72))
+                                                .lineLimit(1)
+                                            }
                                             Text(program.timeRange)
                                                 .font(.system(size: 17))
                                                 .foregroundStyle(.white.opacity(0.78))
