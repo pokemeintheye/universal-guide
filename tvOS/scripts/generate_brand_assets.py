@@ -1,5 +1,5 @@
-"""Generate tvOS icon layers from the approved black-and-purple artwork.
-Source stored as a base64-encoded WebP text asset to retain it in GitHub.
+"""Generate tvOS icon layers from the current approved branding artwork.
+Prefer the user-uploaded PNG; fall back to the older encoded source.
 """
 import argparse
 import base64
@@ -29,7 +29,7 @@ def imageset(path,images):
     write(path/"Contents.json",{"images":manifest,"info":INFO})
 
 def iconstack(name,image,size,scales):
-    # The approved source includes baked-in padding around its rounded border.
+    # The approved source may include baked-in padding around its rounded border.
     # tvOS adds another parallax/rounded-mask inset. Trim only that outer
     # padding, then fill the full native 5:3 icon canvas. Keep the artwork,
     # lettering and black-purple palette unchanged.
@@ -66,13 +66,15 @@ def shelf(image,size):
     return frame
 
 def generate():
-    if SOURCE.is_file():
-        # Only decode the verified, checked-in approved artwork. No network
-        # dependency or GitHub runner secret needed for App Store builds.
+    if LEGACY.is_file():
+        # The approved charcoal/blue PNG takes priority over the old purple
+        # base64 WebP so a new TestFlight upload uses the updated icon.
+        source=Image.open(LEGACY).convert("RGB")
+        print("tvOS branding source: Branding/UniversalGuideIcon.png")
+    else:
         encoded=SOURCE.read_text(encoding="ascii").strip()
         source=Image.open(io.BytesIO(base64.b64decode(encoded,validate=True))).convert("RGB")
-    else:
-        source=Image.open(LEGACY).convert("RGB")
+        print("tvOS branding source: legacy encoded WebP")
     if source.size!=(1280,768):
         raise ValueError("Approved tvOS icon source must be exactly 1280x768")
     write(CATALOG/"Contents.json",{"info":INFO})
