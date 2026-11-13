@@ -337,9 +337,8 @@ struct TVGuideScreen: View {
                 sidebarRail
                     .frame(width: railWidth)
                     // Align the Apple TV rail with the guide grid below the header.
-                    .frame(height: isCompact ? nil : timelineHeight)
+                    .frame(height: isCompact ? nil : timelineHeight, alignment: .center)
                     .padding(.top, isCompact ? 0 : (52 * uiScale + 6))
-                    .frame(maxHeight: .infinity, alignment: .top)
                 VStack(spacing: isCompact ? 7 : 6) {
                     header
                     if let error = store.error, store.channels.isEmpty {
