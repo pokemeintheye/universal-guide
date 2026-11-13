@@ -470,9 +470,13 @@ struct TVMediaPlayerScreen: View {
                 }
             }
             plexPlaybackOrigin = plexSession?.offsetSeconds == 0 ? 0 : nil
+            pendingTrackSeek = plexSession?.initialSeekSeconds
+            applyingTrackSeek = false
             let item = AVPlayerItem(url: currentSession.playlist)
             player.replaceCurrentItem(with: item)
-            player.play()
+            // The initial seek must finish before playback starts, or
+            // AVPlayer may display the tail of the stream first.
+            if pendingTrackSeek == nil { player.play() }
             isPaused = false
             playbackTimeObserver = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
