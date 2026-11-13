@@ -849,8 +849,7 @@ struct TVGuideScreen: View {
                                 HStack(alignment: .center, spacing: 14) {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(program.title)
-                                            .font(.system(size: selectedFocus == "program-\(index)-\(pi)" ? 27 : 24,
-                                                          weight: .semibold))
+                                            .font(.system(size: 24, weight: .semibold))
                                             .lineLimit(1)
                                         if selectedFocus == "program-\(index)-\(pi)" {
                                             if let subtitle = program.subtitle, !subtitle.isEmpty {
@@ -933,6 +932,8 @@ struct TVGuideScreen: View {
                                     }
                                     #endif
                                 }
+                                .frame(maxHeight: .infinity, alignment: .center)
+                                .clipped()
                                 .padding(.bottom, program.isOnNow ? 10 : 0)
                                 .overlay(alignment: .bottomLeading) {
                                     if program.isOnNow,
