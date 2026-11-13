@@ -216,7 +216,7 @@ struct TVGuideScreen: View {
                     // preview viewport and SwiftUI compressed the ruler and tiles.
                     // Use actual program times, not three equal columns: a 90-minute
                     // program must span three 30-minute ruler slots.
-                    HStack(spacing: 2) {
+                    HStack(spacing: 4) {
                         ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { programIndex, program in
                             let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                             let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
@@ -287,11 +287,12 @@ struct TVGuideScreen: View {
                                 .frame(height: 3)
                             }
                             .padding(13)
-                            .frame(width: max(0, tileWidth - 2), alignment: .leading)
+                            .frame(width: max(0, tileWidth - 4), height: 112, alignment: .leading)
                             .background(
-                                index == 1 && programIndex == 0
-                                    ? Color(red: 0.27, green: 0.29, blue: 0.34)
-                                    : Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22)
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(index == 1 && programIndex == 0
+                                        ? Color(red: 0.27, green: 0.29, blue: 0.34)
+                                        : Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22))
                             )
                             // A single selected program in the screenshot fixture
                             // demonstrates the subtle tvOS focus treatment. This is
