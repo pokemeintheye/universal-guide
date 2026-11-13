@@ -1127,6 +1127,13 @@ struct TVGuideScreen: View {
         let server = serverURL
         let ratingKey = program.plex?.ratingKey
         artworkTask = Task { @MainActor in
+            #if os(tvOS)
+            // Rapid remote scrolling should not launch an artwork HTTP request
+            // for every briefly highlighted program. The existing cancellation
+            // path drops intermediate selections before network work begins.
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            #endif
             guard let base = URL(string: server), base.host != nil else { return }
             var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
             components?.path = "/api/guide/artwork"
