@@ -97,7 +97,9 @@ struct TVGuideScreen: View {
     @State private var viewportHeight: CGFloat = 1080
     // Show roughly one hour of programming on Apple TV rather than
     // compressing several hours into narrow, hard-to-read tiles.
-    private let minutePixels: CGFloat = 24
+    // Fit roughly one hour of programming beside the fixed channel column.
+    // Keep time slots legible while allowing adjacent program boundaries onscreen.
+    private let minutePixels: CGFloat = 18
     private let stationWidth: CGFloat = 192
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
