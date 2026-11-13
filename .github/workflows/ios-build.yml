@@ -1,13 +1,14 @@
 name: Build iPhone Backbone preview
 on:
   push:
-    branches: [main]
+    branches: ['**', '!tvos-auto-visual-development']
     paths:
       - 'iOS/**'
       - 'tvOS/Sources/**'
       - 'Shared/**'
       - '.github/workflows/ios-build.yml'
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
