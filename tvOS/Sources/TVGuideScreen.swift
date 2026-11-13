@@ -252,7 +252,7 @@ struct TVGuideScreen: View {
                                            let end = program.endDate,
                                            start <= now, now < end {
                                             Rectangle()
-                                                .fill(Color(red: 0.73, green: 0.65, blue: 0.89))
+                                                .fill(TVPalette.blue.opacity(0.85))
                                                 .frame(width: progressGeometry.size.width *
                                                     CGFloat(min(1, max(0,
                                                         now.timeIntervalSince(start) /
@@ -657,7 +657,7 @@ struct TVGuideScreen: View {
                             Text(anchor.addingTimeInterval(Double(slot * 1800))
                                 .formatted(date: .omitted, time: .shortened))
                                 .font(.system(size: isCompact ? 10 : 18, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
+                                .foregroundStyle(isCompact ? Color(red: 0.83, green: 0.77, blue: 0.95) : Color.white.opacity(0.74))
                                 .frame(width: minutePixels * 30, alignment: .leading)
                         }
                     }
@@ -720,11 +720,20 @@ struct TVGuideScreen: View {
                 followSelectedTime(horizontal)
             }
         }
-        .background(isCompact ? TVPalette.panel :
-                    Color(red: 0.14, green: 0.16, blue: 0.19),
-                    in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
+        .background {
+            if isCompact {
+                RoundedRectangle(cornerRadius: 13).fill(TVPalette.panel)
+            } else {
+                // A flat, edge-to-edge tvOS EPG instead of a floating rounded card.
+                Color(red: 0.14, green: 0.16, blue: 0.19)
+            }
+        }
+        .overlay {
+            if isCompact {
+                RoundedRectangle(cornerRadius: 13)
+                    .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1)
+            }
+        }
         .frame(height: timelineHeight, alignment: .top)
     }
 
