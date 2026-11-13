@@ -7,7 +7,7 @@ private enum TVPalette {
     static let background = Color(red: 0.038, green: 0.052, blue: 0.102)
     static let panel = Color(red: 0.112, green: 0.128, blue: 0.214)
     static let cell = Color(red: 0.15, green: 0.17, blue: 0.27)
-    static let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    static let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
 }
 
 private struct TVFocusCard: ButtonStyle {
@@ -323,7 +323,7 @@ struct TVGuideScreen: View {
                             VStack(spacing: 10) {
                                 Image(systemName: "line.3.horizontal.decrease.circle")
                                     .font(.system(size: isCompact ? 24 : 44))
-                                    .foregroundStyle(TVPalette.purple)
+                                    .foregroundStyle(TVPalette.blue)
                                 Text("No channels match this filter")
                                     .font(.system(size: isCompact ? 14 : 25, weight: .semibold))
                                 Button("Show All Channels") {
@@ -408,7 +408,7 @@ struct TVGuideScreen: View {
             }
 
         }
-        .tint(TVPalette.purple)
+        .tint(TVPalette.blue)
         .preferredColorScheme(.dark)
         .modifier(UniversalGuideFullscreenLayout())
         .modifier(UniversalGuideBackNavigation {
@@ -577,15 +577,32 @@ struct TVGuideScreen: View {
             .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
-                .stroke(selectedFocus == key ? TVPalette.purple.opacity(0.9) : .clear, lineWidth: 2))
+                .stroke(selectedFocus == key ? TVPalette.blue.opacity(0.9) : .clear, lineWidth: 2))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
     }
 
+    private var guideBrandMark: some View {
+        HStack(spacing: 0) {
+            Text("U").foregroundStyle(.white)
+            Text("G").foregroundStyle(TVPalette.blue)
+        }
+        .font(.system(size: isCompact ? 25 : 30, weight: .black, design: .rounded))
+        .italic()
+        .overlay(alignment: .center) {
+            Image(systemName: "play.fill")
+                .font(.system(size: isCompact ? 7 : 9, weight: .bold))
+                .foregroundStyle(.white)
+                .offset(x: isCompact ? 12 : 15)
+        }
+        .accessibilityLabel("Universal Guide")
+    }
+
     private var header: some View {
         HStack(spacing: 18) {
             if isCompact {
+                guideBrandMark
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Universal Guide")
                         .font(.system(size: 17, weight: .heavy))
@@ -597,11 +614,12 @@ struct TVGuideScreen: View {
                 Text(now.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 12, weight: .semibold))
             } else {
+                guideBrandMark
                 Text("Today")
                     .font(.system(size: 28, weight: .bold))
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 18))
-                    .foregroundStyle(TVPalette.purple)
+                    .foregroundStyle(TVPalette.blue)
                 Text(now.formatted(date: .omitted, time: .shortened))
                     .font(.system(size: 23, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -616,7 +634,7 @@ struct TVGuideScreen: View {
                     .filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption.bold())
                     .padding(8)
-                    .background(TVPalette.purple.opacity(0.18), in: Capsule())
+                    .background(TVPalette.blue.opacity(0.18), in: Capsule())
             }
         }
         .frame(height: (isCompact ? 60 : 52) * uiScale)
@@ -649,7 +667,7 @@ struct TVGuideScreen: View {
                                 Color(red: 0.17, green: 0.19, blue: 0.23))
                     .overlay(alignment: .leading) {
                         Rectangle()
-                            .fill(TVPalette.purple)
+                            .fill(TVPalette.blue)
                             .frame(width: isCompact ? 1.5 : 3)
                             .offset(x: nowTimelineX)
                             .allowsHitTesting(false)
@@ -661,7 +679,7 @@ struct TVGuideScreen: View {
                                 if let net = channel.network, !net.isEmpty {
                                     Text(net.uppercased())
                                         .font(.system(size: isCompact ? 9 : 16, weight: .bold))
-                                        .foregroundStyle(TVPalette.purple)
+                                        .foregroundStyle(TVPalette.blue)
                                 }
                                 Text(channel.number ?? channel.label)
                                     .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
@@ -851,7 +869,7 @@ struct TVGuideScreen: View {
                                                 .frame(height: 5)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
-                                                        .fill(TVPalette.purple.opacity(0.9))
+                                                        .fill(TVPalette.blue.opacity(0.9))
                                                         .frame(width: geometry.size.width * progress,
                                                                height: 5)
                                                 }
@@ -867,7 +885,7 @@ struct TVGuideScreen: View {
                         .padding(.vertical, isCompact ? 0 : 10)
                         .foregroundStyle(.white)
                         .background(isCompact ?
-                                    (program.plex != nil ? TVPalette.purple.opacity(0.22) : TVPalette.cell) :
+                                    (program.plex != nil ? TVPalette.blue.opacity(0.22) : TVPalette.cell) :
                                     Color(red: 0.23, green: 0.25, blue: 0.30),
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
@@ -891,7 +909,7 @@ struct TVGuideScreen: View {
                alignment: .leading)
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(TVPalette.purple.opacity(0.95))
+                .fill(TVPalette.blue.opacity(0.95))
                 .frame(width: isCompact ? 1.5 : 3)
                 .offset(x: nowTimelineX - stationWidth)
                 .allowsHitTesting(false)
@@ -991,7 +1009,7 @@ struct TVGuideScreen: View {
                 .background(Color(red: 0.22, green: 0.20, blue: 0.31),
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
-                    .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
+                    .stroke(selectedFocus == key ? TVPalette.blue : .clear, lineWidth: 3))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
@@ -1397,7 +1415,7 @@ private struct TVGuideFilterPanel: View {
     @State private var phoneIndex = 0
     private let choices = ["All Channels", "In Plex", "Tablo", "Philo",
                            "Favorites", "Cancel"]
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -1428,10 +1446,10 @@ private struct TVGuideFilterPanel: View {
                         .padding(.horizontal, 16)
                         .frame(height: isCompact ? 35 : 58)
                         .foregroundStyle(.white)
-                        .background(selection == index ? purple.opacity(0.40) :
+                        .background(selection == index ? blue.opacity(0.40) :
                                     Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(selection == index ? purple : .clear, lineWidth: 3))
+                            .stroke(selection == index ? blue : .clear, lineWidth: 3))
                     }
                     .buttonStyle(.plain)
                     .focused($focused, equals: index)
@@ -1496,7 +1514,7 @@ private struct TVGuideRemoteTextPanel: View {
     let onClose: () -> Void
     @State private var selectedKey = 0
     private let columns = 10
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var compact: Bool {
         #if os(iOS)
         true
@@ -1548,11 +1566,11 @@ private struct TVGuideRemoteTextPanel: View {
                                 .frame(height: compact ? 31 : 60)
                                 .foregroundStyle(.white)
                                 .background(selectedKey == index ?
-                                            purple.opacity(0.35) :
+                                            blue.opacity(0.35) :
                                             Color.white.opacity(0.08),
                                             in: RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(selectedKey == index ? purple : .clear,
+                                    .stroke(selectedKey == index ? blue : .clear,
                                             lineWidth: compact ? 2 : 3))
                         }
                         .buttonStyle(.plain)
@@ -1707,7 +1725,7 @@ private struct UniversalPlexChoiceScreen: View {
     let onCancel: () -> Void
     @FocusState private var nativeFocus: Int?
     @State private var phoneIndex = 0
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isPhone: Bool {
         #if os(iOS)
         true
@@ -1739,7 +1757,7 @@ private struct UniversalPlexChoiceScreen: View {
                                         in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12)
                                 .stroke(selectedIndex == index ?
-                                            purple.opacity(0.95) : .clear, lineWidth: 2))
+                                            blue.opacity(0.95) : .clear, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
                     #if os(tvOS)
