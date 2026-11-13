@@ -1488,9 +1488,33 @@ struct TVGuideScreen: View {
         Task {
             defer { loadingPlayback = false }
             do {
-                let session = try await PlexPlaybackService.start(serverURL: serverURL,
-                    ratingKey: key, mode: mode, airingStart: program.start,
-                    airingEnd: program.stop)
+                // Plex's offset-based HLS transcoder can land at the movie's
+                // end while the UI still displays the requested position.
+                // For "Watch from Current Point", use a full-length stream
+                // and seek AVPlayer locally after the item becomes ready.
+                var session = try await PlexPlaybackService.start(serverURL: serverURL,
+                    ratingKey: key, mode: mode == "join" ? "beginning" : mode,
+                    airingStart: program.start, airingEnd: program.stop)
+                if mode == "join" {
+                    let metadata = try await PlexPlaybackService.metadata(session)
+                    let parser = ISO8601DateFormatter()
+                    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    func date(_ raw: String) -> Date? {
+                        parser.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+                    }
+                    guard let start = date(program.start), let end = date(program.stop) else {
+                        throw PlexPlaybackError.server("Unable to read the broadcast schedule for Watch from Current Point.")
+                    }
+                    let span = end.timeIntervalSince(start)
+                    let elapsed = Date().timeIntervalSince(start)
+                    guard span > 0, span <= 86400, elapsed >= 0,
+                          metadata.duration_seconds > 0 else {
+                        throw PlexPlaybackError.server("The broadcast timing is invalid for Watch from Current Point.")
+                    }
+                    session.initialSeekSeconds = min(
+                        max(0, elapsed / span * metadata.duration_seconds),
+                        max(0, metadata.duration_seconds - 10))
+                }
                 // Never present the player until the source-choice
                 // fullScreenCover has fully dismissed. Competing covers can
                 // cause an early onDisappear and end the HLS session.
