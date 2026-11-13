@@ -81,7 +81,7 @@ struct TVGuideScreen: View {
     }
     #endif
     #if os(tvOS)
-    // Temporary on-device diagnostic: isolate initial scene creation from guide rendering.
+    // Stage production EPG creation until after the lightweight initial scene appears.
     @State private var diagnosticLoadGuide = false
     #endif
     @State private var now = Date()
@@ -174,29 +174,27 @@ struct TVGuideScreen: View {
 
     #if os(tvOS)
     private var diagnosticStartupBody: some View {
-        VStack(spacing: 26) {
+        VStack(spacing: 22) {
             Text("UNIVERSAL GUIDE")
                 .font(.system(size: 46, weight: .bold))
-            Text("Startup diagnostic")
-                .font(.system(size: 25))
-                .foregroundStyle(.secondary)
-            Text("If this screen stays open, select Load Guide to test full guide rendering.")
-                .font(.system(size: 21))
-                .multilineTextAlignment(.center)
-            Button("Load Guide") {
-                diagnosticLoadGuide = true
-            }
-            .buttonStyle(.borderedProminent)
-            .font(.system(size: 26, weight: .semibold))
-            .padding(.top, 18)
+            ProgressView()
+                .scaleEffect(1.4)
+                .accessibilityLabel("Loading guide")
         }
         .padding(70)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(white: 0.115).ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .onAppear {
+            // Give tvOS a chance to finish presenting the initial scene before
+            // constructing the large production EPG and its focus hierarchy.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                diagnosticLoadGuide = true
+            }
+        }
     }
 
-    private var previewIsolatedBody: some View {
+        private var previewIsolatedBody: some View {
         // Keep the screenshot scene lightweight while rebuilding the real
         // seven-row EPG incrementally. These labels are fictional fixtures,
         // never inferred channel artwork or production metadata.
