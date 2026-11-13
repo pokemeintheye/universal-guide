@@ -223,10 +223,10 @@ struct TVGuideScreen: View {
             HStack(spacing: 0) {
                 Text("CHANNEL")
                     .frame(width: 180, alignment: .leading)
-                // Two half-hour ruler marks fit the one-hour tvOS viewport.
-                // A third 540pt mark expanded the entire preview beyond 1920pt,
-                // pushing the channel column and brand off the left edge.
-                ForEach(0..<2, id: \.self) { slot in
+                // Draw the next half-hour marker as well, but constrain the
+                // ruler to the same width as the seven fixture rows. Without
+                // this, the header stops early and its 8:30 marker disappears.
+                ForEach(0..<3, id: \.self) { slot in
                     Text(anchor.addingTimeInterval(Double(slot * 1800))
                         .formatted(date: .omitted, time: .shortened))
                         .frame(width: 540, alignment: .leading)
@@ -235,7 +235,8 @@ struct TVGuideScreen: View {
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(.white.opacity(0.72))
             .padding(.horizontal, 14)
-            .frame(height: 46)
+            .frame(width: 1588, height: 46, alignment: .leading)
+            .clipped()
             .background(Color(white: 0.18))
             ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
                 HStack(spacing: 0) {
