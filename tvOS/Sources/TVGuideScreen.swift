@@ -80,6 +80,10 @@ struct TVGuideScreen: View {
         else if mediaSession == nil { selectPhoneProgram() }
     }
     #endif
+    #if os(tvOS)
+    // Temporary on-device diagnostic: isolate initial scene creation from guide rendering.
+    @State private var diagnosticLoadGuide = false
+    #endif
     @State private var now = Date()
     @State private var lastMoveWasVertical = false
     @State private var navigationTime: Date?
@@ -158,8 +162,10 @@ struct TVGuideScreen: View {
             // Preview-only structural isolation: instantiate TVGuideScreen and
             // its state, but bypass production modifiers, sheets and timeline.
             previewIsolatedBody
-        } else {
+        } else if diagnosticLoadGuide {
             productionBody
+        } else {
+            diagnosticStartupBody
         }
         #else
         productionBody
@@ -167,6 +173,29 @@ struct TVGuideScreen: View {
     }
 
     #if os(tvOS)
+    private var diagnosticStartupBody: some View {
+        VStack(spacing: 26) {
+            Text("UNIVERSAL GUIDE")
+                .font(.system(size: 46, weight: .bold))
+            Text("Startup diagnostic")
+                .font(.system(size: 25))
+                .foregroundStyle(.secondary)
+            Text("If this screen stays open, select Load Guide to test full guide rendering.")
+                .font(.system(size: 21))
+                .multilineTextAlignment(.center)
+            Button("Load Guide") {
+                diagnosticLoadGuide = true
+            }
+            .buttonStyle(.borderedProminent)
+            .font(.system(size: 26, weight: .semibold))
+            .padding(.top, 18)
+        }
+        .padding(70)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.115).ignoresSafeArea())
+        .preferredColorScheme(.dark)
+    }
+
     private var previewIsolatedBody: some View {
         // Keep the screenshot scene lightweight while rebuilding the real
         // seven-row EPG incrementally. These labels are fictional fixtures,
