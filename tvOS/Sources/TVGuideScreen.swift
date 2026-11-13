@@ -226,23 +226,38 @@ struct TVGuideScreen: View {
                                 Text(program.title)
                                     .font(.system(size: 22, weight: .semibold))
                                     .lineLimit(1)
-                                if let subtitle = program.subtitle {
-                                    Text(subtitle)
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(.white.opacity(0.68))
-                                        .lineLimit(1)
-                                }
-                                if program.season != nil || program.episode != nil {
-                                    HStack(spacing: 6) {
-                                        if let season = program.season {
-                                            Text("S\(season)")
-                                        }
-                                        if let episode = program.episode {
-                                            Text("E\(episode)")
-                                        }
+                                if index == 1 && programIndex == 0 {
+                                    // Preview the expanded, in-tile detail treatment
+                                    // without fabricating episode artwork or metadata.
+                                    if let subtitle = program.subtitle, !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundStyle(.white.opacity(0.9))
+                                            .lineLimit(1)
                                     }
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.52))
+                                    Text(program.timeRange)
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.white.opacity(0.82))
+                                        .lineLimit(1)
+                                } else {
+                                    if let subtitle = program.subtitle {
+                                        Text(subtitle)
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.white.opacity(0.68))
+                                            .lineLimit(1)
+                                    }
+                                    if program.season != nil || program.episode != nil {
+                                        HStack(spacing: 6) {
+                                            if let season = program.season {
+                                                Text("S\(season)")
+                                            }
+                                            if let episode = program.episode {
+                                                Text("E\(episode)")
+                                            }
+                                        }
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.52))
+                                    }
                                 }
                                 Spacer(minLength: 0)
                                 if program.plex != nil {
