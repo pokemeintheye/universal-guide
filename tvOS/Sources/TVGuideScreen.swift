@@ -224,12 +224,12 @@ struct TVGuideScreen: View {
                 Text("CHANNEL")
                     .frame(width: 180, alignment: .leading)
                 // Two half-hour ruler marks fit the one-hour tvOS viewport.
-                // A third 660pt mark expanded the entire preview beyond 1920pt,
+                // A third 540pt mark expanded the entire preview beyond 1920pt,
                 // pushing the channel column and brand off the left edge.
                 ForEach(0..<2, id: \.self) { slot in
                     Text(anchor.addingTimeInterval(Double(slot * 1800))
                         .formatted(date: .omitted, time: .shortened))
-                        .frame(width: 660, alignment: .leading)
+                        .frame(width: 540, alignment: .leading)
                 }
             }
             .font(.system(size: 18, weight: .semibold))
@@ -247,8 +247,8 @@ struct TVGuideScreen: View {
                             .font(.system(size: 25, weight: .semibold))
                     }
                     .frame(width: 180, alignment: .leading)
-                    // Match the production tvOS one-hour viewport: 22pt per minute,
-                    // with 660pt per 30-minute ruler slot. The screenshot must
+                    // Match the production tvOS timeline scale: 18pt per minute,
+                    // with 540pt per 30-minute ruler slot. The screenshot must
                     // not show a four-hour guide after production zoom changes.
                     // Use actual program times, not three equal columns: a 90-minute
                     // program must span three 30-minute ruler slots.
@@ -256,7 +256,7 @@ struct TVGuideScreen: View {
                         ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { programIndex, program in
                             let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
                             let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
-                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 22.0
+                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 18.0
                             if tileWidth > 0 {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(program.title)
