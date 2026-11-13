@@ -336,6 +336,10 @@ struct TVGuideScreen: View {
             HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
+                    // Align the Apple TV rail with the guide grid below the header.
+                    .frame(height: isCompact ? nil : timelineHeight)
+                    .padding(.top, isCompact ? 0 : (52 * uiScale + 6))
+                    .frame(maxHeight: .infinity, alignment: .top)
                 VStack(spacing: isCompact ? 7 : 6) {
                     header
                     if let error = store.error, store.channels.isEmpty {
@@ -586,13 +590,16 @@ struct TVGuideScreen: View {
 
     private var sidebarRail: some View {
         VStack(spacing: isCompact ? 5 : 16) {
+            if !isCompact { Spacer(minLength: 0) }
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(isCompact ? 10 : 7)
-        .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 16))
+        .frame(maxWidth: .infinity)
+        .frame(height: isCompact ? nil : timelineHeight)
+        .padding(isCompact ? 10 : 0)
+        .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func railButton(_ icon: String, name: String, key: String,
