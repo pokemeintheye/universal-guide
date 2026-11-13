@@ -844,7 +844,7 @@ struct TVGuideScreen: View {
                                 // Its bounds remain fixed: no focus-driven row
                                 // reflow or jumping while using the TV remote.
                                 HStack(alignment: .center, spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 7) {
+                                    VStack(alignment: .leading, spacing: 3) {
                                         Text(program.title)
                                             .font(.system(size: selectedFocus == "program-\(index)-\(pi)" ? 27 : 24,
                                                           weight: .semibold))
@@ -856,23 +856,22 @@ struct TVGuideScreen: View {
                                                     .foregroundStyle(.white.opacity(0.84))
                                                     .lineLimit(1)
                                             }
-                                            if program.season != nil || program.episode != nil {
-                                                HStack(spacing: 8) {
-                                                    if let season = program.season {
-                                                        Text("S\(season)")
-                                                    }
-                                                    if let episode = program.episode {
-                                                        Text("E\(episode)")
-                                                    }
+                                            // Season/episode and airtime share one line to
+                                            // prevent focused tiles growing beyond their row.
+                                            HStack(spacing: 10) {
+                                                if let season = program.season {
+                                                    Text("S\(season)")
                                                 }
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundStyle(.white.opacity(0.72))
-                                                .lineLimit(1)
+                                                if let episode = program.episode {
+                                                    Text("E\(episode)")
+                                                }
+                                                Text(program.timeRange)
+                                                    .lineLimit(1)
+                                                    .minimumScaleFactor(0.75)
                                             }
-                                            Text(program.timeRange)
-                                                .font(.system(size: 17))
-                                                .foregroundStyle(.white.opacity(0.78))
-                                                .lineLimit(1)
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(.white.opacity(0.78))
+                                            .lineLimit(1)
                                         } else if let subtitle = program.subtitle {
                                             Text(subtitle)
                                                 .font(.system(size: 16))
