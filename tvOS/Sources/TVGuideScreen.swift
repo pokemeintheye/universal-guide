@@ -975,14 +975,19 @@ struct TVGuideScreen: View {
                                         GeometryReader { geometry in
                                             let duration = endDate.timeIntervalSince(startDate)
                                             let progress = max(0, min(1, now.timeIntervalSince(startDate) / duration))
+                                            #if os(tvOS)
+                                            let progressHeight: CGFloat = 3
+                                            #else
+                                            let progressHeight: CGFloat = 5
+                                            #endif
                                             Capsule()
                                                 .fill(Color.white.opacity(0.16))
-                                                .frame(height: 5)
+                                                .frame(height: progressHeight)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
                                                         .fill(isCompact ? TVPalette.blue.opacity(0.9) : TVPalette.blue.opacity(0.85))
                                                         .frame(width: geometry.size.width * progress,
-                                                               height: 5)
+                                                               height: progressHeight)
                                                 }
                                                 .frame(maxHeight: .infinity, alignment: .bottom)
                                         }
