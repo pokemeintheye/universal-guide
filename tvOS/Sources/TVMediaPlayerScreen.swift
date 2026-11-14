@@ -440,9 +440,6 @@ struct TVMediaPlayerScreen: View {
             }
             if trackMenu != nil {
                 plexOptionsOverlay
-                    #if os(tvOS)
-                    .onExitCommand { closePlexOptions() }
-                    #endif
             }
             if changingTrack {
                 Color.black.opacity(0.55).ignoresSafeArea()
@@ -579,6 +576,9 @@ struct TVMediaPlayerScreen: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: isCompact ? 24 : 32))
                     }
+                    #if os(tvOS)
+                    .focusable(false)
+                    #endif
                 }
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -628,6 +628,9 @@ struct TVMediaPlayerScreen: View {
                                         .stroke(menuIndex == index ? playerBlue : .clear, lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
+                                #if os(tvOS)
+                                .focusable(false)
+                                #endif
                                 .id(index)
                             }
                         }
