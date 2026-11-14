@@ -456,6 +456,14 @@ struct TVMediaPlayerScreen: View {
             .ignoresSafeArea()
             #endif
         }
+        #if os(tvOS)
+        .onExitCommand {
+            // Handle the Siri Remote Back command at the playback presentation
+            // boundary so SwiftUI cannot dismiss the player while a track menu
+            // is open. Playback continues with the same AVPlayer item.
+            remoteExit()
+        }
+        #endif
         .tint(playerBlue)
         .preferredColorScheme(.dark)
         .onAppear {
