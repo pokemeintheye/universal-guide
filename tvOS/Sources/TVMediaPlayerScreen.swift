@@ -176,7 +176,7 @@ struct TVMediaPlayerScreen: View {
     @State private var changingTrack = false
     @State private var optionsError: String?
     @State private var hideControlsTask: Task<Void, Never>?
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let playerBlue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -286,7 +286,7 @@ struct TVMediaPlayerScreen: View {
                         VStack(alignment: .leading, spacing: 7) {
                             Text(sourceName.uppercased())
                                 .font(.system(size: isCompact ? 13 : 20, weight: .bold))
-                                .foregroundStyle(purple)
+                                .foregroundStyle(playerBlue)
                             Text(playbackTitle)
                                 .font(.system(size: isCompact ? 21 : 32, weight: .bold))
                                 .lineLimit(2)
@@ -304,7 +304,7 @@ struct TVMediaPlayerScreen: View {
                                 .foregroundStyle(.white)
                                 .padding(8)
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected("close") ? purple : .clear,
+                                    .stroke(isSelected("close") ? playerBlue : .clear,
                                             lineWidth: 2))
                         }
                         .buttonStyle(.plain)
@@ -333,13 +333,13 @@ struct TVMediaPlayerScreen: View {
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(Color.white.opacity(0.36))
                                         .frame(height: 6)
-                                    Capsule().fill(purple.opacity(0.6))
+                                    Capsule().fill(playerBlue.opacity(0.6))
                                         .frame(width: geometry.size.width*shownSeekProgress,
                                                height: 6)
                                     Circle().fill(.white)
                                         .frame(width: 24, height: 24)
                                         .overlay(Circle().stroke(
-                                            isSelected("seek") ? purple : .clear,
+                                            isSelected("seek") ? playerBlue : .clear,
                                             lineWidth: 4))
                                         .offset(x: usable*shownSeekProgress)
                                 }
@@ -413,7 +413,7 @@ struct TVMediaPlayerScreen: View {
                                         .foregroundStyle(.white)
                                         .padding(isCompact ? 7 : 10)
                                         .overlay(RoundedRectangle(cornerRadius: 9)
-                                            .stroke(isSelected("live") ? purple : .clear,
+                                            .stroke(isSelected("live") ? playerBlue : .clear,
                                                     lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
@@ -459,7 +459,7 @@ struct TVMediaPlayerScreen: View {
             .ignoresSafeArea()
             #endif
         }
-        .tint(purple)
+        .tint(playerBlue)
         .preferredColorScheme(.dark)
         .onAppear {
             streamStartedAt = Date()
@@ -556,7 +556,7 @@ struct TVMediaPlayerScreen: View {
                 .foregroundStyle(enabled ? .white : .gray)
                 .frame(width: isCompact ? 34 : 46, height: isCompact ? 40 : 52)
                 .overlay(RoundedRectangle(cornerRadius: 9)
-                    .stroke(isSelected(key) ? purple : .clear, lineWidth: 2))
+                    .stroke(isSelected(key) ? playerBlue : .clear, lineWidth: 2))
         }
         .buttonStyle(.plain)
         .disabled(!enabled || changingTrack)
@@ -616,16 +616,16 @@ struct TVMediaPlayerScreen: View {
                                         }
                                         Spacer()
                                         if optionIsSelected(index) {
-                                            Image(systemName: "checkmark").foregroundStyle(purple)
+                                            Image(systemName: "checkmark").foregroundStyle(playerBlue)
                                         }
                                     }
                                     .foregroundStyle(.white)
                                     .padding(isCompact ? 9 : 16)
-                                    .background(menuIndex == index ? purple.opacity(0.28) :
+                                    .background(menuIndex == index ? playerBlue.opacity(0.28) :
                                                 Color.white.opacity(0.08),
                                                 in: RoundedRectangle(cornerRadius: 10))
                                     .overlay(RoundedRectangle(cornerRadius: 10)
-                                        .stroke(menuIndex == index ? purple : .clear, lineWidth: 2))
+                                        .stroke(menuIndex == index ? playerBlue : .clear, lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
                                 .id(index)
@@ -827,7 +827,7 @@ struct TVMediaPlayerScreen: View {
             }
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .overlay(Circle().stroke(isSelected(key) ? purple : .clear,
+            .overlay(Circle().stroke(isSelected(key) ? playerBlue : .clear,
                                      lineWidth: 3))
         }
         .buttonStyle(.plain)
