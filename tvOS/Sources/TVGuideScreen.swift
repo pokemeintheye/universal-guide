@@ -836,6 +836,11 @@ struct TVGuideScreen: View {
             .onChange(of: selectedProgram) { _, _ in
                 if !lastMoveWasVertical { followSelectedTime(horizontal) }
             }
+            .onChange(of: selectedChannel) { _, _ in
+                // Changing rows can retain the program index; still bring its
+                // actual tile back into the horizontal viewport.
+                followSelectedTime(horizontal)
+            }
         }
         .background {
             if isCompact {
@@ -868,7 +873,7 @@ struct TVGuideScreen: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard !Task.isCancelled,
                   selectedChannel == channel, selectedProgram == program else { return }
-            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+            proxy.scrollTo("program-\(channel)-\(program)", anchor: .leading)
         }
         #else
         DispatchQueue.main.async {
@@ -1300,6 +1305,14 @@ struct TVGuideScreen: View {
             (programs[$0].startDate ?? .distantFuture) <
                 anchor.addingTimeInterval(durationMinutes*60)
         }
+        // Recover a visible target if row changes land on an off-window airing.
+        if !visible.isEmpty && !visible.contains(selectedProgram) {
+            let target = navigationTime ?? now
+            selectedProgram = visible.min(by: {
+                abs((programs[$0].startDate ?? anchor).timeIntervalSince(target)) <
+                abs((programs[$1].startDate ?? anchor).timeIntervalSince(target))
+            }) ?? visible[0]
+        }
         lastMoveWasVertical = direction == "up" || direction == "down"
         switch direction {
         case "left":
@@ -1625,12 +1638,16 @@ private struct TVGuideFilterPanel: View {
                         .padding(.horizontal, 16)
                         .frame(height: isCompact ? 35 : 58)
                         .foregroundStyle(.white)
-                        .background(selection == index ? blue.opacity(0.40) :
-                                    Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color.white.opacity(0.07),
+                                    in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12)
                             .stroke(selection == index ? blue : .clear, lineWidth: 3))
                     }
                     .buttonStyle(.plain)
+                    #if os(tvOS)
+                    // Suppress the system's oversized cyan focus glow.
+                    .focusEffectDisabled()
+                    #endif
                     .focused($focused, equals: index)
                 }
             }
