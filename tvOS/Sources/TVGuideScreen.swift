@@ -200,8 +200,19 @@ struct TVGuideScreen: View {
             request.setValue("image/png", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 25
             let (_, response) = try await URLSession.shared.upload(for: request, from: png)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                diagnosticCaptureStatus = "Screenshot upload failed. Update the Unraid Docker backend."
+            guard let http = response as? HTTPURLResponse else {
+                diagnosticCaptureStatus = "Screenshot upload failed: no HTTP response from backend."
+                return
+            }
+            guard http.statusCode == 200 else {
+                switch http.statusCode {
+                case 404:
+                    diagnosticCaptureStatus = "Screenshot API not found (HTTP 404). The Docker backend must include the diagnostics endpoint."
+                case 413:
+                    diagnosticCaptureStatus = "Screenshot is larger than the backend's 8 MB limit (HTTP 413)."
+                default:
+                    diagnosticCaptureStatus = "Screenshot upload failed (HTTP \(http.statusCode)). Check Unraid Docker logs."
+                }
                 return
             }
             diagnosticCaptureStatus = "Guide screenshot saved to Unraid diagnostics."
