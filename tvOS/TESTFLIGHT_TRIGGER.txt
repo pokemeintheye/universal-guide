@@ -1,0 +1,3 @@
+Apple TV TestFlight manual release request
+2026-11-13
+Includes guide clipping, blue progress bars, menu focus, Plex Back, screenshot diagnostics.
