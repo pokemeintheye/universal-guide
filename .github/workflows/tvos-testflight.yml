@@ -1,6 +1,9 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/tvos-guide-menu-focus-navigation-20261113]
+    paths: [tvOS/TESTFLIGHT_TRIGGER.txt]
 permissions:
   contents: read
 concurrency:
