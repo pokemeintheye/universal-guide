@@ -857,6 +857,10 @@ struct TVGuideScreen: View {
             }
         }
         .frame(height: timelineHeight, alignment: .top)
+        // Programs retain their real start/end times and full scrollable width,
+        // but anything extending past the visible guide edge is visually cut
+        // off. This also contains tvOS focus outlines within the EPG.
+        .clipped()
     }
 
     private func followSelectedTime(_ proxy: ScrollViewProxy) {
