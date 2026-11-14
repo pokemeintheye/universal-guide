@@ -620,6 +620,9 @@ struct TVMediaPlayerScreen: View {
                                         .stroke(menuIndex == index ? purple : .clear, lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
+                                #if os(tvOS)
+                                .focusEffectDisabled()
+                                #endif
                                 .id(index)
                             }
                         }
@@ -634,6 +637,14 @@ struct TVMediaPlayerScreen: View {
             .background(Color(red: 0.09, green: 0.08, blue: 0.16),
                         in: RoundedRectangle(cornerRadius: 20))
         }
+        #if os(tvOS)
+        // Consume Menu/Back at the options overlay, before it can dismiss
+        // the full player through the surrounding presentation.
+        .onExitCommand {
+            trackMenu = nil
+            scheduleHideControls()
+        }
+        #endif
     }
 
     private func optionLabel(_ index: Int) -> String {

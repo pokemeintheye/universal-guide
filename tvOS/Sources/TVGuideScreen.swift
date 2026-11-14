@@ -200,8 +200,19 @@ struct TVGuideScreen: View {
             request.setValue("image/png", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 25
             let (_, response) = try await URLSession.shared.upload(for: request, from: png)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                diagnosticCaptureStatus = "Screenshot upload failed. Update the Unraid Docker backend."
+            guard let http = response as? HTTPURLResponse else {
+                diagnosticCaptureStatus = "Screenshot upload failed: no HTTP response from backend."
+                return
+            }
+            guard http.statusCode == 200 else {
+                switch http.statusCode {
+                case 404:
+                    diagnosticCaptureStatus = "Screenshot API not found (HTTP 404). The Docker backend must include the diagnostics endpoint."
+                case 413:
+                    diagnosticCaptureStatus = "Screenshot is larger than the backend's 8 MB limit (HTTP 413)."
+                default:
+                    diagnosticCaptureStatus = "Screenshot upload failed (HTTP \(http.statusCode)). Check Unraid Docker logs."
+                }
                 return
             }
             diagnosticCaptureStatus = "Guide screenshot saved to Unraid diagnostics."
@@ -354,7 +365,7 @@ struct TVGuideScreen: View {
                                            let end = program.endDate,
                                            start <= now, now < end {
                                             Rectangle()
-                                                .fill(Color(red: 0.98, green: 0.39, blue: 0.68))
+                                                .fill(TVPalette.blue)
                                                 .frame(width: progressGeometry.size.width *
                                                     CGFloat(min(1, max(0,
                                                         now.timeIntervalSince(start) /
@@ -836,6 +847,11 @@ struct TVGuideScreen: View {
             .onChange(of: selectedProgram) { _, _ in
                 if !lastMoveWasVertical { followSelectedTime(horizontal) }
             }
+            .onChange(of: selectedChannel) { _, _ in
+                // Changing rows can retain the program index; still bring its
+                // actual tile back into the horizontal viewport.
+                followSelectedTime(horizontal)
+            }
         }
         .background {
             if isCompact {
@@ -852,6 +868,10 @@ struct TVGuideScreen: View {
             }
         }
         .frame(height: timelineHeight, alignment: .top)
+        // Programs retain their real start/end times and full scrollable width,
+        // but anything extending past the visible guide edge is visually cut
+        // off. This also contains tvOS focus outlines within the EPG.
+        .clipped()
     }
 
     private func followSelectedTime(_ proxy: ScrollViewProxy) {
@@ -868,7 +888,7 @@ struct TVGuideScreen: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard !Task.isCancelled,
                   selectedChannel == channel, selectedProgram == program else { return }
-            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+            proxy.scrollTo("program-\(channel)-\(program)", anchor: .leading)
         }
         #else
         DispatchQueue.main.async {
@@ -980,7 +1000,7 @@ struct TVGuideScreen: View {
                                                 .frame(height: 5)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
-                                                        .fill(isCompact ? TVPalette.blue.opacity(0.9) : Color(red: 0.98, green: 0.39, blue: 0.68))
+                                                        .fill(isCompact ? TVPalette.blue.opacity(0.9) : TVPalette.blue)
                                                         .frame(width: geometry.size.width * progress,
                                                                height: 5)
                                                 }
@@ -1299,6 +1319,14 @@ struct TVGuideScreen: View {
             (programs[$0].endDate ?? .distantPast) > anchor &&
             (programs[$0].startDate ?? .distantFuture) <
                 anchor.addingTimeInterval(durationMinutes*60)
+        }
+        // Recover a visible target if row changes land on an off-window airing.
+        if !visible.isEmpty && !visible.contains(selectedProgram) {
+            let target = navigationTime ?? now
+            selectedProgram = visible.min(by: {
+                abs((programs[$0].startDate ?? anchor).timeIntervalSince(target)) <
+                abs((programs[$1].startDate ?? anchor).timeIntervalSince(target))
+            }) ?? visible[0]
         }
         lastMoveWasVertical = direction == "up" || direction == "down"
         switch direction {
@@ -1625,12 +1653,16 @@ private struct TVGuideFilterPanel: View {
                         .padding(.horizontal, 16)
                         .frame(height: isCompact ? 35 : 58)
                         .foregroundStyle(.white)
-                        .background(selection == index ? blue.opacity(0.40) :
-                                    Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color.white.opacity(0.07),
+                                    in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12)
                             .stroke(selection == index ? blue : .clear, lineWidth: 3))
                     }
                     .buttonStyle(.plain)
+                    #if os(tvOS)
+                    // Suppress the system's oversized cyan focus glow.
+                    .focusEffectDisabled()
+                    #endif
                     .focused($focused, equals: index)
                 }
             }
