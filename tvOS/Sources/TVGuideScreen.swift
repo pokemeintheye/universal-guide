@@ -4,9 +4,16 @@ import AVKit
 // Native tvOS counterpart to the iPhone's Unraid web guide. tvOS cannot host
 // WKWebView; its focused controls and shared backend are implemented natively.
 private enum TVPalette {
+    #if os(tvOS)
+    // Neutral charcoal surfaces keep blue reserved for focus and progress.
+    static let background = Color(red: 0.055, green: 0.059, blue: 0.067)
+    static let panel = Color(red: 0.115, green: 0.122, blue: 0.133)
+    static let cell = Color(red: 0.165, green: 0.173, blue: 0.188)
+    #else
     static let background = Color(red: 0.038, green: 0.052, blue: 0.102)
     static let panel = Color(red: 0.112, green: 0.128, blue: 0.214)
     static let cell = Color(red: 0.15, green: 0.17, blue: 0.27)
+    #endif
     static let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
 }
 
