@@ -1618,7 +1618,7 @@ private struct TVGuideFilterPanel: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.92).ignoresSafeArea()
+            TVPalette.background.ignoresSafeArea()
             VStack(spacing: isCompact ? 8 : 16) {
                 Text("Filter Guide").font(isCompact ? .title3.bold() : .largeTitle.bold())
                     .foregroundStyle(.white)
@@ -1637,18 +1637,22 @@ private struct TVGuideFilterPanel: View {
                         .padding(.horizontal, 16)
                         .frame(height: isCompact ? 35 : 58)
                         .foregroundStyle(.white)
-                        .background(selection == index ? blue.opacity(0.40) :
-                                    Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color.white.opacity(selection == index ? 0.11 : 0.06),
+                                    in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(selection == index ? blue : .clear, lineWidth: 3))
+                            .stroke(selection == index ? blue.opacity(0.95) : .clear, lineWidth: 2))
+                        .scaleEffect(1)
                     }
                     .buttonStyle(.plain)
+                    #if os(tvOS)
+                    .focusEffectDisabled()
+                    #endif
                     .focused($focused, equals: index)
                 }
             }
             .padding(24)
             .frame(width: isCompact ? 360 : 600)
-            .background(Color(red: 0.11, green: 0.12, blue: 0.22),
+            .background(TVPalette.panel,
                         in: RoundedRectangle(cornerRadius: 18))
         }
         .onAppear { focused = 0; phoneIndex = 0 }
