@@ -440,6 +440,9 @@ struct TVMediaPlayerScreen: View {
             }
             if trackMenu != nil {
                 plexOptionsOverlay
+                    #if os(tvOS)
+                    .onExitCommand { closePlexOptions() }
+                    #endif
             }
             if changingTrack {
                 Color.black.opacity(0.55).ignoresSafeArea()
@@ -560,6 +563,11 @@ struct TVMediaPlayerScreen: View {
         .accessibilityLabel(key == "captions" ? "Captions" : key.capitalized)
     }
 
+    private func closePlexOptions() {
+        trackMenu = nil
+        scheduleHideControls()
+    }
+
     private var plexOptionsOverlay: some View {
         ZStack {
             Color.black.opacity(0.8).ignoresSafeArea()
@@ -567,7 +575,7 @@ struct TVMediaPlayerScreen: View {
                 HStack {
                     Text(menuTitle).font(.system(size: isCompact ? 24 : 35, weight: .bold))
                     Spacer()
-                    Button { trackMenu = nil } label: {
+                    Button { closePlexOptions() } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: isCompact ? 24 : 32))
                     }
@@ -631,7 +639,7 @@ struct TVMediaPlayerScreen: View {
             }
             .padding(isCompact ? 18 : 34)
             .frame(maxWidth: isCompact ? 560 : 900, maxHeight: isCompact ? 300 : 700)
-            .background(Color(red: 0.09, green: 0.08, blue: 0.16),
+            .background(Color(red: 0.115, green: 0.122, blue: 0.133),
                         in: RoundedRectangle(cornerRadius: 20))
         }
     }
@@ -907,7 +915,7 @@ struct TVMediaPlayerScreen: View {
         }
     }
     private func remoteExit() {
-        if trackMenu != nil { trackMenu = nil; scheduleHideControls(); return }
+        if trackMenu != nil { closePlexOptions(); return }
         if changingTrack { return }
         if controlsVisible {
             cancelPlexScrub()
