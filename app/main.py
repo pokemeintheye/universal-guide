@@ -8,7 +8,7 @@ import gzip
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 DB=Path("/data/guide.db")
@@ -933,6 +933,58 @@ def refresh_show_artwork(manual=False):
             artwork_progress.update(running=False,current_title="",
                 last_finished=datetime.now(timezone.utc).isoformat())
         artwork_refresh_lock.release()
+
+# Diagnostic captures are opt-in and kept on the persistent Unraid /data mount.
+# Limit upload size and retention to avoid filling the Docker volume.
+DIAGNOSTICS_DIR = Path("/data/diagnostics")
+DIAGNOSTIC_MAX_BYTES = 8 * 1024 * 1024
+
+@app.post("/api/diagnostics/guide-screenshot")
+async def upload_guide_screenshot(request: Request):
+    if request.headers.get("content-type", "").split(";")[0].strip() != "image/png":
+        raise HTTPException(415, "Expected PNG image")
+    if request.headers.get("content-length"):
+        try:
+            if int(request.headers["content-length"]) > DIAGNOSTIC_MAX_BYTES:
+                raise HTTPException(413, "Screenshot exceeds 8 MB")
+        except ValueError:
+            raise HTTPException(400, "Invalid content length")
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > DIAGNOSTIC_MAX_BYTES:
+            raise HTTPException(413, "Screenshot exceeds 8 MB")
+    if len(data) < 24 or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        raise HTTPException(400, "Invalid PNG screenshot")
+    DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
+    from uuid import uuid4
+    filename = datetime.now(timezone.utc).strftime("guide-%Y%m%d-%H%M%S-") + uuid4().hex[:8] + ".png"
+    (DIAGNOSTICS_DIR / filename).write_bytes(data)
+    files = sorted(DIAGNOSTICS_DIR.glob("guide-*.png"),
+                   key=lambda path: path.stat().st_mtime, reverse=True)
+    for old in files[10:]:
+        old.unlink(missing_ok=True)
+    return {"saved": True, "filename": filename, "path": str(DIAGNOSTICS_DIR / filename)}
+
+@app.get("/api/diagnostics/guide-screenshots")
+def list_guide_screenshots():
+    if not DIAGNOSTICS_DIR.is_dir():
+        return {"screenshots": []}
+    files = sorted(DIAGNOSTICS_DIR.glob("guide-*.png"),
+                   key=lambda path: path.stat().st_mtime, reverse=True)
+    return {"screenshots": [{"filename": path.name,
+                              "url": "/api/diagnostics/guide-screenshots/" + path.name}
+                             for path in files[:10]]}
+
+@app.get("/api/diagnostics/guide-screenshots/{filename}")
+def get_guide_screenshot(filename: str):
+    if not re.fullmatch(r"guide-\\d{8}-\\d{6}-[a-f0-9]{8}\\.png", filename):
+        raise HTTPException(404, "Screenshot not found")
+    path = DIAGNOSTICS_DIR / filename
+    if not path.is_file():
+        raise HTTPException(404, "Screenshot not found")
+    return FileResponse(path, media_type="image/png",
+                        headers={"Cache-Control": "private, no-store"})
 
 @app.get("/api/guide/artwork/status")
 def guide_artwork_status():
