@@ -30,6 +30,17 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1
+  UniversalGuideTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: UniversalGuideTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.thejonesfamily.universalguide.uitests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   UniversalGuideTV:
     build:
@@ -37,3 +48,6 @@ schemes:
         UniversalGuideTV: all
     run:
       config: Debug
+    test:
+      targets:
+        - UniversalGuideTVUITests

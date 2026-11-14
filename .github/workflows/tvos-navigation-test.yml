@@ -1,0 +1,57 @@
+name: Apple TV remote navigation smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tvos-auto-visual-development]
+    paths:
+      - 'tvOS/**'
+      - 'Shared/**'
+      - '.github/workflows/tvos-navigation-test.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-navigation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  navigation:
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate tvOS Xcode project
+        working-directory: tvOS
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          python3 -m venv "$RUNNER_TEMP/brand-venv"
+          "$RUNNER_TEMP/brand-venv/bin/pip" install pillow
+          "$RUNNER_TEMP/brand-venv/bin/python" scripts/generate_brand_assets.py --optional
+          xcodegen generate
+      - name: Select tvOS simulator and execute remote UI test
+        working-directory: tvOS
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          SIMULATOR_UDID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["udid"] for k,v in d["devices"].items() if "tvOS" in k for x in v if x.get("isAvailable",True) and "Apple TV" in x.get("name","")]; print(a[0] if a else "")')"
+          test -n "$SIMULATOR_UDID"
+          xcrun simctl boot "$SIMULATOR_UDID"
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID"
+          xcodebuild test -project UniversalGuideTV.xcodeproj -scheme UniversalGuideTV \
+            -configuration Debug -destination "platform=tvOS Simulator,id=$SIMULATOR_UDID" \
+            -resultBundlePath "$RUNNER_TEMP/TVNavigation.xcresult" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/tvos-navigation.log"
+      - name: Upload navigation results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-tv-navigation-results
+          path: |
+            ${{ runner.temp }}/TVNavigation.xcresult
+            ${{ runner.temp }}/tvos-navigation.log
+          retention-days: 14
+          if-no-files-found: warn

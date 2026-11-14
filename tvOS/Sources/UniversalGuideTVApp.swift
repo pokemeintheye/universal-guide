@@ -4,7 +4,44 @@ import SwiftUI
 struct UniversalGuideTVApp: App {
     var body: some Scene {
         WindowGroup {
+            #if os(tvOS)
+            if ProcessInfo.processInfo.arguments.contains("--simulator-probe") {
+                // Isolate the hosted simulator's scene/TVOut presentation from
+                // the real guide's SwiftUI hierarchy. Never used in releases.
+                ZStack {
+                    Color(red: 0.08, green: 0.12, blue: 0.18).ignoresSafeArea()
+                    VStack(spacing: 26) {
+                        Image(systemName: "tv")
+                            .font(.system(size: 120))
+                            .foregroundStyle(.cyan)
+                        Text("UNIVERSAL GUIDE SIMULATOR PROBE")
+                            .font(.system(size: 54, weight: .bold))
+                            .foregroundStyle(.white)
+                        Text("Scene is visible on TVOut")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .accessibilityIdentifier("simulator.probe")
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("--visual-preview-shell") {
+                // Diagnostic: test the guide's outer scene without constructing
+                // TVGuideScreen, its state objects, or its complex view tree.
+                ZStack {
+                    Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea()
+                    VStack(spacing: 20) {
+                        Text("GUIDE SHELL DIAGNOSTIC")
+                            .font(.system(size: 48, weight: .bold))
+                        Text("SwiftUI scene is visible before guide initialization")
+                            .font(.system(size: 25))
+                    }
+                    .foregroundStyle(.white)
+                }
+            } else {
+                TVGuideScreen()
+            }
+            #else
             TVGuideScreen()
+            #endif
         }
     }
 }

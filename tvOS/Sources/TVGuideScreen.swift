@@ -7,7 +7,7 @@ private enum TVPalette {
     static let background = Color(red: 0.038, green: 0.052, blue: 0.102)
     static let panel = Color(red: 0.112, green: 0.128, blue: 0.214)
     static let cell = Color(red: 0.15, green: 0.17, blue: 0.27)
-    static let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    static let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
 }
 
 private struct TVFocusCard: ButtonStyle {
@@ -47,7 +47,49 @@ struct TVGuideScreen: View {
     @State private var phoneSelection = ""
     @State private var tvSelection = ""
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
+
+    // TVVisualPreview is deliberately excluded from the iPhone target.
+    // Keep its availability behind a compile-time guard.
+    private var shouldInstallTVRemoteReceiver: Bool {
+        #if os(tvOS)
+        return !isCompact && !TVVisualPreview.enabled &&
+            !ProcessInfo.processInfo.arguments.contains("--navigation-test") &&
+            selectedAction == nil && !showFilters && !showSearch &&
+            !showSettings && mediaSession == nil
+        #else
+        return false
+        #endif
+    }
+
+    #if os(iOS)
+    private func handlePhoneGamepadDirection(_ event: Notification) {
+        guard mediaSession == nil, selectedAction == nil, !showFilters,
+              !showSettings, !showSearch,
+              let raw = event.object as? String else { return }
+        movePhoneDirection(raw)
+    }
+
+    private func handlePhoneGamepadSelect() {
+        guard mediaSession == nil, selectedAction == nil, !showFilters,
+              !showSettings, !showSearch else { return }
+        activateFocused()
+    }
+
+    private func handlePhoneGamepadBack() {
+        if selectedAction == .plex { dismissPlexChoice() }
+        else if mediaSession == nil { selectPhoneProgram() }
+    }
+    #endif
+    #if os(tvOS)
+    // Stage production EPG creation until after the lightweight initial scene appears.
+    @State private var diagnosticLoadGuide = false
+    @State private var diagnosticCaptureStatus: String?
+    // Coalesce rapid D-pad moves into one horizontal viewport adjustment.
+    @State private var horizontalScrollTask: Task<Void, Never>?
+    #endif
     @State private var now = Date()
+    @State private var lastMoveWasVertical = false
+    @State private var navigationTime: Date?
     // A shared 16:9 design canvas scales the guide's vertical proportions
     // on iPhone landscape and Apple TV, including six visible program rows.
     #if os(iOS)
@@ -56,7 +98,11 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 105
     #else
     @State private var viewportHeight: CGFloat = 1080
-    private let minutePixels: CGFloat = 7
+    // Show roughly one hour of programming on Apple TV rather than
+    // compressing several hours into narrow, hard-to-read tiles.
+    // Fit roughly one hour of programming beside the fixed channel column.
+    // Keep time slots legible while allowing adjacent program boundaries onscreen.
+    private let minutePixels: CGFloat = 18
     private let stationWidth: CGFloat = 192
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
@@ -116,11 +162,295 @@ struct TVGuideScreen: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        // Preview fixtures and real channels share the same production layout.
+        // Preserve staged startup to avoid the tvOS scene watchdog.
+        if diagnosticLoadGuide {
+            productionBody
+        } else {
+            diagnosticStartupBody
+        }
+        #else
+        productionBody
+        #endif
+    }
+
+    #if os(tvOS)
+    #if os(tvOS)
+    @MainActor
+    private func captureGuideDiagnostic() async {
+        // Dismiss Settings before rendering; ImageRenderer captures only our
+        // SwiftUI guide, not the system compositor or protected video.
+        try? await Task.sleep(for: .milliseconds(500))
+        guard let base = URL(string: serverURL), ["http", "https"].contains(base.scheme?.lowercased() ?? ""),
+              let url = URL(string: "/api/diagnostics/guide-screenshot", relativeTo: base)?.absoluteURL else {
+            diagnosticCaptureStatus = "Set a valid Unraid server URL in Settings first."
+            return
+        }
+        let renderer = ImageRenderer(content: productionBody
+            .frame(width: 1920, height: 1080))
+        renderer.scale = 1
+        guard let png = renderer.uiImage?.pngData() else {
+            diagnosticCaptureStatus = "Guide image rendering failed."
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 25
+            let (_, response) = try await URLSession.shared.upload(for: request, from: png)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                diagnosticCaptureStatus = "Screenshot upload failed. Update the Unraid Docker backend."
+                return
+            }
+            diagnosticCaptureStatus = "Guide screenshot saved to Unraid diagnostics."
+        } catch {
+            diagnosticCaptureStatus = "Screenshot upload failed: \\(error.localizedDescription)"
+        }
+    }
+
+    #endif
+
+    private var diagnosticStartupBody: some View {
+        VStack(spacing: 22) {
+            Text("UNIVERSAL GUIDE")
+                .font(.system(size: 46, weight: .bold))
+            ProgressView()
+                .scaleEffect(1.4)
+                .accessibilityLabel("Loading guide")
+        }
+        .padding(70)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.115).ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .onAppear {
+            // Give tvOS a chance to finish presenting the initial scene before
+            // constructing the large production EPG and its focus hierarchy.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                diagnosticLoadGuide = true
+            }
+        }
+    }
+
+        private var previewIsolatedBody: some View {
+        // Keep the screenshot scene lightweight while rebuilding the real
+        // seven-row EPG incrementally. These labels are fictional fixtures,
+        // never inferred channel artwork or production metadata.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 18) {
+                // Match the production tvOS header rather than displaying
+                // a generic fixture-only title in screenshot reviews.
+                guideBrandMark
+                Text("Today")
+                    .font(.system(size: 28, weight: .bold))
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(TVPalette.blue)
+                Text(now.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.65))
+                Spacer()
+                Text("UNIVERSAL GUIDE")
+                    .font(.system(size: 15, weight: .semibold))
+                    .tracking(3)
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .frame(height: 66)
+            HStack(spacing: 0) {
+                Text("CHANNEL")
+                    .frame(width: 180, alignment: .leading)
+                // Draw the next half-hour marker as well, but constrain the
+                // ruler to the same width as the seven fixture rows. Without
+                // this, the header stops early and its 8:30 marker disappears.
+                ForEach(0..<3, id: \.self) { slot in
+                    Text(anchor.addingTimeInterval(Double(slot * 1800))
+                        .formatted(date: .omitted, time: .shortened))
+                        .frame(width: 540, alignment: .leading)
+                }
+            }
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .padding(.horizontal, 14)
+            // Match the ruler's outer width to the 1408-point visible fixture grid.
+            // A 240-minute ruler (4320 points) previously expanded the entire
+            // VStack beyond TVOut and centered most rows off the left edge.
+            // The third half-hour marker still fits inside the visible ruler.
+            .frame(width: 180 + 1408, height: 46, alignment: .leading)
+            .clipped()
+            .background(Color(white: 0.18))
+            ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(channel.network ?? channel.label)
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.84))
+                        Text(channel.number ?? channel.label)
+                            .font(.system(size: 25, weight: .semibold))
+                    }
+                    .frame(width: 180, alignment: .leading)
+                    // Match the production tvOS timeline scale: 18pt per minute,
+                    // with 540pt per 30-minute ruler slot. The screenshot must
+                    // not show a four-hour guide after production zoom changes.
+                    // Use actual program times, not three equal columns: a 90-minute
+                    // program must span three 30-minute ruler slots.
+                    HStack(spacing: 4) {
+                        ForEach(Array(channel.programs.prefix(5).enumerated()), id: \.element.id) { programIndex, program in
+                            let startMinute = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
+                            let endMinute = min(240, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
+                            let tileWidth = CGFloat(max(0, endMinute - startMinute)) * 18.0
+                            if tileWidth > 0 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(program.title)
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .lineLimit(1)
+                                if index == 1 && programIndex == 0 {
+                                    // Preview the expanded, in-tile detail treatment
+                                    // without fabricating episode artwork or metadata.
+                                    if let subtitle = program.subtitle, !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundStyle(.white.opacity(0.9))
+                                            .lineLimit(1)
+                                    }
+                                    Text(program.timeRange)
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.white.opacity(0.82))
+                                        .lineLimit(1)
+                                } else {
+                                    if let subtitle = program.subtitle {
+                                        Text(subtitle)
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.white.opacity(0.68))
+                                            .lineLimit(1)
+                                    }
+                                    if program.season != nil || program.episode != nil {
+                                        HStack(spacing: 6) {
+                                            if let season = program.season {
+                                                Text("S\(season)")
+                                            }
+                                            if let episode = program.episode {
+                                                Text("E\(episode)")
+                                            }
+                                        }
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.52))
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                if program.plex != nil {
+                                    Text("IN PLEX")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.yellow)
+                                }
+                                // The thin indicator shows elapsed airtime only
+                                // for the currently airing fixture; future shows
+                                // retain a quiet, unfilled baseline.
+                                GeometryReader { progressGeometry in
+                                    ZStack(alignment: .leading) {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.22))
+                                        if let start = program.startDate,
+                                           let end = program.endDate,
+                                           start <= now, now < end {
+                                            Rectangle()
+                                                .fill(TVPalette.blue.opacity(0.85))
+                                                .frame(width: progressGeometry.size.width *
+                                                    CGFloat(min(1, max(0,
+                                                        now.timeIntervalSince(start) /
+                                                        end.timeIntervalSince(start)))))
+                                        }
+                                    }
+                                }
+                                .frame(height: 3)
+                            }
+                            .padding(13)
+                            .frame(width: max(0, tileWidth - 4), height: 112, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(index == 1 && programIndex == 0
+                                        ? Color(red: 0.27, green: 0.29, blue: 0.34)
+                                        : Color(white: index.isMultiple(of: 2) ? 0.18 : 0.22))
+                            )
+                            // A single selected program in the screenshot fixture
+                            // demonstrates the subtle tvOS focus treatment. This is
+                            // preview-only; production focus/navigation is unchanged.
+                            .overlay {
+                                if index == 1 && programIndex == 0 {
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .strokeBorder(Color.white.opacity(0.86), lineWidth: 2)
+                                }
+                            }
+                            }
+                        }
+                    }
+                    .frame(width: 1408, alignment: .leading)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 120)
+                .clipped()
+                .background(index.isMultiple(of: 2) ? Color(white: 0.13) : Color(white: 0.16))
+            }
+            // Preview the production-style bottom action region without artwork.
+            // The user requested text-only guide tiles; no network images or
+            // invented channel artwork should appear in the screenshot fixture.
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("THE MOUNTAIN HOUSE")
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("A New Beginning  ·  7:30 PM – 8:30 PM")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.white.opacity(0.65))
+                }
+                Spacer(minLength: 12)
+                Text("Watch Live")
+                    .font(.system(size: 19, weight: .semibold))
+                    .padding(.horizontal, 30)
+                    .frame(height: 54)
+                    .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+                Text("Watch on Plex")
+                    .font(.system(size: 19, weight: .semibold))
+                    .padding(.horizontal, 30)
+                    .frame(height: 54)
+                    .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 124)
+            .background(Color(white: 0.115))
+            .padding(.top, 8)
+            Spacer(minLength: 0)
+        }
+        // Reserve the same leading navigation rail used by the production tvOS guide.
+        .padding(.leading, railWidth + 12)
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            // Reuse the real sidebar rather than painting preview-only icons.
+            sidebarRail
+                .frame(width: railWidth)
+                .frame(height: timelineHeight)
+                .padding(.leading, 16)
+                .padding(.top, 68)
+        }
+        .background(Color(red: 0.09, green: 0.10, blue: 0.12).ignoresSafeArea())
+        .task {
+            store.channels = TVVisualPreview.channels()
+            NSLog("UG_PREVIEW_STAGE lightweight-epg-loaded channels=%ld", store.channels.count)
+        }
+    }
+    #endif
+
+    private var productionBody: some View {
         ZStack {
-            (isCompact ? TVPalette.background : Color(red: 0.090, green: 0.103, blue: 0.122)).ignoresSafeArea()
+            (isCompact ? TVPalette.background : tvGuideSurface).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
+                    // Align the Apple TV rail with the guide grid below the header.
+                    .frame(height: isCompact ? nil : timelineHeight, alignment: .center)
+                    .padding(.top, isCompact ? 0 : (52 * uiScale + 6))
                 VStack(spacing: isCompact ? 7 : 6) {
                     header
                     if let error = store.error, store.channels.isEmpty {
@@ -137,7 +467,7 @@ struct TVGuideScreen: View {
                             VStack(spacing: 10) {
                                 Image(systemName: "line.3.horizontal.decrease.circle")
                                     .font(.system(size: isCompact ? 24 : 44))
-                                    .foregroundStyle(TVPalette.purple)
+                                    .foregroundStyle(TVPalette.blue)
                                 Text("No channels match this filter")
                                     .font(.system(size: isCompact ? 14 : 25, weight: .semibold))
                                 Button("Show All Channels") {
@@ -172,8 +502,7 @@ struct TVGuideScreen: View {
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
-            if !isCompact && selectedAction == nil && !showFilters &&
-                !showSearch && !showSettings && mediaSession == nil {
+            if shouldInstallTVRemoteReceiver {
                 UniversalTVGuideRemoteReceiver(
                     onMove: moveTVFocus,
                     onSelect: activateFocused,
@@ -188,7 +517,7 @@ struct TVGuideScreen: View {
             }
 
         }
-        .tint(TVPalette.purple)
+        .tint(TVPalette.blue)
         .preferredColorScheme(.dark)
         .modifier(UniversalGuideFullscreenLayout())
         .modifier(UniversalGuideBackNavigation {
@@ -241,7 +570,13 @@ struct TVGuideScreen: View {
         }) {
             TVGuideRemoteTextPanel(title: "Settings", prompt: "Universal Guide server URL",
                                    value: $serverURL, mode: .server,
-                                   onClose: { showSettings = false })
+                                   onClose: { showSettings = false },
+                                   onCapture: {
+                                       #if os(tvOS)
+                                       showSettings = false
+                                       Task { await captureGuideDiagnostic() }
+                                       #endif
+                                   })
         }
         .fullScreenCover(isPresented: $showSearch) {
             TVGuideRemoteTextPanel(title: "Search", prompt: "Search channels or programs",
@@ -263,17 +598,36 @@ struct TVGuideScreen: View {
                 },
                 onClose: { showFilters = false })
         }
+        #if os(tvOS)
+        .alert("Guide Diagnostics", isPresented: Binding(
+            get: { diagnosticCaptureStatus != nil },
+            set: { if !$0 { diagnosticCaptureStatus = nil } }
+        )) {
+            Button("OK") { diagnosticCaptureStatus = nil }
+        } message: { Text(diagnosticCaptureStatus ?? "") }
+        #endif
         .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
             Button("OK") { playbackError = nil }
         } message: { Text(playbackError ?? "") }
-        .task {
+        .onAppear {
             #if os(tvOS)
             if TVVisualPreview.enabled {
+                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
+            }
+            #endif
+        }
+        .task {
+            #if os(tvOS)
+            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
+                NSLog("UG_PREVIEW_STAGE guide-task-start")
+
                 store.channels = TVVisualPreview.channels()
+                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
                 resetSelection()
+                NSLog("UG_PREVIEW_STAGE selection-reset")
             } else {
                 await refreshGuide()
-                refreshSelectedArtwork()
+                // tvOS guide tiles are text-only; do not fetch unused artwork.
             }
             #else
             await refreshGuide()
@@ -285,7 +639,7 @@ struct TVGuideScreen: View {
         }
         .onChange(of: selected?.1.id) { _, _ in
             #if os(tvOS)
-            if !TVVisualPreview.enabled { refreshSelectedArtwork() }
+            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
             #else
             refreshSelectedArtwork()
             #endif
@@ -293,7 +647,9 @@ struct TVGuideScreen: View {
         .onChange(of: serverURL) { _, _ in
             artworkCache.removeAll()
             noArtwork.removeAll()
+            #if os(iOS)
             refreshSelectedArtwork()
+            #endif
         }
         .onChange(of: store.channels.count) { _, _ in resetSelection() }
         .onChange(of: searchText) { _, _ in resetSelection() }
@@ -309,34 +665,33 @@ struct TVGuideScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
             #if os(iOS)
-            if mediaSession == nil && selectedAction == nil &&
-               !showFilters && !showSettings && !showSearch,
-               let raw = event.object as? String { movePhoneDirection(raw) }
+            handlePhoneGamepadDirection(event)
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
             #if os(iOS)
-            if mediaSession == nil && selectedAction == nil &&
-               !showFilters && !showSettings && !showSearch { activateFocused() }
+            handlePhoneGamepadSelect()
             #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
             #if os(iOS)
-            if selectedAction == .plex { dismissPlexChoice() }
-            else if mediaSession == nil { selectPhoneProgram() }
+            handlePhoneGamepadBack()
             #endif
         }
     }
 
     private var sidebarRail: some View {
         VStack(spacing: isCompact ? 5 : 16) {
+            if !isCompact { Spacer(minLength: 0) }
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(isCompact ? 10 : 7)
-        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 16))
+        .frame(maxWidth: .infinity)
+        .frame(height: isCompact ? nil : timelineHeight)
+        .padding(isCompact ? 10 : 0)
+        .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func railButton(_ icon: String, name: String, key: String,
@@ -350,15 +705,32 @@ struct TVGuideScreen: View {
             .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
-                .stroke(selectedFocus == key ? TVPalette.purple.opacity(0.9) : .clear, lineWidth: 2))
+                .stroke(selectedFocus == key ? TVPalette.blue.opacity(0.9) : .clear, lineWidth: 2))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
     }
 
+    private var guideBrandMark: some View {
+        HStack(spacing: 0) {
+            Text("U").foregroundStyle(.white)
+            Text("G").foregroundStyle(TVPalette.blue)
+        }
+        .font(.system(size: isCompact ? 25 : 30, weight: .black, design: .rounded))
+        .italic()
+        .overlay(alignment: .center) {
+            Image(systemName: "play.fill")
+                .font(.system(size: isCompact ? 7 : 9, weight: .bold))
+                .foregroundStyle(.white)
+                .offset(x: isCompact ? 12 : 15)
+        }
+        .accessibilityLabel("Universal Guide")
+    }
+
     private var header: some View {
         HStack(spacing: 18) {
             if isCompact {
+                guideBrandMark
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Universal Guide")
                         .font(.system(size: 17, weight: .heavy))
@@ -370,11 +742,12 @@ struct TVGuideScreen: View {
                 Text(now.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 12, weight: .semibold))
             } else {
+                guideBrandMark
                 Text("Today")
                     .font(.system(size: 28, weight: .bold))
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 18))
-                    .foregroundStyle(TVPalette.purple)
+                    .foregroundStyle(TVPalette.blue)
                 Text(now.formatted(date: .omitted, time: .shortened))
                     .font(.system(size: 23, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -389,7 +762,7 @@ struct TVGuideScreen: View {
                     .filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption.bold())
                     .padding(8)
-                    .background(TVPalette.purple.opacity(0.18), in: Capsule())
+                    .background(TVPalette.blue.opacity(0.18), in: Capsule())
             }
         }
         .frame(height: (isCompact ? 60 : 52) * uiScale)
@@ -412,21 +785,14 @@ struct TVGuideScreen: View {
                             Text(anchor.addingTimeInterval(Double(slot * 1800))
                                 .formatted(date: .omitted, time: .shortened))
                                 .font(.system(size: isCompact ? 10 : 18, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.83, green: 0.77, blue: 0.95))
+                                .foregroundStyle(isCompact ? Color(red: 0.83, green: 0.77, blue: 0.95) : Color.white.opacity(0.74))
                                 .frame(width: minutePixels * 30, alignment: .leading)
                         }
                     }
                     .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
                     .background(isCompact ?
                                 Color(red: 0.105, green: 0.11, blue: 0.19) :
-                                Color(red: 0.17, green: 0.19, blue: 0.23))
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(TVPalette.purple)
-                            .frame(width: isCompact ? 1.5 : 3)
-                            .offset(x: nowTimelineX)
-                            .allowsHitTesting(false)
-                    }
+                                tvGuideSurface)
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
@@ -434,7 +800,7 @@ struct TVGuideScreen: View {
                                 if let net = channel.network, !net.isEmpty {
                                     Text(net.uppercased())
                                         .font(.system(size: isCompact ? 9 : 16, weight: .bold))
-                                        .foregroundStyle(TVPalette.purple)
+                                        .foregroundStyle(TVPalette.blue)
                                 }
                                 Text(channel.number ?? channel.label)
                                     .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
@@ -449,7 +815,7 @@ struct TVGuideScreen: View {
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
                             .background(isCompact ?
                                         Color(red: 0.135, green: 0.145, blue: 0.225) :
-                                        Color(red: 0.19, green: 0.21, blue: 0.25))
+                                        tvGuideSurface)
                             timelineRow(channel, index: channelIndex)
                         }
                         .frame(height: rowHeight)
@@ -457,8 +823,7 @@ struct TVGuideScreen: View {
                                     (channelIndex.isMultiple(of: 2) ?
                                         TVPalette.background : TVPalette.panel.opacity(0.6)) :
                                     (channelIndex.isMultiple(of: 2) ?
-                                        Color(red: 0.13, green: 0.15, blue: 0.18) :
-                                        Color(red: 0.15, green: 0.17, blue: 0.20)))
+                                        tvGuideSurface : tvGuideSurface))
                         .id("row-\(channelIndex)")
                     }
                 }
@@ -469,17 +834,23 @@ struct TVGuideScreen: View {
             // Never issue a vertical scroll: the selected channel is in
             // visibleChannelRange by construction.
             .onChange(of: selectedProgram) { _, _ in
-                followSelectedTime(horizontal)
-            }
-            .onChange(of: selectedChannel) { _, _ in
-                followSelectedTime(horizontal)
+                if !lastMoveWasVertical { followSelectedTime(horizontal) }
             }
         }
-        .background(isCompact ? TVPalette.panel :
-                    Color(red: 0.14, green: 0.16, blue: 0.19),
-                    in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1))
+        .background {
+            if isCompact {
+                RoundedRectangle(cornerRadius: 13).fill(TVPalette.panel)
+            } else {
+                // A flat, edge-to-edge tvOS EPG instead of a floating rounded card.
+                tvGuideSurface
+            }
+        }
+        .overlay {
+            if isCompact {
+                RoundedRectangle(cornerRadius: 13)
+                    .stroke(Color(red: 0.28, green: 0.26, blue: 0.4), lineWidth: 1)
+            }
+        }
         .frame(height: timelineHeight, alignment: .top)
     }
 
@@ -488,31 +859,30 @@ struct TVGuideScreen: View {
               channels[selectedChannel].programs.indices.contains(selectedProgram) else { return }
         let channel = selectedChannel
         let program = selectedProgram
-        // Wait for the six-row window to materialize its new program tile;
-        // there is no secondary vertical scroll to race this request.
+        #if os(tvOS)
+        // A held D-pad can emit multiple focus changes per frame. Cancel the
+        // previous pending viewport move instead of forcing SwiftUI to lay out
+        // and recenter the long EPG for every intermediate selection.
+        horizontalScrollTask?.cancel()
+        horizontalScrollTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard !Task.isCancelled,
+                  selectedChannel == channel, selectedProgram == program else { return }
+            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+        }
+        #else
         DispatchQueue.main.async {
             guard selectedChannel == channel, selectedProgram == program else { return }
             proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
         }
+        #endif
     }
 
-    private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
-        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
-        // can now scroll to the tile's actual horizontal position.
-        HStack(spacing: 0) {
-            ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
-                let start = max(0, (program.startDate ?? anchor).timeIntervalSince(anchor) / 60)
-                let end = min(durationMinutes, (program.endDate ?? anchor).timeIntervalSince(anchor) / 60)
-                let previousEnd = pi > 0 ?
-                    max(0, min(durationMinutes,
-                        (channel.programs[pi-1].endDate ?? anchor).timeIntervalSince(anchor) / 60)) : 0
-                let cellStart = max(start, previousEnd)
-                if end > cellStart {
-                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
-                    Button {
-                        choose(index, pi)
-                        activateGuideProgram(channel, program)
-                    } label: {
+    // Isolate the complex program label from the row's ForEach/geometry builder.
+    // This keeps Swift's type checker from expanding the entire EPG expression.
+    @ViewBuilder
+    private func timelineProgramLabel(_ program: GuideProgram, channelIndex index: Int,
+                                      programIndex pi: Int, cellWidth: CGFloat) -> some View {
                         Group {
                             if isCompact {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -536,10 +906,9 @@ struct TVGuideScreen: View {
                                 // Its bounds remain fixed: no focus-driven row
                                 // reflow or jumping while using the TV remote.
                                 HStack(alignment: .center, spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 7) {
+                                    VStack(alignment: .leading, spacing: 3) {
                                         Text(program.title)
-                                            .font(.system(size: selectedFocus == "program-\(index)-\(pi)" ? 27 : 24,
-                                                          weight: .semibold))
+                                            .font(.system(size: 24, weight: .semibold))
                                             .lineLimit(1)
                                         if selectedFocus == "program-\(index)-\(pi)" {
                                             if let subtitle = program.subtitle, !subtitle.isEmpty {
@@ -548,10 +917,22 @@ struct TVGuideScreen: View {
                                                     .foregroundStyle(.white.opacity(0.84))
                                                     .lineLimit(1)
                                             }
-                                            Text(program.timeRange)
-                                                .font(.system(size: 17))
-                                                .foregroundStyle(.white.opacity(0.78))
-                                                .lineLimit(1)
+                                            // Season/episode and airtime share one line to
+                                            // prevent focused tiles growing beyond their row.
+                                            HStack(spacing: 10) {
+                                                if let season = program.season {
+                                                    Text("S\(season)")
+                                                }
+                                                if let episode = program.episode {
+                                                    Text("E\(episode)")
+                                                }
+                                                Text(program.timeRange)
+                                                    .lineLimit(1)
+                                                    .minimumScaleFactor(0.75)
+                                            }
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(.white.opacity(0.78))
+                                            .lineLimit(1)
                                         } else if let subtitle = program.subtitle {
                                             Text(subtitle)
                                                 .font(.system(size: 16))
@@ -566,37 +947,10 @@ struct TVGuideScreen: View {
                                         }
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    #if os(tvOS)
-                                    if TVVisualPreview.enabled &&
-                                       selectedFocus == "program-\(index)-\(pi)" &&
-                                       CGFloat(end-cellStart)*minutePixels > 380 {
-                                        ZStack {
-                                            LinearGradient(colors: [
-                                                Color(red: 0.32, green: 0.23, blue: 0.42),
-                                                Color(red: 0.12, green: 0.18, blue: 0.27)
-                                            ], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            Image(systemName: "tv")
-                                                .font(.system(size: 44))
-                                                .foregroundStyle(.white.opacity(0.65))
-                                        }
-                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else if selectedFocus == "program-\(index)-\(pi)",
-                                       CGFloat(end-cellStart)*minutePixels > 380,
-                                       let selectedArtworkURL {
-                                        AsyncImage(url: selectedArtworkURL) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill()
-                                            } else {
-                                                Color.white.opacity(0.08)
-                                            }
-                                        }
-                                        .frame(width: 152 * uiScale, height: 88 * uiScale)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    }
-                                    #else
+                                    #if os(iOS)
+                                    // Keep the existing iPhone artwork treatment.
                                     if selectedFocus == "program-\(index)-\(pi)",
-                                       CGFloat(end-cellStart)*minutePixels > 380,
+                                       cellWidth > 380,
                                        let selectedArtworkURL {
                                         AsyncImage(url: selectedArtworkURL) { phase in
                                             if let image = phase.image {
@@ -610,6 +964,8 @@ struct TVGuideScreen: View {
                                     }
                                     #endif
                                 }
+                                .frame(maxHeight: .infinity, alignment: .center)
+                                .clipped()
                                 .padding(.bottom, program.isOnNow ? 10 : 0)
                                 .overlay(alignment: .bottomLeading) {
                                     if program.isOnNow,
@@ -619,14 +975,19 @@ struct TVGuideScreen: View {
                                         GeometryReader { geometry in
                                             let duration = endDate.timeIntervalSince(startDate)
                                             let progress = max(0, min(1, now.timeIntervalSince(startDate) / duration))
+                                            #if os(tvOS)
+                                            let progressHeight: CGFloat = 3
+                                            #else
+                                            let progressHeight: CGFloat = 5
+                                            #endif
                                             Capsule()
                                                 .fill(Color.white.opacity(0.16))
-                                                .frame(height: 5)
+                                                .frame(height: progressHeight)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
-                                                        .fill(TVPalette.purple.opacity(0.9))
+                                                        .fill(isCompact ? TVPalette.blue.opacity(0.9) : TVPalette.blue.opacity(0.85))
                                                         .frame(width: geometry.size.width * progress,
-                                                               height: 5)
+                                                               height: progressHeight)
                                                 }
                                                 .frame(maxHeight: .infinity, alignment: .bottom)
                                         }
@@ -635,24 +996,51 @@ struct TVGuideScreen: View {
                                 }
                             }
                         }
+    }
+
+    private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
+        // Resolve the half-hour anchor once per row. Calendar date arithmetic
+        // inside every program cell used to repeat during each focus update.
+        let guideAnchor = anchor
+        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
+        // can now scroll to the tile's actual horizontal position.
+        return HStack(spacing: 0) {
+            ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
+                let start = max(0, (program.startDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
+                let end = min(durationMinutes, (program.endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
+                let previousEnd = pi > 0 ?
+                    max(0, min(durationMinutes,
+                        (channel.programs[pi-1].endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)) : 0
+                let cellStart = max(start, previousEnd)
+                if end > cellStart {
+                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
+                    Button {
+                        choose(index, pi)
+                        activateGuideProgram(channel, program)
+                    } label: {
+                        timelineProgramLabel(program, channelIndex: index, programIndex: pi,
+                                             cellWidth: CGFloat(end-cellStart)*minutePixels)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .padding(.horizontal, isCompact ? 7 : 17)
                         .padding(.vertical, isCompact ? 0 : 10)
                         .foregroundStyle(.white)
                         .background(isCompact ?
-                                    (program.plex != nil ? TVPalette.purple.opacity(0.22) : TVPalette.cell) :
-                                    Color(red: 0.23, green: 0.25, blue: 0.30),
+                                    (program.plex != nil ? TVPalette.blue.opacity(0.22) : TVPalette.cell) :
+                                    Color(white: 0.205),
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    Color.white.opacity(0.9) : Color.white.opacity(0.13),
-                                    lineWidth: selectedFocus == "program-\(index)-\(pi)" ? 2.5 : 1))
+                                    (isCompact ? Color.white.opacity(0.9) : TVPalette.blue.opacity(0.58)) :
+                                    Color.white.opacity(0.13),
+                                    lineWidth: selectedFocus == "program-\(index)-\(pi)" ?
+                                        (isCompact ? 2.5 : 1.5) : 1))
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
                            height: rowHeight-(isCompact ? 6 : 14))
                     .padding(.trailing, 7)
                     .buttonStyle(TVFocusCard())
+                    .accessibilityIdentifier("guide.program.\(index).\(pi)")
                     .focused($focus, equals: "program-\(index)-\(pi)")
                     .id("program-\(index)-\(pi)")
                 }
@@ -661,14 +1049,23 @@ struct TVGuideScreen: View {
         }
         .frame(width: CGFloat(durationMinutes)*minutePixels, height: rowHeight,
                alignment: .leading)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(TVPalette.purple.opacity(0.95))
-                .frame(width: isCompact ? 1.5 : 3)
-                .offset(x: nowTimelineX - stationWidth)
-                .allowsHitTesting(false)
-        }
         .background(alignment: .leading) {
+            #if os(tvOS)
+            // Draw the static half-hour grid in one pass rather than creating
+            // 16 SwiftUI Rectangle views per row on every focus update.
+            Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+                let spacing = minutePixels * 30
+                guard spacing > 0 else { return }
+                for slot in 0..<16 {
+                    let x = CGFloat(slot) * spacing
+                    guard x < size.width else { break }
+                    context.fill(
+                        Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                        with: .color(.white.opacity(0.075))
+                    )
+                }
+            }
+            #else
             HStack(spacing: 0) {
                 ForEach(0..<16, id: \.self) { _ in
                     Rectangle().fill(.white.opacity(0.075))
@@ -676,6 +1073,7 @@ struct TVGuideScreen: View {
                         .frame(width: minutePixels*30, alignment: .leading)
                 }
             }
+            #endif
         }
         .clipped()
     }
@@ -763,7 +1161,7 @@ struct TVGuideScreen: View {
                 .background(Color(red: 0.22, green: 0.20, blue: 0.31),
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
-                    .stroke(selectedFocus == key ? TVPalette.purple : .clear, lineWidth: 3))
+                    .stroke(selectedFocus == key ? TVPalette.blue : .clear, lineWidth: 3))
         }
         .buttonStyle(TVFocusCard())
         .focused($focus, equals: key)
@@ -805,6 +1203,13 @@ struct TVGuideScreen: View {
         let server = serverURL
         let ratingKey = program.plex?.ratingKey
         artworkTask = Task { @MainActor in
+            #if os(tvOS)
+            // Rapid remote scrolling should not launch an artwork HTTP request
+            // for every briefly highlighted program. The existing cancellation
+            // path drops intermediate selections before network work begins.
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            #endif
             guard let base = URL(string: server), base.host != nil else { return }
             var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
             components?.path = "/api/guide/artwork"
@@ -851,6 +1256,7 @@ struct TVGuideScreen: View {
         #endif
     }
     private var railWidth: CGFloat { isCompact ? 48 : 68 }
+    private var tvGuideSurface: Color { Color(white: 0.115) }
 
     // iPhone and Apple TV render the same native program tiles, sidebar and
     // actions. Only their input adapters differ. Apple TV uses system focus;
@@ -899,6 +1305,7 @@ struct TVGuideScreen: View {
             (programs[$0].startDate ?? .distantFuture) <
                 anchor.addingTimeInterval(durationMinutes*60)
         }
+        lastMoveWasVertical = direction == "up" || direction == "down"
         switch direction {
         case "left":
             guard let index = visible.firstIndex(of: selectedProgram), index > 0 else {
@@ -906,10 +1313,12 @@ struct TVGuideScreen: View {
                 return
             }
             selectedProgram = visible[index-1]
+            navigationTime = programs[selectedProgram].startDate?.addingTimeInterval(60)
         case "right":
             guard let index = visible.firstIndex(of: selectedProgram),
                   index+1 < visible.count else { return }
             selectedProgram = visible[index+1]
+            navigationTime = programs[selectedProgram].startDate?.addingTimeInterval(60)
         case "up", "down":
             let nextRow = selectedChannel + (direction == "down" ? 1 : -1)
             if !channels.indices.contains(nextRow) {
@@ -918,12 +1327,9 @@ struct TVGuideScreen: View {
                 return
             }
             let current = programs[selectedProgram]
-            let targetTime: Date = {
-                if let start=current.startDate, let end=current.endDate {
-                    return start.addingTimeInterval(end.timeIntervalSince(start)/2)
-                }
-                return now
-            }()
+            // Keep the same time column when moving between rows. Using a
+            // movie's midpoint could jump hours ahead and lose the viewport.
+            let targetTime = navigationTime ?? max(now, current.startDate ?? now)
             let candidates = channels[nextRow].programs
             guard !candidates.isEmpty else { return }
             let best = candidates.indices.min {
@@ -1112,9 +1518,33 @@ struct TVGuideScreen: View {
         Task {
             defer { loadingPlayback = false }
             do {
-                let session = try await PlexPlaybackService.start(serverURL: serverURL,
-                    ratingKey: key, mode: mode, airingStart: program.start,
-                    airingEnd: program.stop)
+                // Plex's offset-based HLS transcoder can land at the movie's
+                // end while the UI still displays the requested position.
+                // For "Watch from Current Point", use a full-length stream
+                // and seek AVPlayer locally after the item becomes ready.
+                var session = try await PlexPlaybackService.start(serverURL: serverURL,
+                    ratingKey: key, mode: mode == "join" ? "beginning" : mode,
+                    airingStart: program.start, airingEnd: program.stop)
+                if mode == "join" {
+                    let metadata = try await PlexPlaybackService.metadata(session)
+                    let parser = ISO8601DateFormatter()
+                    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    func date(_ raw: String) -> Date? {
+                        parser.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+                    }
+                    guard let start = date(program.start), let end = date(program.stop) else {
+                        throw PlexPlaybackError.server("Unable to read the broadcast schedule for Watch from Current Point.")
+                    }
+                    let span = end.timeIntervalSince(start)
+                    let elapsed = Date().timeIntervalSince(start)
+                    guard span > 0, span <= 86400, elapsed >= 0,
+                          metadata.duration_seconds > 0 else {
+                        throw PlexPlaybackError.server("The broadcast timing is invalid for Watch from Current Point.")
+                    }
+                    session.initialSeekSeconds = min(
+                        max(0, elapsed / span * metadata.duration_seconds),
+                        max(0, metadata.duration_seconds - 10))
+                }
                 // Never present the player until the source-choice
                 // fullScreenCover has fully dismissed. Competing covers can
                 // cause an early onDisappear and end the HLS session.
@@ -1169,7 +1599,7 @@ private struct TVGuideFilterPanel: View {
     @State private var phoneIndex = 0
     private let choices = ["All Channels", "In Plex", "Tablo", "Philo",
                            "Favorites", "Cancel"]
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -1200,10 +1630,10 @@ private struct TVGuideFilterPanel: View {
                         .padding(.horizontal, 16)
                         .frame(height: isCompact ? 35 : 58)
                         .foregroundStyle(.white)
-                        .background(selection == index ? purple.opacity(0.40) :
+                        .background(selection == index ? blue.opacity(0.40) :
                                     Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(selection == index ? purple : .clear, lineWidth: 3))
+                            .stroke(selection == index ? blue : .clear, lineWidth: 3))
                     }
                     .buttonStyle(.plain)
                     .focused($focused, equals: index)
@@ -1266,9 +1696,10 @@ private struct TVGuideRemoteTextPanel: View {
     @Binding var value: String
     let mode: TVGuideTextMode
     let onClose: () -> Void
+    var onCapture: (() -> Void)? = nil
     @State private var selectedKey = 0
     private let columns = 10
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var compact: Bool {
         #if os(iOS)
         true
@@ -1278,7 +1709,7 @@ private struct TVGuideRemoteTextPanel: View {
     }
     private var keys: [String] {
         let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/._-").map { String($0) }
-        return letters + ["SPACE", "DELETE", "CLEAR", "DONE", "CANCEL"]
+        return letters + ["SPACE", "DELETE", "CLEAR", "DONE", "CANCEL"] + (mode == .server && !compact ? ["CAPTURE"] : [])
     }
 
     var body: some View {
@@ -1311,7 +1742,8 @@ private struct TVGuideRemoteTextPanel: View {
                             Text(key == "SPACE" ? "␣" :
                                  key == "DELETE" ? "⌫" :
                                  key == "CLEAR" ? "CLR" :
-                                 key == "CANCEL" ? "ESC" : key)
+                                 key == "CANCEL" ? "ESC" :
+                                 key == "CAPTURE" ? "PHOTO" : key)
                                 .font(.system(size: compact ? 12 : 24,
                                               weight: .semibold))
                                 .minimumScaleFactor(0.65)
@@ -1320,11 +1752,11 @@ private struct TVGuideRemoteTextPanel: View {
                                 .frame(height: compact ? 31 : 60)
                                 .foregroundStyle(.white)
                                 .background(selectedKey == index ?
-                                            purple.opacity(0.35) :
+                                            blue.opacity(0.35) :
                                             Color.white.opacity(0.08),
                                             in: RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(selectedKey == index ? purple : .clear,
+                                    .stroke(selectedKey == index ? blue : .clear,
                                             lineWidth: compact ? 2 : 3))
                         }
                         .buttonStyle(.plain)
@@ -1391,6 +1823,7 @@ private struct TVGuideRemoteTextPanel: View {
         case "DELETE": if !value.isEmpty { value.removeLast() }
         case "CLEAR": value = ""
         case "DONE", "CANCEL": onClose()
+        case "CAPTURE": onCapture?()
         default: value += mode == .server ? keys[index].lowercased() : keys[index]
         }
     }
@@ -1479,7 +1912,7 @@ private struct UniversalPlexChoiceScreen: View {
     let onCancel: () -> Void
     @FocusState private var nativeFocus: Int?
     @State private var phoneIndex = 0
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isPhone: Bool {
         #if os(iOS)
         true
@@ -1511,7 +1944,7 @@ private struct UniversalPlexChoiceScreen: View {
                                         in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12)
                                 .stroke(selectedIndex == index ?
-                                            purple.opacity(0.95) : .clear, lineWidth: 2))
+                                            blue.opacity(0.95) : .clear, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
                     #if os(tvOS)

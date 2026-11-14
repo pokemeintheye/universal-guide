@@ -1,0 +1,27 @@
+name: Pull request preview validation
+# Same-repository branches are checked on every push by the preview workflows.
+# Avoid 'synchronize' here: automated commits to the long-lived tvOS draft PR
+# otherwise create repeated GitHub bot approval requests.
+# Opening/reopening/marking a PR ready triggers explicit PR checks.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - 'tvOS/**'
+      - 'iOS/**'
+      - 'Shared/**'
+      - '.github/workflows/tvos-build.yml'
+      - '.github/workflows/ios-build.yml'
+      - '.github/workflows/pr-preview-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-tv:
+    uses: ./.github/workflows/tvos-build.yml
+  iphone:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.ref != 'tvos-auto-visual-development' }}
+    uses: ./.github/workflows/ios-build.yml

@@ -46,9 +46,13 @@ enum TVVisualPreview {
         var channelPayloads: [[String: Any]] = []
         for (index, station) in stations.enumerated() {
             var programs: [[String: Any]] = []
+            // Mix realistic program lengths so screenshots expose adjacent
+            // program boundaries instead of seven uninterrupted long tiles.
+            // Each row remains contiguous, including shows already in progress.
+            let firstDuration = [60, 60, 90, 45, 30, 75, 60, 45, 90, 30, 60][index]
             for slot in 0..<5 {
-                let startOffset = slot == 0 ? -30 : (slot == 1 ? 90 : 90 + (slot - 1) * 60)
-                let duration = slot == 0 ? 120 : 60
+                let startOffset = slot == 0 ? -30 : -30 + firstDuration + (slot - 1) * 30
+                let duration = slot == 0 ? firstDuration : 30
                 let start = base.addingTimeInterval(TimeInterval(startOffset * 60))
                 let stop = start.addingTimeInterval(TimeInterval(duration * 60))
                 let chosen = titles[index][slot % titles[index].count]
