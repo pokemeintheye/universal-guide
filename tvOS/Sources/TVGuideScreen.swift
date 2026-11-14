@@ -1016,8 +1016,10 @@ struct TVGuideScreen: View {
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    Color.white.opacity(0.9) : Color.white.opacity(0.13),
-                                    lineWidth: selectedFocus == "program-\(index)-\(pi)" ? 2.5 : 1))
+                                    (isCompact ? Color.white.opacity(0.9) : TVPalette.blue.opacity(0.58)) :
+                                    Color.white.opacity(0.13),
+                                    lineWidth: selectedFocus == "program-\(index)-\(pi)" ?
+                                        (isCompact ? 2.5 : 1.5) : 1))
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
