@@ -1996,7 +1996,7 @@ private struct UniversalPlexChoiceScreen: View {
         false
         #endif
     }
-    private var selectedIndex: Int { isPhone ? phoneIndex : (nativeFocus ?? 0) }
+    private var selectedIndex: Int { phoneIndex }
     private var actions: [String] {
         var items = ["Watch from Beginning"]
         if canJoin { items.append("Watch from Current Point") }
@@ -2007,6 +2007,16 @@ private struct UniversalPlexChoiceScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            #if os(tvOS)
+            UniversalTVGuideRemoteReceiver(onMove: { direction in
+                if direction == "down" || direction == "right" {
+                    phoneIndex = min(actions.count - 1, phoneIndex + 1)
+                } else if direction == "up" || direction == "left" {
+                    phoneIndex = max(0, phoneIndex - 1)
+                }
+            }, onSelect: { activate(phoneIndex) }, onBack: onCancel)
+                .ignoresSafeArea()
+            #endif
             VStack(spacing: 20) {
                 Text("Watch on Plex").font(.system(size: isPhone ? 22 : 36, weight: .bold))
                 Text(title).font(.headline).foregroundStyle(.secondary)
@@ -2025,8 +2035,11 @@ private struct UniversalPlexChoiceScreen: View {
                     .buttonStyle(.plain)
                     #if os(tvOS)
                     .focusEffectDisabled()
+                    .focusable(false)
                     #endif
+                    #if os(iOS)
                     .focused($nativeFocus, equals: index)
+                    #endif
                 }
             }
             .padding(isPhone ? 24 : 36)
