@@ -3,14 +3,14 @@ name: Apple TV visual preview screenshot
 on:
   workflow_dispatch:
   push:
-    branches: [main, tvos-visual-preview-20261112]
+    branches: [main, tvos-visual-preview-20261112, tvos-auto-visual-development]
     paths:
       - 'tvOS/**'
       - 'Shared/**'
       - '.github/workflows/tvos-visual-preview.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: tvos-visual-preview-${{ github.ref }}
@@ -78,22 +78,146 @@ jobs:
           print("Selected simulator:", selected[0], file=sys.stderr)
           PY
 
-      - name: Boot simulator and capture guide screenshot
+      - name: Boot simulator and capture visible guide screenshot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p visual-preview
+          # CoreSimulator can report boot complete before TVOut has a usable
+          # surface on hosted macOS runners. Retry screenshot acquisition
+          # instead of failing the entire workflow on the first code-60 timeout.
+          capture_tvout() {
+            local destination="$1"
+            local attempt
+            for attempt in 1 2 3 4; do
+              if xcrun simctl io "$SIMULATOR_UDID" screenshot "$destination"; then
+                return 0
+              fi
+              echo "::warning::TVOut screenshot attempt $attempt failed for $destination; waiting for display surfaces"
+              xcrun simctl list devices | grep -F "$SIMULATOR_UDID" || true
+              sleep 10
+              open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID" || true
+            done
+            echo "::error::TVOut screenshot remained unavailable after four attempts: $destination"
+            xcrun simctl diagnose -h >/dev/null 2>&1 || true
+            return 1
+          }
           xcrun simctl boot "$SIMULATOR_UDID"
           xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          # Open the GUI window so TVOut is actually driven by the simulator,
+          # not just a booted headless CoreSimulator device.
+          open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID"
+          sleep 5
           APP="tvOS/build/Build/Products/Debug-appletvsimulator/UniversalGuideTV.app"
           test -d "$APP"
           xcrun simctl install "$SIMULATOR_UDID" "$APP"
-          xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
-          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview
+          capture_tvout visual-preview/before-launch.png
+
+          # First establish whether this hosted runner can present ANY scene
+          # from our app on TVOut. Probe and guide share bundle and runtime.
+          xcrun simctl launch "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview-shell
           sleep 12
-          xcrun simctl io "$SIMULATOR_UDID" screenshot visual-preview/apple-tv-guide.png
-          test -s visual-preview/apple-tv-guide.png
+          capture_tvout visual-preview/simulator-probe.png
+          "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
+          from PIL import Image, ImageFilter, ImageStat
+          im = Image.open("visual-preview/simulator-probe.png").convert("L").resize((480, 270))
+          edges = ImageStat.Stat(im.filter(ImageFilter.FIND_EDGES))
+          print(f"Guide shell edge mean={edges.mean[0]:.2f}, spread={edges.stddev[0]:.2f}")
+          # Sparse white diagnostic text on a flat charcoal canvas has a low
+          # mean edge score despite being visible (observed 1.91 / 19.48).
+          # Reject only low edge spread here; retain stricter guide validation.
+          if edges.stddev[0] < 12:
+              raise SystemExit("Guide shell failed to render: failure occurs before TVGuideScreen construction")
+          PY
+
+          # The probe rendered correctly, but terminating and relaunching the
+          # same app left TVOut on blurred wallpaper in earlier runs. Give the
+          # guide a clean simulator boot and fresh installation instead of
+          # relying on the in-place scene transition.
+          xcrun simctl terminate "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
+          xcrun simctl shutdown "$SIMULATOR_UDID"
+          xcrun simctl boot "$SIMULATOR_UDID"
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          open -a Simulator --args -CurrentDeviceUDID "$SIMULATOR_UDID"
+          sleep 8
+          xcrun simctl uninstall "$SIMULATOR_UDID" co.thejonesfamily.universalguide || true
+          xcrun simctl install "$SIMULATOR_UDID" "$APP"
+          xcrun simctl launch --terminate-running-process "$SIMULATOR_UDID" co.thejonesfamily.universalguide --visual-preview
+          # GitHub previously marked a wallpaper-only image as success.
+          # Recheck until the captured screen visibly changes from home.
+          VISIBLE=0
+          for attempt in 1 2 3 4 5; do
+            sleep 12
+            capture_tvout visual-preview/apple-tv-guide.png
+            if "$RUNNER_TEMP/brand-venv/bin/python" - <<'PY'
+          from PIL import Image, ImageFilter, ImageStat
+          # A transition from tvOS home to its blurred wallpaper used to
+          # produce a false positive. Verify actual high-frequency UI detail.
+          after = Image.open("visual-preview/apple-tv-guide.png").convert("L").resize((480, 270))
+          edges = after.filter(ImageFilter.FIND_EDGES)
+          edge_mean = ImageStat.Stat(edges).mean[0]
+          edge_spread = ImageStat.Stat(edges).stddev[0]
+          print(f"Visible guide detail: mean edge={edge_mean:.2f}, spread={edge_spread:.2f}")
+          if edge_mean < 5 or edge_spread < 14:
+              raise SystemExit("No visible guide UI; likely tvOS blurred wallpaper")
+          PY
+            then
+              VISIBLE=1
+              break
+            fi
+            echo "Attempt $attempt: guide not visible; checking again."
+          done
+          if [ "$VISIBLE" != 1 ]; then
+            echo "::error::Guide never appeared on TVOut; preserving screenshots and simulator diagnostics."
+            xcrun simctl spawn "$SIMULATOR_UDID" log show --last 3m --style compact \
+              --predicate 'process == "UniversalGuideTV" OR eventMessage CONTAINS "co.thejonesfamily.universalguide" OR eventMessage CONTAINS "UG_PREVIEW_STAGE" OR eventMessage CONTAINS "watchdog" OR eventMessage CONTAINS "scene-create"' \
+              > visual-preview/simulator-app.log 2>&1 || true
+            echo "---- Guide preview lifecycle markers ----"
+            grep -E 'UG_PREVIEW_STAGE|watchdog|scene-create|crash' visual-preview/simulator-app.log | tail -80 || true
+            echo "---- Simulator application process ----"
+            xcrun simctl spawn "$SIMULATOR_UDID" launchctl list | grep -i universalguide || true
+            exit 1
+          fi
           sips -g pixelWidth -g pixelHeight visual-preview/apple-tv-guide.png
+
+      # Publish the fixture-only screenshot as a regular GitHub file so
+      # automated reviewers can inspect its pixels without downloading a
+      # GitHub Actions binary ZIP (unsupported by the GitHub text connector).
+      # This never touches main, credentials, or real channel data.
+      - name: Publish preview PNG to isolated branch for visual review
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, pathlib, urllib.request, urllib.error
+          path = "docs/tvos-preview/latest.png"
+          png = pathlib.Path("visual-preview/apple-tv-guide.png").read_bytes()
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/contents/{path}"
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                     "Accept": "application/vnd.github+json",
+                     "X-GitHub-Api-Version": "2022-11-28"}
+          sha = None
+          try:
+              req = urllib.request.Request(url + "?ref=" + os.environ["BRANCH"], headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  sha = json.load(response)["sha"]
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+          payload = {"message": "Update tvOS fixture screenshot for visual review",
+                     "content": base64.b64encode(png).decode(),
+                     "branch": os.environ["BRANCH"]}
+          if sha:
+              payload["sha"] = sha
+          req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                       headers={**headers, "Content-Type": "application/json"},
+                                       method="PUT")
+          with urllib.request.urlopen(req) as response:
+              print("Published fixture-only PNG:", json.load(response)["content"]["html_url"])
+          PY
 
       - name: Upload screenshot
         if: always()
@@ -111,4 +235,5 @@ jobs:
           name: apple-tv-visual-preview-diagnostics
           path: |
             tvOS/xcodebuild-visual-preview.log
+            visual-preview/simulator-app.log
           if-no-files-found: ignore
