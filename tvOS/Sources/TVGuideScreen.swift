@@ -878,26 +878,11 @@ struct TVGuideScreen: View {
         #endif
     }
 
-    private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
-        // Resolve the half-hour anchor once per row. Calendar date arithmetic
-        // inside every program cell used to repeat during each focus update.
-        let guideAnchor = anchor
-        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
-        // can now scroll to the tile's actual horizontal position.
-        return HStack(spacing: 0) {
-            ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
-                let start = max(0, (program.startDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
-                let end = min(durationMinutes, (program.endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
-                let previousEnd = pi > 0 ?
-                    max(0, min(durationMinutes,
-                        (channel.programs[pi-1].endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)) : 0
-                let cellStart = max(start, previousEnd)
-                if end > cellStart {
-                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
-                    Button {
-                        choose(index, pi)
-                        activateGuideProgram(channel, program)
-                    } label: {
+    // Isolate the complex program label from the row's ForEach/geometry builder.
+    // This keeps Swift's type checker from expanding the entire EPG expression.
+    @ViewBuilder
+    private func timelineProgramLabel(_ program: GuideProgram, channelIndex index: Int,
+                                      programIndex pi: Int, cellWidth: CGFloat) -> some View {
                         Group {
                             if isCompact {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -965,7 +950,7 @@ struct TVGuideScreen: View {
                                     #if os(iOS)
                                     // Keep the existing iPhone artwork treatment.
                                     if selectedFocus == "program-\(index)-\(pi)",
-                                       CGFloat(end-cellStart)*minutePixels > 380,
+                                       cellWidth > 380,
                                        let selectedArtworkURL {
                                         AsyncImage(url: selectedArtworkURL) { phase in
                                             if let image = phase.image {
@@ -1006,6 +991,30 @@ struct TVGuideScreen: View {
                                 }
                             }
                         }
+    }
+
+    private func timelineRow(_ channel: GuideChannel, index: Int) -> some View {
+        // Resolve the half-hour anchor once per row. Calendar date arithmetic
+        // inside every program cell used to repeat during each focus update.
+        let guideAnchor = anchor
+        // Real HStack geometry instead of ZStack .offset: ScrollViewReader
+        // can now scroll to the tile's actual horizontal position.
+        return HStack(spacing: 0) {
+            ForEach(Array(channel.programs.enumerated()), id: \.element.id) { pi, program in
+                let start = max(0, (program.startDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
+                let end = min(durationMinutes, (program.endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)
+                let previousEnd = pi > 0 ?
+                    max(0, min(durationMinutes,
+                        (channel.programs[pi-1].endDate ?? guideAnchor).timeIntervalSince(guideAnchor) / 60)) : 0
+                let cellStart = max(start, previousEnd)
+                if end > cellStart {
+                    Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
+                    Button {
+                        choose(index, pi)
+                        activateGuideProgram(channel, program)
+                    } label: {
+                        timelineProgramLabel(program, channelIndex: index, programIndex: pi,
+                                             cellWidth: CGFloat(end-cellStart)*minutePixels)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .padding(.horizontal, isCompact ? 7 : 17)
                         .padding(.vertical, isCompact ? 0 : 10)
