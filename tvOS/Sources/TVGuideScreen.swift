@@ -1596,6 +1596,58 @@ extension Notification.Name {
 
 /// A dedicated presentation isolates filter focus from the underlying EPG.
 /// iPhone controller A/D-pad and Apple TV native focus use identical actions.
+#if os(tvOS)
+private final class TVFilterRemoteView: UIView {
+    var onMove: ((String) -> Void)?
+    var onSelect: (() -> Void)?
+    var onBack: (() -> Void)?
+    override var canBecomeFocused: Bool { true }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in
+                self?.setNeedsFocusUpdate()
+                self?.updateFocusIfNeeded()
+            }
+        }
+    }
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if context.previouslyFocusedView === self && context.nextFocusedView !== self { return false }
+        return super.shouldUpdateFocus(in: context)
+    }
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+        for press in presses {
+            switch press.type {
+            case .upArrow: onMove?("up"); handled = true
+            case .downArrow: onMove?("down"); handled = true
+            case .leftArrow: onMove?("left"); handled = true
+            case .rightArrow: onMove?("right"); handled = true
+            case .select: onSelect?(); handled = true
+            case .menu: onBack?(); handled = true
+            default: break
+            }
+        }
+        if !handled { super.pressesBegan(presses, with: event) }
+    }
+}
+private struct TVFilterRemoteReceiver: UIViewRepresentable {
+    let onMove: (String) -> Void
+    let onSelect: () -> Void
+    let onBack: () -> Void
+    func makeUIView(context: Context) -> TVFilterRemoteView {
+        let view = TVFilterRemoteView()
+        view.backgroundColor = .clear
+        return view
+    }
+    func updateUIView(_ view: TVFilterRemoteView, context: Context) {
+        view.onMove = onMove
+        view.onSelect = onSelect
+        view.onBack = onBack
+    }
+}
+#endif
+
 private struct TVGuideFilterPanel: View {
     let currentFilter: String
     let favoritesOnly: Bool
@@ -1614,11 +1666,21 @@ private struct TVGuideFilterPanel: View {
         false
         #endif
     }
-    private var selection: Int? { isCompact ? phoneIndex : focused }
+    private var selection: Int? { phoneIndex }
 
     var body: some View {
         ZStack {
             TVPalette.background.ignoresSafeArea()
+            #if os(tvOS)
+            TVFilterRemoteReceiver(onMove: { direction in
+                if direction == "down" || direction == "right" {
+                    phoneIndex = min(choices.count - 1, phoneIndex + 1)
+                } else if direction == "up" || direction == "left" {
+                    phoneIndex = max(0, phoneIndex - 1)
+                }
+            }, onSelect: { activate(phoneIndex) }, onBack: onClose)
+                .ignoresSafeArea()
+            #endif
             VStack(spacing: isCompact ? 8 : 16) {
                 Text("Filter Guide").font(isCompact ? .title3.bold() : .largeTitle.bold())
                     .foregroundStyle(.white)
@@ -1646,8 +1708,11 @@ private struct TVGuideFilterPanel: View {
                     .buttonStyle(.plain)
                     #if os(tvOS)
                     .focusEffectDisabled()
+                    .focusable(false)
                     #endif
+                    #if os(iOS)
                     .focused($focused, equals: index)
+                    #endif
                 }
             }
             .padding(24)
