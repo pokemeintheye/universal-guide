@@ -1725,7 +1725,7 @@ private struct TVGuideRemoteTextPanel: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.038, green: 0.052, blue: 0.102).ignoresSafeArea()
+            TVPalette.background.ignoresSafeArea()
             VStack(alignment: .leading, spacing: compact ? 7 : 18) {
                 HStack {
                     Text(title)
@@ -1966,7 +1966,7 @@ private struct UniversalPlexChoiceScreen: View {
             }
             .padding(isPhone ? 24 : 36)
             .frame(width: isPhone ? 330 : 640)
-            .background(Color(red: 0.11, green: 0.12, blue: 0.22),
+            .background(TVPalette.panel,
                         in: RoundedRectangle(cornerRadius: 20))
         }
         .onAppear { nativeFocus = 0; phoneIndex = 0 }
