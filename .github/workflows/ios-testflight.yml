@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Manual iOS TestFlight publish request, 2026-11-15.
+  # iOS touch-and-portrait TestFlight verification, 2026-11-15.
   # Test exact half-hour guide ticks, scroll follow, filters and D-pad text entry.
   push:
     branches: [main]
