@@ -1,6 +1,11 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/channel-name-layout-testflight-20261115
+    paths:
+      - '.github/channel-name-layout-testflight-once.txt'
 permissions:
   contents: read
 concurrency:
