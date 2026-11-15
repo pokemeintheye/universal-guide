@@ -4,7 +4,7 @@ The asset catalog is built by CI to avoid committing generated binary icon files
 """
 import json
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageOps
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT.parent/"tvOS"/"Branding"/"UniversalGuideIcon.png"
@@ -27,13 +27,11 @@ def main():
     for idiom,size,scale in specs:
         dim=1024 if idiom=="ios-marketing" else int(size.split("x")[0])*scale
         background=Image.new("RGB",(dim,dim),(14,19,32))
-        # Fit original artwork without clipping the existing Universal Guide logo.
-        factor=min((dim*0.94)/source.width,(dim*0.94)/source.height)
-        resized=source.resize((max(1,round(source.width*factor)),
-                               max(1,round(source.height*factor))),
-                              Image.Resampling.LANCZOS)
-        background.paste(resized.convert("RGB"),
-                         ((dim-resized.width)//2,(dim-resized.height)//2))
+        # Use the same approved TV artwork across the full iOS icon canvas.
+        # Preserve its proportions and existing logo padding rather than
+        # shrinking the entire square artwork a second time.
+        resized=ImageOps.contain(source,(dim,dim),method=Image.Resampling.LANCZOS)
+        background.paste(resized,((dim-resized.width)//2,(dim-resized.height)//2),resized)
         filename=f"AppIcon-{dim}.png"
         # The 40/58/60/80/87/120/180/1024 sizes are all distinct for this catalog.
         background.save(ICONSET/filename,format="PNG",optimize=True)
