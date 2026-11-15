@@ -1298,6 +1298,31 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
                                "philo_channel_url":item["url"],
                                "philo_verification":item["verification"]}
     result=list(channels.values())
+    # Newly enrolled Channels DVR stations need not already exist in Philo's
+    # EPG. Supply a tuneable placeholder without inventing program metadata.
+    if source in ("all","channels-dvr") and not plex_only and not favorites_only:
+        try:
+            from app.channel_management import configured_stations
+            from app.channels_dvr import _playlist, _channel_stream
+            base, playlist=_playlist()
+            existing_names={norm(row["label"]) for row in result}
+            for number,station in configured_stations().items():
+                if not station["enabled"] or station["priority"]!="channels-dvr":
+                    continue
+                if any(norm(label) in existing_names for label in
+                       station["aliases"]+[station["name"]]):
+                    continue
+                if not _channel_stream(playlist,base,number):
+                    continue
+                result.append({"id":"channels-dvr:"+number,"label":station["name"],
+                    "source":"channels-dvr","number":number,"favorite":False,
+                    "schedule_unavailable":True,
+                    "programs":[{"channel_id":number,"channel_label":station["name"],
+                        "title":"Live TV","subtitle":"","description":"No program guide is available for this Channels DVR station.",
+                        "start":now.isoformat(),"stop":until.isoformat(),
+                        "program_kind":"other","plex":None}]})
+        except HTTPException:
+            pass  # Other guide providers remain available when DVR is offline.
     if source in ("all","virtual"):
         virtual_rows=virtual_guide(now,until)
         result.extend([row for row in virtual_rows
