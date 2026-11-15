@@ -1298,15 +1298,53 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
                                "philo_channel_url":item["url"],
                                "philo_verification":item["verification"]}
     result=list(channels.values())
+    # For Channels DVR-primary stations, use Channels DVR's own XMLTV
+    # schedule while retaining the existing Philo handoff as fallback.
+    # A missing/ambiguous DVR EPG must not erase a working Philo schedule.
+    from app.channel_management import configured_stations
+    from app.channels_epg import schedule as channels_epg_schedule
+    stations=configured_stations()
+    epg,epg_error=channels_epg_schedule(now,until,stations)
+    used_epg_numbers=set()
+    for channel in result:
+        if channel["source"]!="philo":
+            continue
+        labels={norm(channel["label"])}
+        matches=[(number,station) for number,station in stations.items()
+                 if station["enabled"] and station["priority"]=="channels-dvr"
+                 and labels.intersection(norm(x) for x in
+                     station["aliases"]+[station["name"]])]
+        if len(matches)!=1:
+            continue
+        number,station=matches[0]
+        items=epg.get(number)
+        if not items:
+            channel["guide_data_source"]="philo-fallback"
+            continue
+        adapted=[]
+        for item in items:
+            entry=dict(item)
+            entry.update(channel_id=channel["id"].split(":",1)[-1],
+                         channel_label=channel["label"],source="philo",
+                         favorite=channel["favorite"],hidden=False)
+            entry["plex"]=match(entry,index)
+            entry["philo_links"]=philo_handoff_links(
+                channel["label"],entry["title"],entry.get("subtitle"),
+                entry.get("season"),entry.get("episode"))
+            if not plex_only or entry["plex"]:
+                adapted.append(entry)
+        channel["programs"]=adapted
+        channel["guide_data_source"]="channels-dvr"
+        channel["number"]=number
+        used_epg_numbers.add(number)
     # Newly enrolled Channels DVR stations need not already exist in Philo's
     # EPG. Supply a tuneable placeholder without inventing program metadata.
     if source in ("all","channels-dvr") and not plex_only and not favorites_only:
         try:
-            from app.channel_management import configured_stations
             from app.channels_dvr import _playlist, _channel_stream
             base, playlist=_playlist()
             existing_names={norm(row["label"]) for row in result if row["source"]=="philo"}
-            for number,station in configured_stations().items():
+            for number,station in stations.items():
                 if not station["enabled"] or station["priority"]!="channels-dvr":
                     continue
                 if any(norm(label) in existing_names for label in
@@ -1314,13 +1352,24 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
                     continue
                 if not _channel_stream(playlist,base,number):
                     continue
+                programs=[]
+                for item in epg.get(number,[]):
+                    entry=dict(item)
+                    entry.update(channel_id=number,channel_label=station["name"],
+                                 source="channels-dvr",favorite=False,hidden=False)
+                    entry["plex"]=match(entry,index)
+                    programs.append(entry)
+                if not programs:
+                    programs=[{"channel_id":number,"channel_label":station["name"],
+                        "title":"Live TV","subtitle":"",
+                        "description":"Channels DVR has no current program listings.",
+                        "start":now.isoformat(),"stop":until.isoformat(),
+                        "program_kind":"other","plex":None}]
                 result.append({"id":"channels-dvr:"+number,"label":station["name"],
                     "source":"channels-dvr","number":number,"favorite":False,
-                    "schedule_unavailable":True,
-                    "programs":[{"channel_id":number,"channel_label":station["name"],
-                        "title":"Live TV","subtitle":"","description":"No program guide is available for this Channels DVR station.",
-                        "start":now.isoformat(),"stop":until.isoformat(),
-                        "program_kind":"other","plex":None}]})
+                    "guide_data_source":"channels-dvr" if epg.get(number) else "unavailable",
+                    "schedule_unavailable":not bool(epg.get(number)),
+                    "programs":programs})
         except HTTPException:
             pass  # Other guide providers remain available when DVR is offline.
     if source in ("all","virtual"):
