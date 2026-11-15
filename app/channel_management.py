@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from app.virtual_rules import SmartRules, validate_rules, pool as rule_pool, build_cycle, schedule_cycle
 
 router = APIRouter(prefix="/api/manage", tags=["channel-management"])
 STORE = Path(os.getenv("GUIDE_CHANNEL_DB", "/data/channel-management.db"))
@@ -36,6 +37,8 @@ def _db():
         duration_minutes INTEGER NOT NULL,
         PRIMARY KEY(channel_id,position),
         FOREIGN KEY(channel_id) REFERENCES virtual_channels(id));
+    CREATE TABLE IF NOT EXISTS virtual_rule_config(
+        channel_id TEXT PRIMARY KEY, rules_json TEXT NOT NULL);
     """)
     return c
 
@@ -166,6 +169,10 @@ def virtual_definitions():
         for row in c.execute("SELECT * FROM virtual_channels ORDER BY name"):
             item = dict(row)
             item["enabled"] = bool(item["enabled"])
+            rules_row=c.execute("SELECT rules_json FROM virtual_rule_config WHERE channel_id=?",
+                                (item["id"],)).fetchone()
+            item["mode"]="smart" if rules_row else "manual"
+            item["rules"]=__import__("json").loads(rules_row["rules_json"]) if rules_row else None
             item["items"] = [dict(x) for x in c.execute(
                 "SELECT rating_key,duration_minutes FROM virtual_items WHERE channel_id=? ORDER BY position",
                 (item["id"],))]
@@ -181,12 +188,21 @@ class VirtualItem(BaseModel):
 class VirtualUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     enabled: bool = True
+    mode: str = "manual"
+    rules: SmartRules | None = None
     items: list[VirtualItem] = Field(default_factory=list, max_length=100)
 
 
 def _validated_virtual(body):
     if not body.name.strip() or any(ord(c) < 32 for c in body.name):
         raise HTTPException(422, "Invalid virtual channel name")
+    if body.mode not in ("manual","smart"):
+        raise HTTPException(422,"Choose manual or smart channel mode")
+    if body.mode == "smart":
+        if body.rules is None:
+            raise HTTPException(422,"Smart channel rules are required")
+        validate_rules(body.rules)
+        return
     if not body.items:
         raise HTTPException(422, "Choose at least one Plex movie or episode")
     from app.main import db
@@ -219,6 +235,32 @@ def plex_items(request: Request, q: str = ""):
     ]}
 
 
+@router.post("/virtual/preview")
+def preview_rules(body: SmartRules, request: Request):
+    require_admin(request)
+    validate_rules(body)
+    from app.main import db
+    with db() as c:
+        catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+    return rule_pool(catalog,body)
+
+
+@router.get("/virtual/filters")
+def rule_filters(request: Request):
+    require_admin(request)
+    from app.main import db
+    with db() as c:
+        catalog=[dict(x) for x in c.execute("SELECT kind,show_title,genres FROM media")]
+    genres=set()
+    shows=set()
+    for item in catalog:
+        genres.update(g.strip() for g in (item.get("genres") or "").split(",") if g.strip())
+        if item["kind"]=="episode" and item.get("show_title"):
+            shows.add(item["show_title"])
+    return {"genres":sorted(genres,key=str.casefold),
+            "shows":sorted(shows,key=str.casefold)}
+
+
 @router.get("/virtual")
 def list_virtual(request: Request):
     require_admin(request)
@@ -238,6 +280,9 @@ def create_virtual(body: VirtualUpdate, request: Request):
         c.executemany("INSERT INTO virtual_items VALUES (?,?,?,?)",
                       [(channel_id, i, x.rating_key, x.duration_minutes)
                        for i, x in enumerate(body.items)])
+        if body.mode == "smart":
+            c.execute("INSERT INTO virtual_rule_config VALUES (?,?)",
+                      (channel_id,body.rules.model_dump_json()))
         c.commit()
     return {"id": channel_id, "saved": True}
 
@@ -257,6 +302,10 @@ def update_virtual(channel_id: str, body: VirtualUpdate, request: Request):
         c.executemany("INSERT INTO virtual_items VALUES (?,?,?,?)",
                       [(channel_id, i, x.rating_key, x.duration_minutes)
                        for i, x in enumerate(body.items)])
+        c.execute("DELETE FROM virtual_rule_config WHERE channel_id=?", (channel_id,))
+        if body.mode == "smart":
+            c.execute("INSERT INTO virtual_rule_config VALUES (?,?)",
+                      (channel_id,body.rules.model_dump_json()))
         c.commit()
     return {"id": channel_id, "saved": True}
 
@@ -268,6 +317,7 @@ def delete_virtual(channel_id: str, request: Request):
         raise HTTPException(404, "Unknown virtual channel")
     with _db() as c:
         c.execute("DELETE FROM virtual_items WHERE channel_id=?", (channel_id,))
+        c.execute("DELETE FROM virtual_rule_config WHERE channel_id=?", (channel_id,))
         c.execute("DELETE FROM virtual_channels WHERE id=?", (channel_id,))
         c.commit()
     return {"deleted": True}
@@ -280,7 +330,8 @@ def virtual_guide(window_start, window_end):
     Each guide program retains its exact Plex rating key for current tvOS.
     """
     from app.main import db
-    definitions = [x for x in virtual_definitions() if x["enabled"] and x["items"]]
+    definitions = [x for x in virtual_definitions() if x["enabled"] and
+                   (x["items"] or x["mode"]=="smart")]
     if not definitions:
         return []
     with db() as c:
@@ -292,35 +343,29 @@ def virtual_guide(window_start, window_end):
     end = window_end.astimezone(timezone.utc)
     rows = []
     for channel in definitions:
-        playlist = [(catalog[x["rating_key"]], x["duration_minutes"])
-                    for x in channel["items"] if x["rating_key"] in catalog]
+        if channel["mode"] == "smart":
+            rule=SmartRules.model_validate(channel["rules"])
+            playlist=build_cycle(list(catalog.values()),rule)
+        else:
+            playlist = [(catalog[x["rating_key"]], x["duration_minutes"])
+                        for x in channel["items"] if x["rating_key"] in catalog]
         if not playlist:
             continue
-        period = sum(minutes for _, minutes in playlist)
-        elapsed_minutes = int((start - epoch).total_seconds() // 60)
-        start_cycle = (elapsed_minutes // period) * period
-        cursor = epoch + timedelta(minutes=start_cycle)
         programs = []
-        while cursor < end:
-            for item, minutes in playlist:
-                stop = cursor + timedelta(minutes=minutes)
-                if stop > start and cursor < end:
-                    kind = "movie" if item.get("kind") == "movie" else "episode"
-                    title = item["title"] if kind == "movie" else (item.get("show_title") or item["title"])
-                    programs.append({
-                        "id": "virtual:" + channel["id"] + ":" + cursor.isoformat(),
-                        "channel_id": channel["id"], "channel_label": channel["name"],
-                        "source": "virtual", "start": cursor.isoformat(), "stop": stop.isoformat(),
-                        "title": title, "subtitle": "" if kind == "movie" else item["title"],
-                        "year": item.get("year"), "program_kind": kind,
-                        "season": item.get("season"), "episode": item.get("episode"),
-                        "description": "Scheduled from your Plex library",
-                        "plex": {"kind": kind, "rating_key": str(item["id"].rsplit(":", 1)[-1]),
-                                 "title": item["title"], "show": item.get("show_title")},
-                        "favorite": False, "hidden": False})
-                cursor = stop
-                if cursor >= end:
-                    break
+        for item,cursor,stop in schedule_cycle(playlist,start,end):
+            kind = "movie" if item.get("kind") == "movie" else "episode"
+            title = item["title"] if kind == "movie" else (item.get("show_title") or item["title"])
+            programs.append({
+                "id": "virtual:" + channel["id"] + ":" + cursor.isoformat(),
+                "channel_id": channel["id"], "channel_label": channel["name"],
+                "source": "virtual", "start": cursor.isoformat(), "stop": stop.isoformat(),
+                "title": title, "subtitle": "" if kind == "movie" else item["title"],
+                "year": item.get("year"), "program_kind": kind,
+                "season": item.get("season"), "episode": item.get("episode"),
+                "description": "Scheduled from your Plex library",
+                "plex": {"kind": kind, "rating_key": str(item["id"].rsplit(":", 1)[-1]),
+                         "title": item["title"], "show": item.get("show_title")},
+                "favorite": False, "hidden": False})
         rows.append({"id": "virtual:" + channel["id"], "label": channel["name"],
                      "source": "virtual", "favorite": False, "programs": programs})
     return rows
