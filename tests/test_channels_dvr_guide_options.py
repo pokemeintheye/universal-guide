@@ -11,6 +11,8 @@ M3U = """#EXTM3U
 /devices/ANY/channels/6108/hls/master.m3u8?format=hls&codec=copy
 #EXTINF:-1 tvg-chno="6105" tvg-id="TLCHD",TLC
 /devices/ANY/channels/6105/hls/master.m3u8?format=hls&codec=copy
+#EXTINF:-1 tvg-chno="6101" tvg-id="DISCOVERY",Discovery
+/devices/ANY/channels/6101/hls/master.m3u8?format=hls&codec=copy
 """
 
 class BackendPlaybackOptionsTests(unittest.TestCase):
@@ -22,6 +24,8 @@ class BackendPlaybackOptionsTests(unittest.TestCase):
         self.assertIn(("Magnolia Network", "6108"), matches)
         self.assertIn(("DIY", "6108"), matches)
         self.assertIn(("TLC", "6105"), matches)
+        self.assertIn(("Discovery", "6101"), matches)
+        self.assertIn(("Discovery Channel", "6101"), matches)
         self.assertNotIn(("AMC", "6086"), matches)
         self.assertTrue(all(x["provider"] == "channels-dvr" for x in payload["options"]))
         self.assertEqual(payload["fallback"], "philo")
@@ -35,6 +39,11 @@ class BackendPlaybackOptionsTests(unittest.TestCase):
         self.assertEqual(tlc["playback_id"], "tve-6105")
         self.assertIn("/6105/hls/", stream["stream_url"])
         self.assertTrue(stream["timeshift"])
+        with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)):
+            discovery = cd.live_stream("tve-6101")
+        self.assertEqual(discovery["type"], "hls")
+        self.assertIn("/6101/hls/", discovery["stream_url"])
+        self.assertTrue(discovery["timeshift"])
 
     def test_unavailable_channel_not_offered(self):
         with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", "#EXTM3U")):
