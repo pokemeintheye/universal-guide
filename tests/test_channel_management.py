@@ -62,7 +62,7 @@ class ChannelManagementTests(unittest.TestCase):
                                 guide_label="New Network", priority="channels-dvr")
         with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)):
             cm.save_channel("6222", body, Request())
-            self.assertEqual(cd.live_stream("tve-6222")["channel_number"], "6222")
+            self.assertIn("/6222/hls/", cd.live_stream("tve-6222")["stream_url"])
             self.assertIn("tve-6222", [x["playback_id"] for x in cd.live_guide_options()["options"]])
         self.assertEqual(cm.configured_stations()["6222"]["name"], "New Network")
 
