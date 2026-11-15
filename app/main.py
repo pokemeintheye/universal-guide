@@ -37,6 +37,8 @@ app.include_router(channels_dvr_router)
 app.include_router(live_playback_router)
 from app.live_timeshift import router as live_timeshift_router
 app.include_router(live_timeshift_router)
+from app.channel_management import router as management_router, virtual_guide
+app.include_router(management_router)
 sync_lock=threading.Lock()
 tablo_lock=threading.Lock()
 philo_lock=threading.Lock()
@@ -724,6 +726,11 @@ def built_in_artwork(category:str):
 def home():
     return FileResponse(Path(__file__).parent/"static"/"index.html")
 
+@app.get("/manage")
+def manage_page():
+    return FileResponse(Path(__file__).parent/"static"/"manage.html",
+                        headers={"Cache-Control": "no-store"})
+
 @app.get("/api/status")
 def status():
     with db() as c:
@@ -1290,7 +1297,40 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
                                "programs":[],"schedule_unavailable":True,
                                "philo_channel_url":item["url"],
                                "philo_verification":item["verification"]}
-    return {"generated_at":datetime.now(timezone.utc).isoformat(),"window_start":now.isoformat(),"window_end":until.isoformat(),"channels":list(channels.values())}
+    result=list(channels.values())
+    # Newly enrolled Channels DVR stations need not already exist in Philo's
+    # EPG. Supply a tuneable placeholder without inventing program metadata.
+    if source in ("all","channels-dvr") and not plex_only and not favorites_only:
+        try:
+            from app.channel_management import configured_stations
+            from app.channels_dvr import _playlist, _channel_stream
+            base, playlist=_playlist()
+            existing_names={norm(row["label"]) for row in result if row["source"]=="philo"}
+            for number,station in configured_stations().items():
+                if not station["enabled"] or station["priority"]!="channels-dvr":
+                    continue
+                if any(norm(label) in existing_names for label in
+                       station["aliases"]+[station["name"]]):
+                    continue
+                if not _channel_stream(playlist,base,number):
+                    continue
+                result.append({"id":"channels-dvr:"+number,"label":station["name"],
+                    "source":"channels-dvr","number":number,"favorite":False,
+                    "schedule_unavailable":True,
+                    "programs":[{"channel_id":number,"channel_label":station["name"],
+                        "title":"Live TV","subtitle":"","description":"No program guide is available for this Channels DVR station.",
+                        "start":now.isoformat(),"stop":until.isoformat(),
+                        "program_kind":"other","plex":None}]})
+        except HTTPException:
+            pass  # Other guide providers remain available when DVR is offline.
+    if source in ("all","virtual"):
+        virtual_rows=virtual_guide(now,until)
+        result.extend([row for row in virtual_rows
+                       if not favorites_only and
+                       (not plex_only or any(p.get("plex") for p in row["programs"]))])
+    return {"generated_at":datetime.now(timezone.utc).isoformat(),
+            "window_start":now.isoformat(),"window_end":until.isoformat(),
+            "channels":result}
 
 @app.on_event("startup")
 def start_background_refresh():

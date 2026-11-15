@@ -904,3 +904,43 @@ TVE video bitrates. Do not place the cache on a read-only volume.
 
 This feature must be validated against real Channels DVR streams and tvOS
 remote controls before merging into production.
+
+
+## Unraid channel management and Plex virtual channels
+
+Once this backend version is installed, open **http://UNRAID-IP:8787/manage**
+(or click the channel-management icon in the web guide). Configuration is
+stored in **/data/channel-management.db**, separate from the code. Ensure
+/data is bound to persistent Unraid appdata, as it is for the existing
+guide database. Docker image upgrades retain these settings.
+
+**Channels DVR:** The management page reads the existing Channels DVR M3U
+export to discover stations, including newly added TVE channels. Add an
+exported station by saving its channel number, network name, and the exact
+guide label; choose **Channels DVR** or **Philo** as the primary live
+source, or disable it. The /api/live/guide-options response immediately
+reflects saved preferences; refresh the Apple TV guide to retrieve them.
+An exported station is not guaranteed to have working authorization.
+Philo handoff requires an existing verified Philo channel URL. The
+Channels DVR stream/timeshift endpoints deny disabled and Philo-primary
+stations. Stations missing from Philo's EPG can appear in the guide as
+tuneable "Live TV" placeholders without invented program schedules.
+
+**Plex virtual channels:** Create/edit/delete repeating channel playlists
+from indexed Plex movies and episodes in the same management page. Set a
+runtime in minutes for each item, since the current catalog does not
+persist actual media durations. Schedules use an anchored repeatable
+timeline, appear in GET /api/guide with source virtual, and expose
+existing Plex rating keys for play-from-start or watch-from-current-point.
+These are currently **scheduled on-demand Plex items, not seamless
+continuous linear streams**. Automatic continuation to the next episode
+and 24/7 background playout are future features. No recompile is needed
+to change the playlist; refresh the TV guide to see edits.
+
+**Security:** Management operations are intended for the trusted LAN.
+Set the optional GUIDE_ADMIN_TOKEN environment variable in Unraid to
+require the X-Guide-Admin-Token header on management API requests.
+Enter it in the management page while editing. It is kept only in
+the current page's memory; it is not stored in browser local storage.
+Avoid forwarding port 8787 to the public internet. Channel management
+changes do not modify the existing Plex label-filtering policy.

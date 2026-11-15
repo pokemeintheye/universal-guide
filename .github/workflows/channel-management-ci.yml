@@ -1,0 +1,38 @@
+name: Verify Unraid channel management
+on:
+  push:
+    branches: [feature/unraid-channel-management-virtual]
+  pull_request:
+    paths:
+      - 'app/channel_management.py'
+      - 'app/channels_dvr.py'
+      - 'app/main.py'
+      - 'app/static/manage.html'
+      - 'tests/test_channel_management.py'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Prepare appdata equivalent
+        run: sudo install -d -m 0777 /data
+      - name: Compile backend
+        run: python -m py_compile app/main.py app/channels_dvr.py app/channel_management.py
+      - name: Validate channel management browser JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("app/static/manage.html").read_text()
+          script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+          Path("/tmp/channel-management.js").write_text(script)
+          PY
+          node --check /tmp/channel-management.js
+      - name: Run complete test suite
+        run: python -m unittest discover -s tests -v
