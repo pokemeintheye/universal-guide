@@ -67,7 +67,7 @@ class EPGGapTests(unittest.TestCase):
         self.assertEqual(row["programs"][0]["title"],"No guide information")
         self.assertEqual(row["programs"][1]["title"],"Rawhide")
         self.assertEqual(row["programs"][0]["stop"],broadcast.isoformat())
-        self.assertNotIn("plex",row["programs"][1]) if False else None
+        self.assertEqual(row["programs"][1]["channel_label"],"FETV")
 
 if __name__=="__main__":
     unittest.main()
