@@ -19,7 +19,7 @@ CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "").strip().rstrip("/")
 TVE_STATIONS = {
     "6043": "A&E", "6044": "History", "6045": "FYI", "6046": "Lifetime",
     "6085": "Sundance TV", "6086": "AMC", "6087": "BBC America",
-    "6088": "IFC", "6089": "We TV", "6100": "OWN",
+    "6088": "IFC", "6089": "We TV", "6100": "OWN", "6101": "Discovery Channel",
     "6102": "Food Network", "6103": "Animal Planet", "6104": "HGTV",
     "6105": "TLC", "6106": "Travel Channel", "6107": "Investigation Discovery",
     "6108": "Magnolia Network", "6109": "Cooking Channel",
@@ -34,6 +34,7 @@ GUIDE_LABELS = {
     "6045": ["FYI"], "6046": ["Lifetime"], "6085": ["Sundance TV", "Sundance"],
     "6086": ["AMC"], "6087": ["BBC America", "BBCA"], "6088": ["IFC"],
     "6089": ["We TV", "WETV"], "6100": ["Oprah Winfrey Network", "OWN"],
+    "6101": ["Discovery", "Discovery Channel", "DISCOVERY"],
     "6102": ["Food Network"], "6103": ["Animal Planet"], "6104": ["HGTV"],
     "6105": ["TLC"], "6106": ["Travel Channel"],
     "6107": ["Investigation Discovery"],
