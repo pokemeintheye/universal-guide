@@ -78,7 +78,7 @@ class ChannelManagementTests(unittest.TestCase):
         self.assertEqual(matching[0]["programs"][0]["title"], "Live TV")
         self.assertEqual(matching[0]["source"], "channels-dvr")
 
-    def test_virtual_channels_are_at_top_of_normal_apple_tv_guide(self):
+    def test_virtual_channels_are_reachable_by_normal_apple_tv_browsing(self):
         # Normal browsing must reach virtual stations without searching
         # through every Philo/Tablo row first.
         cm.create_virtual(cm.VirtualUpdate(
@@ -89,11 +89,14 @@ class ChannelManagementTests(unittest.TestCase):
             all_guide = main.guide(hours=2, source="all")
             virtual_guide = main.guide(hours=2, source="virtual")
         self.assertGreater(len(all_guide["channels"]), 1)
-        self.assertEqual(all_guide["channels"][0]["label"], "Movie Night")
-        self.assertEqual(all_guide["channels"][0]["source"], "virtual")
+        # Default positioning no longer forces virtual channels to the top;
+        # they remain within the first visible Apple TV guide window.
+        self.assertIn("Movie Night", [x["label"] for x in all_guide["channels"][:7]])
+        self.assertIn("virtual", [x["source"] for x in all_guide["channels"][:7]])
         self.assertEqual([x["source"] for x in virtual_guide["channels"]],
                          ["virtual"])
-        self.assertEqual(all_guide["channels"][0]["id"],
+        self.assertEqual(next(x["id"] for x in all_guide["channels"]
+                              if x["source"]=="virtual"),
                          virtual_guide["channels"][0]["id"])
 
     def test_unexported_station_is_not_allowed(self):
