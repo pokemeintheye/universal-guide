@@ -35,6 +35,8 @@ app.include_router(tablo_live_router)
 from app.channels_dvr import router as channels_dvr_router, playback_router as live_playback_router
 app.include_router(channels_dvr_router)
 app.include_router(live_playback_router)
+from app.live_timeshift import router as live_timeshift_router
+app.include_router(live_timeshift_router)
 sync_lock=threading.Lock()
 tablo_lock=threading.Lock()
 philo_lock=threading.Lock()

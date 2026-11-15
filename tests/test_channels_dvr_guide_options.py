@@ -34,7 +34,7 @@ class BackendPlaybackOptionsTests(unittest.TestCase):
         self.assertEqual(tlc["action"], "play-hls")
         self.assertEqual(tlc["playback_id"], "tve-6105")
         self.assertIn("/6105/hls/", stream["stream_url"])
-        self.assertFalse(stream["timeshift"])
+        self.assertTrue(stream["timeshift"])
 
     def test_unavailable_channel_not_offered(self):
         with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", "#EXTM3U")):

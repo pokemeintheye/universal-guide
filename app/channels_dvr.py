@@ -149,7 +149,7 @@ def guide_options():
                     "guide_source": "philo", "guide_label": label,
                     "provider": "channels-dvr", "channel_number": number,
                     "label": "Watch Live", "is_live": True,
-                    "timeshift": False,
+                    "timeshift": True,
                 })
     return {"options": options, "fallback": "philo", "source": "backend"}
 
@@ -184,4 +184,4 @@ def live_stream(playback_id: str):
     number = playback_id[4:]
     result = _resolve(number)
     return {"stream_url": result["stream_url"], "type": "hls",
-            "is_live": True, "timeshift": False}
+            "is_live": True, "timeshift": True}
