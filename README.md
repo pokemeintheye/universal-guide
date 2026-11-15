@@ -823,29 +823,15 @@ Find pane, and Local/Plex filter buttons are removed from normal viewing.
 No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
 mechanism are required by this redesign.
 
-## Channels DVR: HGTV live playback (channel 6104)
+## Channels DVR: TV Everywhere direct live playback
 
-Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` on the
-Universal Guide Unraid Docker container. The backend discovers channel
-6104 from the Channels DVR M3U export, using your existing Channels DVR
-authentication. It does not store Philo credentials.
+Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` in the Universal Guide Docker container. The backend checks the Channels DVR M3U HLS export for a configured list of 23 TVE channel numbers supplied by the owner. It uses the existing Channels DVR authentication and does not store Philo credentials.
 
-Verify the backend on your trusted LAN:
+Endpoints on the private LAN:
+- `GET /api/channels-dvr/channels`: list configured stations present in the M3U export.
+- `GET /api/channels-dvr/live/6104`: resolve HGTV's current HLS URL. Replace 6104 with another listed channel number.
+- `GET /api/channels-dvr/test/hgtv`: original HGTV endpoint remains compatible.
 
-```text
-http://YOUR-UNRAID-IP:8787/api/channels-dvr/test/hgtv
-```
+On Apple TV, the guide matches available exported stations to existing Philo rows (including Magnolia Network/DIY and OWN aliases). A current program then offers **Watch Live** inside Universal Guide, while **Open in Philo** remains as fallback. Channels visible in the export are not guaranteed to play; individual TVE authorization and stream availability can still fail. Only existing Philo guide rows receive the direct-play option; the integration does not invent guide data for Channels-only stations.
 
-The endpoint returns the HGTV channel number, name, and HLS stream URL.
-In the Apple TV Universal Guide app, select a currently airing HGTV
-program under the existing Philo listings and choose **Watch HGTV Live**.
-That option uses Channels DVR instead of opening Philo; **Open in Philo**
-remains available as a fallback. The tvOS player currently supports
-live playback but not the Tablo disk-backed rewind/fast-forward buffer
-for this source.
-
-The backend and the Apple TV TestFlight app must both be updated to use
-this functionality. The standalone experimental staging container is
-not required after production validation. The endpoint is LAN-only by
-deployment policy; do not expose port 8787 or the returned stream URL
-to the public Internet.
+The Channels DVR player currently supports **live-only** playback without a Universal Guide disk-backed DVR buffer. Plex and Tablo playback remain unchanged. Do not expose the local backend or returned HLS URLs publicly.
