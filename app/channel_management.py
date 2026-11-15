@@ -206,15 +206,17 @@ def plex_items(request: Request, q: str = ""):
     needle = q.strip().lower()[:80]
     with db() as c:
         rows = c.execute("""SELECT id,kind,title,show_title,year,season,episode
-            FROM media WHERE id LIKE 'movie:%' OR id LIKE 'episode:%'
-            ORDER BY COALESCE(show_title,title),season,episode,title LIMIT 3000""").fetchall()
+            FROM media WHERE (id LIKE 'movie:%' OR id LIKE 'episode:%')
+              AND (? = '' OR instr(lower(COALESCE(title,'')), ?) > 0
+                       OR instr(lower(COALESCE(show_title,'')), ?) > 0)
+            ORDER BY COALESCE(show_title,title),season,episode,title LIMIT 100""",
+            (needle, needle, needle)).fetchall()
     return {"items": [
         {"rating_key": int(r["id"].rsplit(":", 1)[-1]), "kind": r["kind"],
          "title": r["title"], "show_title": r["show_title"],
          "year": r["year"], "season": r["season"], "episode": r["episode"]}
-        for r in rows if r["id"].rsplit(":", 1)[-1].isdigit() and
-        (not needle or needle in (str(r["title"])+" "+str(r["show_title"])).lower())
-    ][:100]}
+        for r in rows if r["id"].rsplit(":", 1)[-1].isdigit()
+    ]}
 
 
 @router.get("/virtual")
