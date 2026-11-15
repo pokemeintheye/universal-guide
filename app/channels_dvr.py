@@ -159,6 +159,17 @@ def guide_options():
                     "label": "Watch Live", "is_live": True,
                     "timeshift": True,
                 })
+    # Channels DVR-only guide rows (stations not found in Philo EPG) use
+    # the exact same opaque playback ID and existing tvOS live player.
+    from app.channel_management import configured_stations
+    for number, station in configured_stations().items():
+        if station["enabled"] and station["priority"] == "channels-dvr":
+            if any(x["channel_number"] == number for x in options):
+                options.append({"guide_source": "channels-dvr",
+                                "guide_label": station["name"],
+                                "provider": "channels-dvr", "channel_number": number,
+                                "label": "Watch Live", "is_live": True,
+                                "timeshift": True})
     return {"options": options, "fallback": "philo", "source": "backend"}
 
 
@@ -187,7 +198,7 @@ def live_guide_options():
 @playback_router.get("/stream/{playback_id}")
 def live_stream(playback_id: str):
     """Resolve a server-owned stream ID to its current HLS URL."""
-    if not re.fullmatch(r"tve-[0-9]{4}", playback_id):
+    if not re.fullmatch(r"tve-[0-9]{1,6}", playback_id):
         raise HTTPException(404, "Unknown live stream")
     number = playback_id[4:]
     result = _resolve(number)
