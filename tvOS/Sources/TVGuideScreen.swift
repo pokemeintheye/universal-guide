@@ -4,16 +4,10 @@ import AVKit
 // Native tvOS counterpart to the iPhone's Unraid web guide. tvOS cannot host
 // WKWebView; its focused controls and shared backend are implemented natively.
 private enum TVPalette {
-    #if os(tvOS)
-    // Neutral charcoal surfaces keep blue reserved for focus and progress.
+    // Shared Apple TV charcoal theme for iOS and tvOS.
     static let background = Color(red: 0.055, green: 0.059, blue: 0.067)
     static let panel = Color(red: 0.115, green: 0.122, blue: 0.133)
     static let cell = Color(red: 0.165, green: 0.173, blue: 0.188)
-    #else
-    static let background = Color(red: 0.038, green: 0.052, blue: 0.102)
-    static let panel = Color(red: 0.112, green: 0.128, blue: 0.214)
-    static let cell = Color(red: 0.15, green: 0.17, blue: 0.27)
-    #endif
     static let blue = Color(red: 0.04, green: 0.62, blue: 0.98)
 }
 
@@ -102,7 +96,10 @@ struct TVGuideScreen: View {
     // on iPhone landscape and Apple TV, including six visible program rows.
     #if os(iOS)
     @State private var viewportHeight: CGFloat = 390
-    private let minutePixels: CGFloat = 3.5
+    @State private var viewportWidth: CGFloat = 844
+    private var minutePixels: CGFloat {
+        max(3.5, (viewportWidth - stationWidth - railWidth - 34) / 65)
+    }
     private let stationWidth: CGFloat = 105
     #else
     @State private var viewportHeight: CGFloat = 1080
@@ -114,6 +111,13 @@ struct TVGuideScreen: View {
     private let stationWidth: CGFloat = 192
     #endif
     private var uiScale: CGFloat { max(0.28, viewportHeight / 1080) }
+    private var isPhonePortrait: Bool {
+        #if os(iOS)
+        return viewportHeight > viewportWidth
+        #else
+        return false
+        #endif
+    }
     private var rowHeight: CGFloat { (isCompact ? 94 : 120) * uiScale }
     private var timelineHeaderHeight: CGFloat { (isCompact ? 38 : 44) * uiScale }
     private var guideRowCount: Int { isCompact ? 6 : 7 }
@@ -518,9 +522,17 @@ struct TVGuideScreen: View {
             .background {
                 GeometryReader { geometry in
                     Color.clear
-                        .onAppear { viewportHeight = geometry.size.height }
-                        .onChange(of: geometry.size.height) { _, value in
-                            viewportHeight = value
+                        .onAppear {
+                            viewportHeight = geometry.size.height
+                            #if os(iOS)
+                            viewportWidth = geometry.size.width
+                            #endif
+                        }
+                        .onChange(of: geometry.size) { _, size in
+                            viewportHeight = size.height
+                            #if os(iOS)
+                            viewportWidth = size.width
+                            #endif
                         }
                 }
             }
@@ -737,7 +749,7 @@ struct TVGuideScreen: View {
             Image(systemName: icon)
                 .font(.system(size: isCompact ? 19 : 31, weight: .medium))
                 .accessibilityLabel(name)
-            .foregroundStyle(selectedFocus == key ? .white : Color(red: 0.83, green: 0.78, blue: 0.94))
+            .foregroundStyle(selectedFocus == key ? .white : Color.white.opacity(0.8))
             .frame(width: isCompact ? 38 : 80, height: isCompact ? 42 : 78)
             .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
@@ -830,7 +842,7 @@ struct TVGuideScreen: View {
                     }
                     .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
                     .background(isCompact ?
-                                Color(red: 0.105, green: 0.11, blue: 0.19) :
+                                TVPalette.panel :
                                 tvGuideSurface)
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
@@ -856,7 +868,7 @@ struct TVGuideScreen: View {
                             .padding(.leading, isCompact ? 7 : 12)
                             .frame(width: stationWidth, height: rowHeight, alignment: .leading)
                             .background(isCompact ?
-                                        Color(red: 0.135, green: 0.145, blue: 0.225) :
+                                        TVPalette.panel :
                                         tvGuideSurface)
                             timelineRow(channel, index: channelIndex)
                         }
@@ -1087,7 +1099,9 @@ struct TVGuideScreen: View {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
+                        #if os(tvOS)
                         activateGuideProgram(channel, program)
+                        #endif
                     } label: {
                         timelineProgramLabel(program, channelIndex: index, programIndex: pi,
                                              cellWidth: CGFloat(end-cellStart)*minutePixels)
@@ -1096,15 +1110,15 @@ struct TVGuideScreen: View {
                         .padding(.vertical, isCompact ? 0 : 10)
                         .foregroundStyle(.white)
                         .background(isCompact ?
-                                    (program.plex != nil ? TVPalette.blue.opacity(0.22) : TVPalette.cell) :
+                                    (TVPalette.cell) :
                                     Color(white: 0.205),
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    (isCompact ? Color.white.opacity(0.9) : TVPalette.blue) :
+                                    (TVPalette.blue) :
                                     Color.white.opacity(0.13),
                                     lineWidth: selectedFocus == "program-\(index)-\(pi)" ?
-                                        (isCompact ? 2.5 : 3) : 1))
+                                        (isCompact ? 2 : 3) : 1))
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
@@ -1234,7 +1248,7 @@ struct TVGuideScreen: View {
                 .padding(.horizontal, isCompact ? 11 : 27)
                 .padding(.vertical, isCompact ? 7 : 16)
                 .foregroundStyle(.white)
-                .background(Color(red: 0.22, green: 0.20, blue: 0.31),
+                .background(TVPalette.cell,
                             in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11)
                     .stroke(selectedFocus == key ? TVPalette.blue : .clear, lineWidth: 3))
@@ -1246,6 +1260,9 @@ struct TVGuideScreen: View {
     private func choose(_ channel: Int, _ program: Int) {
         selectedChannel = channel
         selectedProgram = program
+        #if os(iOS)
+        phoneSelection = "program-\(channel)-\(program)"
+        #endif
     }
     private func resetSelection() {
         selectedChannel = 0
