@@ -32,8 +32,9 @@ from app.playback import router as playback_router
 app.include_router(playback_router)
 from app.tablo_live import router as tablo_live_router
 app.include_router(tablo_live_router)
-from app.channels_dvr import router as channels_dvr_router
+from app.channels_dvr import router as channels_dvr_router, playback_router as live_playback_router
 app.include_router(channels_dvr_router)
+app.include_router(live_playback_router)
 sync_lock=threading.Lock()
 tablo_lock=threading.Lock()
 philo_lock=threading.Lock()
