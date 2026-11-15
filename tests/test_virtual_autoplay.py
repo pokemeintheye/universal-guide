@@ -3,6 +3,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from datetime import datetime,timezone
+from urllib.parse import parse_qs
 from app import main,channel_management as cm
 
 class Request:
@@ -37,6 +38,22 @@ class VirtualNextTests(unittest.TestCase):
         self.assertNotEqual(next_program["plex"]["rating_key"],current["plex"]["rating_key"])
         second=cm.next_virtual_program(self.key,next_program["stop"])["program"]
         self.assertEqual(second["start"],next_program["stop"])
+
+    def test_unescaped_plus_in_url_query_recovers_exact_next_airing(self):
+        start=datetime(2026,11,15,17,tzinfo=timezone.utc)
+        schedule=cm.virtual_guide(start,start.replace(hour=20))[0]["programs"]
+        expected=schedule[1]
+        boundary=schedule[0]["stop"]
+        # Simulates the URL query decoder converting a raw +00:00 to
+        # a space, as may happen with URLComponents on Apple TV.
+        decoded=parse_qs("after="+boundary)["after"][0]
+        self.assertIn(" 00:00",decoded)
+        received=cm.next_virtual_program(self.key,decoded)["program"]
+        self.assertEqual(received["id"],expected["id"])
+        # Canonical Z form from fixed Apple TV is accepted as well.
+        normalized=boundary.replace("+00:00","Z")
+        self.assertEqual(cm.next_virtual_program(self.key,normalized)["program"]["id"],
+                         expected["id"])
 
     def test_no_next_for_disabled_channel(self):
         cm.update_virtual(self.key,cm.VirtualUpdate(name="Off",enabled=False,
