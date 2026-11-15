@@ -850,14 +850,10 @@ struct TVGuideScreen: View {
     private var timeline: some View {
         ScrollViewReader { horizontal in
             ScrollView(isCompact ? [.horizontal, .vertical] : .horizontal) {
-                // On iOS the complete lineup can contain hundreds of channels.
-                // An eager VStack constructs every channel's eight-hour program
-                // strip at launch, exhausting memory before the user can scroll.
-                // Keep tvOS's small, focus-controlled window on VStack.
-                let rowLayout = isCompact ?
-                    AnyLayout(LazyVStackLayout(alignment: .leading, spacing: 0)) :
-                    AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
-                rowLayout {
+                // Lazily create guide rows as they become visible instead of
+                // eagerly instantiating every channel and its program tiles.
+                // tvOS still displays only its seven-row focus window.
+                LazyVStack(alignment: .leading, spacing: 0) {
                     // The ruler never moves vertically, and only one axis
                     // (time) scrolls. Channel navigation shifts the visible
                     // six-row window instead of scheduling scroll animations.
