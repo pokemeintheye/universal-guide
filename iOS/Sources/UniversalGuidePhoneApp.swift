@@ -1,7 +1,6 @@
 import SwiftUI
 
 @main struct UniversalGuidePhoneApp: App {
-    @StateObject private var gamepad = NativeGamepad()
     init() {
         // Carry over the user's existing Unraid address from the former
         // iPhone web shell into the shared native guide.
@@ -14,7 +13,6 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             TVGuideScreen()
-                .environmentObject(gamepad)
         }
     }
 }
