@@ -47,6 +47,7 @@ struct TVGuideScreen: View {
     // Keep a separately-rendered selection so the purple ring always follows
     // the Backbone even when UIKit declines to focus SwiftUI buttons.
     @State private var phoneSelection = ""
+    @State private var showPhoneWatchOptions = false
     @State private var tvSelection = ""
     private var selectedFocus: String? { isCompact ? phoneSelection : tvSelection }
 
@@ -118,10 +119,17 @@ struct TVGuideScreen: View {
         return false
         #endif
     }
-    private var rowHeight: CGFloat { (isCompact ? 94 : 120) * uiScale }
-    private var timelineHeaderHeight: CGFloat { (isCompact ? 38 : 44) * uiScale }
-    private var guideRowCount: Int { isCompact ? 6 : 7 }
-    private var timelineHeight: CGFloat { timelineHeaderHeight + CGFloat(guideRowCount) * rowHeight }
+    private var rowHeight: CGFloat {
+        isCompact ? (isPhonePortrait ? 72 : 58) : 120 * uiScale
+    }
+    private var timelineHeaderHeight: CGFloat {
+        isCompact ? 30 : 44 * uiScale
+    }
+    private var guideRowCount: Int { isCompact ? channels.count : 7 }
+    private var timelineHeight: CGFloat {
+        isCompact ? max(180, viewportHeight - 54) :
+            timelineHeaderHeight + CGFloat(guideRowCount) * rowHeight
+    }
     private var detailHeight: CGFloat { (isCompact ? 300 : 335) * uiScale }
     // Always render the selected row inside the six-row viewport. This
     // avoids SwiftUI's asynchronous 2-axis scrolling losing the cursor
@@ -129,7 +137,8 @@ struct TVGuideScreen: View {
     private var visibleChannelRange: Range<Int> {
         let count = channels.count
         let window = min(guideRowCount, count)
-        let start = min(max(0, selectedChannel - (isCompact ? 2 : 3)), max(0, count - window))
+        let start = isCompact ? 0 :
+            min(max(0, selectedChannel - 3), max(0, count - window))
         return start..<(start + window)
     }
 
@@ -477,9 +486,9 @@ struct TVGuideScreen: View {
             HStack(spacing: isCompact ? 7 : 10) {
                 sidebarRail
                     .frame(width: railWidth)
-                    // Align the Apple TV rail with the guide grid below the header.
-                    .frame(height: isCompact ? nil : timelineHeight, alignment: .center)
-                    .padding(.top, isCompact ? 0 : (52 * uiScale + 6))
+                    // Keep the rail level with the timeline, below the header.
+                    .frame(height: timelineHeight, alignment: .top)
+                    .padding(.top, isCompact ? (60 * uiScale + 7) : (52 * uiScale + 6))
                 VStack(spacing: isCompact ? 7 : 6) {
                     header
                     if let error = store.error, store.channels.isEmpty {
@@ -511,7 +520,7 @@ struct TVGuideScreen: View {
                         } else {
                             timeline
                                 .id("epg-\(filter)-\(favoriteOnly)-\(searchText)")
-                            if isCompact { detailBar }
+                            // iPhone uses tap actions rather than a permanent details panel.
                         }
                     }
                 }
@@ -602,6 +611,27 @@ struct TVGuideScreen: View {
                 },
                 onCancel: { dismissPlexChoice() })
         }
+        #if os(iOS)
+        .confirmationDialog(selected?.1.title ?? "Watch program",
+                            isPresented: $showPhoneWatchOptions,
+                            titleVisibility: .visible) {
+            if selected?.1.plex != nil {
+                Button("Watch on Plex") { openPlexChoice() }
+            }
+            if selected?.0.source == "tablo", selected?.1.isOnNow == true {
+                Button("Watch Live") { playTablo() }
+            }
+            if let option = selectedLiveOption {
+                Button(option.label) { playChannelsLive() }
+            }
+            if selected?.0.source == "philo" {
+                Button("Open in Philo") {
+                    if let (channel, program) = selected { openPhilo(channel, program) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        #endif
         .fullScreenCover(item: $mediaSession) { session in
             TVMediaPlayerScreen(session: session, metadata: playerMetadata,
                 virtualChannel: selected.flatMap { choice in
@@ -730,16 +760,15 @@ struct TVGuideScreen: View {
     }
 
     private var sidebarRail: some View {
-        VStack(spacing: isCompact ? 5 : 16) {
+        VStack(spacing: isCompact ? 8 : 16) {
             if !isCompact { Spacer(minLength: 0) }
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: isCompact ? nil : timelineHeight)
-        .padding(isCompact ? 10 : 0)
+        .frame(width: railWidth, height: timelineHeight, alignment: .top)
+        .padding(0)
         .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -749,8 +778,9 @@ struct TVGuideScreen: View {
             Image(systemName: icon)
                 .font(.system(size: isCompact ? 19 : 31, weight: .medium))
                 .accessibilityLabel(name)
-            .foregroundStyle(selectedFocus == key ? .white : Color.white.opacity(0.8))
-            .frame(width: isCompact ? 38 : 80, height: isCompact ? 42 : 78)
+                .foregroundStyle(selectedFocus == key ? .white : Color.white.opacity(0.8))
+                .frame(width: isCompact ? railWidth : 80,
+                       height: isCompact ? 48 : 78, alignment: .center)
             .background(Color.clear,
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
@@ -819,7 +849,7 @@ struct TVGuideScreen: View {
 
     private var timeline: some View {
         ScrollViewReader { horizontal in
-            ScrollView(.horizontal) {
+            ScrollView(isCompact ? [.horizontal, .vertical] : .horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
                     // The ruler never moves vertically, and only one axis
                     // (time) scrolls. Channel navigation shifts the visible
@@ -887,11 +917,10 @@ struct TVGuideScreen: View {
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
                        alignment: .leading)
             }
-            // Only program selection may scroll the horizontal time axis.
-            // Never issue a vertical scroll: the selected channel is in
-            // visibleChannelRange by construction.
+            // Touch users can swipe freely in both directions. TV keeps
+            // its fixed seven-row focus-controlled channel window.
             .onChange(of: selectedProgram) { _, _ in
-                if !lastMoveWasVertical { followSelectedTime(horizontal) }
+                if !isCompact && !lastMoveWasVertical { followSelectedTime(horizontal) }
             }
         }
         .background {
@@ -1099,7 +1128,9 @@ struct TVGuideScreen: View {
                     Color.clear.frame(width: CGFloat(max(0,start-previousEnd))*minutePixels)
                     Button {
                         choose(index, pi)
-                        #if os(tvOS)
+                        #if os(iOS)
+                        activatePhoneProgram(channel, program)
+                        #else
                         activateGuideProgram(channel, program)
                         #endif
                     } label: {
@@ -1661,6 +1692,27 @@ struct TVGuideScreen: View {
             }
         }
     }
+    #if os(iOS)
+    private func activatePhoneProgram(_ channel: GuideChannel, _ program: GuideProgram) {
+        let canPlex = program.plex != nil
+        let canTablo = channel.source == "tablo" && program.isOnNow
+        let canPhilo = channel.source == "philo"
+        let canChannels = liveOption(for: channel, program: program) != nil
+        let optionCount = [canPlex, canTablo, canPhilo, canChannels].filter { $0 }.count
+        if optionCount > 1 {
+            showPhoneWatchOptions = true
+        } else if canPlex {
+            openPlexChoice()
+        } else if canChannels {
+            playChannelsLive()
+        } else if canTablo {
+            playTablo()
+        } else if canPhilo {
+            openPhilo(channel, program)
+        }
+    }
+    #endif
+
     private func activateGuideProgram(_ channel: GuideChannel, _ program: GuideProgram) {
         if program.plex != nil {
             // The Apple TV guide now places details within each tile.
