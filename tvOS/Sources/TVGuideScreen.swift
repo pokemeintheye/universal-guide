@@ -1165,7 +1165,11 @@ struct TVGuideScreen: View {
         // each row itself cut off the top/bottom of tvOS focused Plex tiles.
     }
 
+    @ViewBuilder
     private var detailBar: some View {
+        if isPhonePortrait {
+            portraitDetailBar
+        } else {
         HStack(alignment: .top, spacing: isCompact ? 7 : 28) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
@@ -1238,8 +1242,79 @@ struct TVGuideScreen: View {
         .padding(isCompact ? 7 : 18)
         .frame(height: detailHeight)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 17))
-
+        }
     }
+
+    #if os(iOS)
+    private var portraitDetailBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let (_, program) = selected {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        TVPalette.cell
+                        if let selectedArtworkURL {
+                            AsyncImage(url: selectedArtworkURL) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFit()
+                                } else {
+                                    Image(systemName: "tv")
+                                }
+                            }
+                        } else {
+                            Image(systemName: "tv").foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: 92, height: 122)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(program.title)
+                            .font(.system(size: 17, weight: .semibold))
+                            .lineLimit(2)
+                        Text([program.subtitle, program.timeRange]
+                             .compactMap { $0 }.joined(separator: " · "))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(program.description ?? "")
+                            .font(.system(size: 11))
+                            .lineLimit(3)
+                        if program.plex != nil {
+                            Text("IN PLEX")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(TVPalette.blue)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        if selected?.0.source == "tablo" && program.isOnNow {
+                            watchButton("Watch Live", key: "watch-live") { playTablo() }
+                        }
+                        if program.plex != nil {
+                            watchButton("Watch on Plex", key: "watch-primary") { openPlexChoice() }
+                        }
+                        if let option = selectedLiveOption {
+                            watchButton(option.label, key: "watch-channels") { playChannelsLive() }
+                        }
+                        if selected?.0.source == "philo" {
+                            watchButton("Open in Philo", key: "watch-philo") {
+                                if let (ch, entry) = selected { openPhilo(ch, entry) }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Tap a program to view its details")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: detailHeight, alignment: .top)
+        .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 12))
+    }
+    #endif
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -1906,6 +1981,32 @@ private struct TVGuideRemoteTextPanel: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(prompt, text: $value)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(mode == .server ? .URL : .default)
+                        .submitLabel(.done)
+                        .onSubmit(onClose)
+                } header: {
+                    Text(prompt)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(TVPalette.background)
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", action: onClose)
+                }
+            }
+        }
+        .tint(blue)
+        .preferredColorScheme(.dark)
+        #else
         ZStack {
             TVPalette.background.ignoresSafeArea()
             VStack(alignment: .leading, spacing: compact ? 7 : 18) {
@@ -1994,6 +2095,7 @@ private struct TVGuideRemoteTextPanel: View {
         }
         #if os(tvOS)
         .onExitCommand(perform: onClose)
+        #endif
         #endif
     }
 
