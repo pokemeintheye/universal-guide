@@ -823,28 +823,29 @@ Find pane, and Local/Plex filter buttons are removed from normal viewing.
 No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
 mechanism are required by this redesign.
 
-## Experimental Channels DVR: HGTV channel 6104 (development branch only)
+## Channels DVR: HGTV live playback (channel 6104)
 
-This optional, read-only source discovery test does not modify the guide, tvOS
-player, Philo handoffs, Plex playback, or Tablo playback. It is **not** a complete
-Channels DVR integration or a TestFlight build.
+Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` on the
+Universal Guide Unraid Docker container. The backend discovers channel
+6104 from the Channels DVR M3U export, using your existing Channels DVR
+authentication. It does not store Philo credentials.
 
-Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` in the Universal Guide
-Unraid Docker environment (use the Channels DVR server LAN IP, not its
-localhost address). The server retrieves a Channels DVR HLS-format M3U export
-and looks for channel **6104** in its channel metadata.
-
-On the same LAN, request:
+Verify the backend on your trusted LAN:
 
 ```text
 http://YOUR-UNRAID-IP:8787/api/channels-dvr/test/hgtv
 ```
 
-A successful JSON response returns `channel_number`, `name`, and
-`stream_url`. This only confirms source discovery; it does not verify that
-Universal Guide's Apple TV player can play the stream. A 404 means the M3U
-export did not identify channel 6104; check the actual M3U EXTINF attributes.
-A 503 indicates missing or invalid server configuration.
+The endpoint returns the HGTV channel number, name, and HLS stream URL.
+In the Apple TV Universal Guide app, select a currently airing HGTV
+program under the existing Philo listings and choose **Watch HGTV Live**.
+That option uses Channels DVR instead of opening Philo; **Open in Philo**
+remains available as a fallback. The tvOS player currently supports
+live playback but not the Tablo disk-backed rewind/fast-forward buffer
+for this source.
 
-No Philo credentials are stored in Universal Guide. Keep both local server
-ports private to your trusted LAN. Do not publish the returned stream URL.
+The backend and the Apple TV TestFlight app must both be updated to use
+this functionality. The standalone experimental staging container is
+not required after production validation. The endpoint is LAN-only by
+deployment policy; do not expose port 8787 or the returned stream URL
+to the public Internet.
