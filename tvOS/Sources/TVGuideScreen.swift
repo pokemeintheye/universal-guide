@@ -43,6 +43,7 @@ struct TVGuideScreen: View {
     @State private var plexChoiceDismissed = true
     @State private var playbackError: String?
     @State private var loadingPlayback = false
+    @State private var channelsDVRNumbers: Set<String> = []
     @State private var selectedArtworkURL: URL?
     @State private var artworkTask: Task<Void, Never>?
     @State private var artworkCache: [String: URL] = [:]
@@ -144,6 +145,16 @@ struct TVGuideScreen: View {
              ch.label.localizedCaseInsensitiveContains(searchText) ||
              ch.programs.contains(where: {$0.title.localizedCaseInsensitiveContains(searchText)}))
         }
+    }
+    private func channelsNumber(for channel: GuideChannel, program: GuideProgram) -> String? {
+        guard channel.source == "philo", program.isOnNow,
+              let number = TVChannelsService.number(for: channel.label),
+              channelsDVRNumbers.contains(number) else { return nil }
+        return number
+    }
+    private var selectedChannelsNumber: String? {
+        guard let (channel, program) = selected else { return nil }
+        return channelsNumber(for: channel, program: program)
     }
     private var selected: (GuideChannel, GuideProgram)? {
         guard channels.indices.contains(selectedChannel) else { return nil }
@@ -555,15 +566,15 @@ struct TVGuideScreen: View {
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
                 onNow: { playPlex("join") },
-                onExtra: selected?.0.source == "philo" && selected?.0.label.caseInsensitiveCompare("HGTV") == .orderedSame && selected?.1.isOnNow == true ? "Watch HGTV Live" : (selected?.0.source == "philo" ? "Open in Philo" :
+                onExtra: selectedChannelsNumber != nil ? "Watch Live via Channels" : (selected?.0.source == "philo" ? "Open in Philo" :
                          (selected?.0.source == "tablo" && selected?.1.isOnNow == true ?
                           "Watch Live on Tablo" : nil)),
                 onExtraAction: {
                     if let (channel, program) = selected {
                         if channel.source == "tablo" { playTablo() }
-                        else if channel.source == "philo" && channel.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
+                        else if channelsNumber(for: channel, program: program) != nil {
                             dismissPlexChoice()
-                            playChannelsHGTV()
+                            playChannelsLive()
                         } else {
                             dismissPlexChoice()
                             openPhilo(channel, program)
@@ -655,6 +666,8 @@ struct TVGuideScreen: View {
             #endif
         }
         .onChange(of: serverURL) { _, _ in
+            channelsDVRNumbers.removeAll()
+            Task { channelsDVRNumbers = await TVChannelsService.availableChannels(serverURL: serverURL) }
             artworkCache.removeAll()
             noArtwork.removeAll()
             #if os(iOS)
@@ -1141,8 +1154,8 @@ struct TVGuideScreen: View {
                                 openPlexChoice()
                             }
                         }
-                        if selected?.0.source == "philo" && selected?.0.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
-                            watchButton("Watch HGTV Live", key: "watch-channels") { playChannelsHGTV() }
+                        if selectedChannelsNumber != nil {
+                            watchButton("Watch Live", key: "watch-channels") { playChannelsLive() }
                         }
                         if selected?.0.source == "philo" {
                             watchButton("Open in Philo", key: "watch-philo") {
@@ -1200,7 +1213,10 @@ struct TVGuideScreen: View {
         Task { await refreshGuide() }
     }
     private func refreshGuide() async {
-        await store.refresh(server: serverURL)
+        async let refresh: Void = store.refresh(server: serverURL)
+        let available = await TVChannelsService.availableChannels(serverURL: serverURL)
+        await refresh
+        channelsDVRNumbers = available
     }
     private func refreshSelectedArtwork() {
         artworkTask?.cancel()
@@ -1486,7 +1502,7 @@ struct TVGuideScreen: View {
                 playTablo()
             }
         case "watch-channels":
-            if selected?.1.isOnNow == true { playChannelsHGTV() }
+            if selectedChannelsNumber != nil { playChannelsLive() }
         case "watch-philo":
             if let (channel,program) = selected { openPhilo(channel,program) }
         default:
@@ -1501,8 +1517,8 @@ struct TVGuideScreen: View {
             // Keep the full Plex playback choice without a hidden panel.
             if isCompact { phoneSelection = "watch-primary" }
             else { openPlexChoice() }
-        } else if channel.source == "philo" && channel.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
-            playChannelsHGTV()
+        } else if channelsNumber(for: channel, program: program) != nil {
+            playChannelsLive()
         } else if channel.source == "philo" {
             openPhilo(channel, program)
         } else if channel.source == "tablo" && program.isOnNow {
@@ -1574,16 +1590,16 @@ struct TVGuideScreen: View {
             _ = channel
         }
     }
-    private func playChannelsHGTV() {
+    private func playChannelsLive() {
         guard let (channel, program) = selected,
-              channel.source == "philo", channel.label.caseInsensitiveCompare("HGTV") == .orderedSame else { return }
+              let channelNumber = channelsNumber(for: channel, program: program) else { return }
         let choiceWasOpen = selectedAction == .plex
         if choiceWasOpen { dismissPlexChoice() }
         loadingPlayback = true
         Task {
             defer { loadingPlayback = false }
             do {
-                let session = try await TVChannelsService.start(serverURL: serverURL, title: program.title)
+                let session = try await TVChannelsService.start(serverURL: serverURL, channelNumber: channelNumber, title: program.title)
                 if !choiceWasOpen || plexChoiceDismissed { mediaSession = session }
                 else { pendingTabloSession = session }
             } catch { playbackError = error.localizedDescription }
