@@ -35,8 +35,8 @@ class ChannelManagementTests(unittest.TestCase):
         self.original_main_db = main.DB
         main.DB = Path(self.tmp.name) / "guide.db"
         self.addCleanup(setattr, main, "DB", self.original_main_db)
+        main.initialize()
         with main.db() as c:
-            c.execute("CREATE TABLE media(id TEXT PRIMARY KEY,kind TEXT,title TEXT,year INT,normalized TEXT,show_title TEXT,season INT,episode INT,guids TEXT)")
             c.execute("""INSERT INTO media(id,kind,title,year,normalized,show_title,season,episode)
                 VALUES ('movie:100','Movie Alpha', 'Movie Alpha', 2020, '',NULL,NULL,NULL)""".replace("'Movie Alpha', 'Movie Alpha'","'movie', 'Movie Alpha'"))
             c.execute("""INSERT INTO media(id,kind,title,year,normalized,show_title,season,episode)
@@ -65,6 +65,18 @@ class ChannelManagementTests(unittest.TestCase):
             self.assertIn("/6222/hls/", cd.live_stream("tve-6222")["stream_url"])
             self.assertIn("tve-6222", [x["playback_id"] for x in cd.live_guide_options()["options"]])
         self.assertEqual(cm.configured_stations()["6222"]["name"], "New Network")
+
+    def test_standalone_station_appears_without_philo_epg(self):
+        body = cm.StationUpdate(number="6222", name="New Network",
+                                guide_label="New Network", priority="channels-dvr")
+        with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)):
+            cm.save_channel("6222", body, Request())
+            guide = main.guide(hours=2, plex_only=False, favorites_only=False,
+                               source="all", include_hidden=False, start=None)
+        matching = [x for x in guide["channels"] if x["id"] == "channels-dvr:6222"]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["programs"][0]["title"], "Live TV")
+        self.assertEqual(matching[0]["source"], "channels-dvr")
 
     def test_unexported_station_is_not_allowed(self):
         body = cm.StationUpdate(number="6999", name="Missing",guide_label="Missing")
