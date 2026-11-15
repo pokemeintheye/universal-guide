@@ -944,3 +944,27 @@ Enter it in the management page while editing. It is kept only in
 the current page's memory; it is not stored in browser local storage.
 Avoid forwarding port 8787 to the public internet. Channel management
 changes do not modify the existing Plex label-filtering policy.
+
+
+## Channels DVR guide-data priority
+
+The Universal Guide backend now reads the Channels DVR XMLTV export at
+`/devices/ANY/guide/xmltv` for stations configured with **Channels DVR**
+as their primary source. Its channel mapping uses the exported channel
+number or, only when unambiguous, an exact name/alias. Existing Philo
+channels retain their Philo handoff URLs, but their program schedules
+are replaced with Channels DVR listings when those are available.
+Stations configured with **Philo** primary keep the original Philo EPG.
+
+For new Channels DVR stations that have no Philo EPG, the Universal
+Guide displays Channels DVR program listings directly. If Channels DVR
+is offline, a station is missing from the export, or the guide entry
+cannot be safely matched, Universal Guide preserves the existing Philo
+guide or a schedule-unavailable live placeholder. It does not silently
+borrow programs from a different network.
+
+The fetched XMLTV is bounded (35 MB maximum) and cached for 10 minutes
+by default. Adjust `CHANNELS_EPG_CACHE_SECONDS` (120–3600) if needed.
+Guide refreshes fetch server-side; **Apple TV code and TestFlight builds
+do not need updating**. To switch the guide source, change the channel's
+source priority at `/manage` and refresh the guide on Apple TV.
