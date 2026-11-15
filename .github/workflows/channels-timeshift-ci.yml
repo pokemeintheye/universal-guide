@@ -16,5 +16,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile backend
         run: python -m py_compile app/live_timeshift.py app/channels_dvr.py app/main.py
+      - name: Prepare container-equivalent writable data directory
+        run: sudo install -d -m 0777 /data
       - name: Run backend tests
         run: python -m unittest discover -s tests -v
