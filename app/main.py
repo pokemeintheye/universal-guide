@@ -1305,7 +1305,7 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
             from app.channel_management import configured_stations
             from app.channels_dvr import _playlist, _channel_stream
             base, playlist=_playlist()
-            existing_names={norm(row["label"]) for row in result}
+            existing_names={norm(row["label"]) for row in result if row["source"]=="philo"}
             for number,station in configured_stations().items():
                 if not station["enabled"] or station["priority"]!="channels-dvr":
                     continue
