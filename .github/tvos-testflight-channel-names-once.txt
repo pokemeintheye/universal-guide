@@ -1,0 +1,1 @@
+One-time manually approved Apple TV TestFlight release for restored prominent channel names and smaller numbers. Source main commit b1da87b049848dbf3c33e2f5426badfce196eb4c.
