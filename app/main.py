@@ -39,6 +39,8 @@ from app.live_timeshift import router as live_timeshift_router
 app.include_router(live_timeshift_router)
 from app.channel_management import router as management_router, virtual_guide
 app.include_router(management_router)
+from app.guide_lineup import router as guide_lineup_router, sort_lineup
+app.include_router(guide_lineup_router)
 sync_lock=threading.Lock()
 tablo_lock=threading.Lock()
 philo_lock=threading.Lock()
@@ -1396,13 +1398,13 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
             pass  # Other guide providers remain available when DVR is offline.
     if source in ("all","virtual"):
         virtual_rows=virtual_guide(now,until)
-        # Native Apple TV scrolls channels in API order. Virtual channels
-        # previously followed every Philo, Tablo and XMLTV row, making them
-        # effectively undiscoverable without Search. Keep them visible first.
         visible_virtual=[row for row in virtual_rows
                          if not favorites_only and
                          (not plex_only or any(p.get("plex") for p in row["programs"]))]
-        result=visible_virtual+result
+        result.extend(visible_virtual)
+    # Apply one cross-provider lineup, including Plex virtual channels.
+    # Unknown/newly-discovered sources remain visible until configured.
+    result=sort_lineup(result,include_hidden=include_hidden)
     return {"generated_at":datetime.now(timezone.utc).isoformat(),
             "window_start":now.isoformat(),"window_end":until.isoformat(),
             "channels":result}
