@@ -968,3 +968,36 @@ by default. Adjust `CHANNELS_EPG_CACHE_SECONDS` (120–3600) if needed.
 Guide refreshes fetch server-side; **Apple TV code and TestFlight builds
 do not need updating**. To switch the guide source, change the channel's
 source priority at `/manage` and refresh the guide on Apple TV.
+
+
+## Smart Plex virtual-channel rules
+
+Open the Unraid management page at `/manage`, choose **Plex virtual channels**
+and create a channel. The **Programming** selector now offers:
+- **Manual playlist** (the previous behavior, unchanged).
+- **Smart metadata rules**, which build a repeating schedule automatically from
+  the Plex items indexed by Universal Guide.
+
+Smart rules support movie / episode / mixed content, multiple genres, multiple
+show names, minimum and maximum release years, and a repeatable ordering:
+**stable shuffle** (deterministic seeded order), **chronological** (show,
+season and episode) or **newest first**. Use **Preview matching Plex content**
+before saving to see how many eligible titles match. Genre filters match any
+selected genre, show filters match any selected show, and different filter
+categories are combined. Smart channels automatically include newly added
+eligible Plex items after a Plex sync. They do not require a new Docker image.
+
+The Plex sync now indexes `Genre` metadata and actual item `duration` in
+`media.genres` and `media.duration_ms`. Existing appdata databases are
+migrated automatically, without deleting the existing Plex index. Run **Sync
+Plex** once after the Docker update to populate the new metadata. Episode
+genres are inherited from the permitted show's metadata; the existing Plex
+allow/exclude label policy is still enforced during syncing. Where Plex does
+not provide a runtime, the selected fallback runtime is used.
+
+Virtual channel rules are stored in the persistent Unraid appdata database
+`/data/channel-management.db`. Each schedule is repeatable and synchronized
+between Apple TV and the web guide. Content can be opened through the existing
+Plex player. **This feature still does not implement uninterrupted continuous
+broadcasting or automatic handoff to the next media item.** Those playback
+features are separate from metadata-driven EPG scheduling.

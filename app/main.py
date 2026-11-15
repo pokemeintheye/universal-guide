@@ -65,6 +65,13 @@ def initialize():
         CREATE TABLE IF NOT EXISTS guide_artwork_cache(
           cache_key TEXT PRIMARY KEY,image_url TEXT,credit_url TEXT,
           checked_at REAL NOT NULL);""")
+        # Metadata used by smart Plex virtual channels. Upgrade existing
+        # appdata databases without dropping existing media or labels.
+        media_columns={x["name"] for x in c.execute("PRAGMA table_info(media)")}
+        if "genres" not in media_columns:
+            c.execute("ALTER TABLE media ADD COLUMN genres TEXT NOT NULL DEFAULT ''")
+        if "duration_ms" not in media_columns:
+            c.execute("ALTER TABLE media ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
         # Existing installations retain their databases; add classification safely.
         for table in ("listings","tablo_listings","philo_listings"):
             cols={x["name"] for x in c.execute("PRAGMA table_info("+table+")")}
@@ -166,17 +173,19 @@ def sync_plex():
                 if kind=="movie" and obj.get("type")=="movie":
                     if not plex_item_has_allowed_label(obj):continue
                     title=obj.get("title","")
-                    rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid"))))
+                    rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(obj.get("duration","0") or 0)))
                 elif kind=="show" and obj.get("type")=="show" and obj.get("ratingKey"):
                     # A show-level label includes its episodes in the guide.
                     if not plex_item_has_allowed_label(obj):continue
                     show=obj.get("title","")
                     for ep in pages("/library/metadata/"+obj.get("ratingKey")+"/allLeaves"):
                         if ep.get("type")!="episode":continue
-                        rows.append(("episode:"+str(ep.get("ratingKey")),"episode",ep.get("title",""),int(ep.get("year","0") or 0),norm(show),show,int(ep.get("parentIndex","0") or 0),int(ep.get("index","0") or 0),",".join(x.get("id","") for x in ep.findall("Guid"))))
+                        rows.append(("episode:"+str(ep.get("ratingKey")),"episode",ep.get("title",""),int(ep.get("year","0") or 0),norm(show),show,int(ep.get("parentIndex","0") or 0),int(ep.get("index","0") or 0),",".join(x.get("id","") for x in ep.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(ep.get("duration","0") or 0)))
         with db() as c:
             c.execute("DELETE FROM media")
-            c.executemany("INSERT INTO media VALUES (?,?,?,?,?,?,?,?,?)",rows)
+            c.executemany("""INSERT INTO media
+                (id,kind,title,year,normalized,show_title,season,episode,guids,genres,duration_ms)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",rows)
             putmeta(c,"last_plex_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"plex_sections",libraries)
         errors["plex"]=""
