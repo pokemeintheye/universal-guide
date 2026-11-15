@@ -98,8 +98,8 @@ private struct TVChannelsResponse: Decodable {
 struct TVLiveOption: Decodable {
     let guide_source: String
     let guide_label: String
-    let provider: String
-    let channel_number: String
+    let action: String
+    let playback_id: String
     let label: String
     let is_live: Bool
     let timeshift: Bool
@@ -117,7 +117,7 @@ enum TVChannelsService {
     static func availableOptions(serverURL: String) async -> [String: TVLiveOption] {
         do {
             let base = try PlexPlaybackService.baseURL(serverURL)
-            guard let endpoint = URL(string: "/api/channels-dvr/guide-options", relativeTo: base)?.absoluteURL else {
+            guard let endpoint = URL(string: "/api/live/guide-options", relativeTo: base)?.absoluteURL else {
                 return [:]
             }
             var request = URLRequest(url: endpoint)
@@ -126,7 +126,7 @@ enum TVChannelsService {
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [:] }
             let payload = try JSONDecoder().decode(TVLiveOptionsResponse.self, from: data)
             var choices: [String: TVLiveOption] = [:]
-            for option in payload.options where option.is_live && option.provider == "channels-dvr" {
+            for option in payload.options where option.is_live && option.action == "play-hls" {
                 choices[guideKey(option.guide_source, option.guide_label)] = option
             }
             return choices
@@ -138,10 +138,10 @@ enum TVChannelsService {
 
     static func start(serverURL: String, option: TVLiveOption, title: String) async throws -> TVMediaSession {
         let base = try PlexPlaybackService.baseURL(serverURL)
-        guard option.provider == "channels-dvr",
-              option.channel_number.count == 4,
-              option.channel_number.allSatisfy({ $0.isNumber }),
-              let endpoint = URL(string: "/api/channels-dvr/live/\(option.channel_number)", relativeTo: base)?.absoluteURL else {
+        guard option.action == "play-hls",
+              !option.playback_id.isEmpty,
+              option.playback_id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }),
+              let endpoint = URL(string: "/api/live/stream/\(option.playback_id)", relativeTo: base)?.absoluteURL else {
             throw PlexPlaybackError.invalidSession
         }
         var request = URLRequest(url: endpoint)
@@ -156,7 +156,7 @@ enum TVChannelsService {
             throw PlexPlaybackError.invalidSession
         }
         return .channels(TVChannelsSession(
-            id: "channels-\(option.channel_number)", title: title, playlistURL: url))
+            id: "live-\(option.playback_id)", title: title, playlistURL: url))
     }
 }
 
