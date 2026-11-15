@@ -1305,7 +1305,6 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
     from app.channels_epg import schedule as channels_epg_schedule
     stations=configured_stations()
     epg,epg_error=channels_epg_schedule(now,until,stations)
-    used_epg_numbers=set()
     for channel in result:
         if channel["source"]!="philo":
             continue
@@ -1336,7 +1335,6 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
         channel["programs"]=adapted
         channel["guide_data_source"]="channels-dvr"
         channel["number"]=number
-        used_epg_numbers.add(number)
     # Newly enrolled Channels DVR stations need not already exist in Philo's
     # EPG. Supply a tuneable placeholder without inventing program metadata.
     if source in ("all","channels-dvr") and not plex_only and not favorites_only:
