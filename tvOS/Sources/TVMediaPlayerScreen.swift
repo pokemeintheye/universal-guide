@@ -93,24 +93,70 @@ private struct TVChannelsResponse: Decodable {
     let stream_url: String
 }
 
+// The backend decides which guide station uses which stream. tvOS does not
+// carry a list of TVE channel numbers or provider-specific channel aliases.
+struct TVLiveOption: Decodable {
+    let guide_source: String
+    let guide_label: String
+    let provider: String
+    let channel_number: String
+    let label: String
+    let is_live: Bool
+    let timeshift: Bool
+}
+private struct TVLiveOptionsResponse: Decodable {
+    let options: [TVLiveOption]
+}
+
 enum TVChannelsService {
-    static func start(serverURL: String, title: String) async throws -> TVMediaSession {
+    static func guideKey(_ source: String, _ label: String) -> String {
+        let cleaned = label.lowercased().filter { $0.isLetter || $0.isNumber }
+        return source.lowercased() + ":" + cleaned
+    }
+
+    static func availableOptions(serverURL: String) async -> [String: TVLiveOption] {
+        do {
+            let base = try PlexPlaybackService.baseURL(serverURL)
+            guard let endpoint = URL(string: "/api/channels-dvr/guide-options", relativeTo: base)?.absoluteURL else {
+                return [:]
+            }
+            var request = URLRequest(url: endpoint)
+            request.timeoutInterval = 18
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [:] }
+            let payload = try JSONDecoder().decode(TVLiveOptionsResponse.self, from: data)
+            var choices: [String: TVLiveOption] = [:]
+            for option in payload.options where option.is_live && option.provider == "channels-dvr" {
+                choices[guideKey(option.guide_source, option.guide_label)] = option
+            }
+            return choices
+        } catch {
+            // The previous Philo handoff remains available if discovery fails.
+            return [:]
+        }
+    }
+
+    static func start(serverURL: String, option: TVLiveOption, title: String) async throws -> TVMediaSession {
         let base = try PlexPlaybackService.baseURL(serverURL)
-        guard let endpoint = URL(string: "/api/channels-dvr/test/hgtv", relativeTo: base)?.absoluteURL else {
-            throw PlexPlaybackError.invalidServer
+        guard option.provider == "channels-dvr",
+              option.channel_number.count == 4,
+              option.channel_number.allSatisfy({ $0.isNumber }),
+              let endpoint = URL(string: "/api/channels-dvr/live/\\(option.channel_number)", relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidSession
         }
         var request = URLRequest(url: endpoint)
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw PlexPlaybackError.server("Channels DVR HGTV stream could not be discovered.")
+            throw PlexPlaybackError.server("Channels DVR could not open this station. Use Open in Philo instead.")
         }
         let result = try JSONDecoder().decode(TVChannelsResponse.self, from: data)
         guard let url = URL(string: result.stream_url), url.scheme == "http",
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else {
             throw PlexPlaybackError.invalidSession
         }
-        return .channels(TVChannelsSession(id: "channels-hgtv-6104", title: title, playlistURL: url))
+        return .channels(TVChannelsSession(
+            id: "channels-\\(option.channel_number)", title: title, playlistURL: url))
     }
 }
 
