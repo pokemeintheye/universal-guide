@@ -1245,8 +1245,8 @@ struct TVGuideScreen: View {
         }
     }
 
-    #if os(iOS)
     private var portraitDetailBar: some View {
+        #if os(iOS)
         VStack(alignment: .leading, spacing: 8) {
             if let (_, program) = selected {
                 HStack(alignment: .top, spacing: 12) {
@@ -1313,8 +1313,10 @@ struct TVGuideScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: detailHeight, alignment: .top)
         .background(TVPalette.panel, in: RoundedRectangle(cornerRadius: 12))
+        #else
+        EmptyView()
+        #endif
     }
-    #endif
 
     private func watchButton(_ label: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
