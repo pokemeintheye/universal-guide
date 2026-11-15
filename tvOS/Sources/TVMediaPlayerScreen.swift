@@ -1276,8 +1276,19 @@ struct TVMediaPlayerScreen: View {
             request.timeoutInterval = 15
             request.cachePolicy = .reloadIgnoringLocalCacheData
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                throw PlexPlaybackError.server("The next virtual channel program is unavailable.")
+            guard let http = response as? HTTPURLResponse else {
+                throw PlexPlaybackError.server("The guide server did not return an HTTP response.")
+            }
+            guard http.statusCode == 200 else {
+                let detail = (try? JSONSerialization.jsonObject(with: data))
+                    .flatMap { $0 as? [String: Any] }?["detail"] as? String
+                if http.statusCode == 404 && detail == "Not Found" {
+                    throw PlexPlaybackError.server(
+                        "The Unraid Universal Guide backend does not support virtual-channel autoplay yet (HTTP 404). Update the Docker container to the latest image.")
+                }
+                throw PlexPlaybackError.server(
+                    "Next virtual program request failed (HTTP \(http.statusCode)): " +
+                    (detail ?? "Unknown backend error. Check the Unraid container log."))
             }
             let program = try JSONDecoder().decode(TVVirtualNextResponse.self,
                                                    from: data).program
