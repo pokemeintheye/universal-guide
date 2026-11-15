@@ -82,19 +82,20 @@ enum TVTabloService {
     }
 }
 
-// Initial Channels DVR test: live HLS only. No disk-backed timeshift yet.
+// Channels DVR live HLS supports an optional backend disk-backed DVR buffer.
+// All channel mappings stay on the backend; this client only reads capabilities.
 struct TVChannelsSession: Identifiable {
     let id: String
     let title: String
     let playlistURL: URL
+    let serverURL: URL?
+    let isTimeshift: Bool
 }
 
 private struct TVChannelsResponse: Decodable {
     let stream_url: String
 }
 
-// The backend decides which guide station uses which stream. tvOS does not
-// carry a list of TVE channel numbers or provider-specific channel aliases.
 struct TVLiveOption: Decodable {
     let guide_source: String
     let guide_label: String
@@ -131,8 +132,7 @@ enum TVChannelsService {
             }
             return choices
         } catch {
-            // The previous Philo handoff remains available if discovery fails.
-            return [:]
+            return [:] // Philo fallback remains available when the backend is offline.
         }
     }
 
@@ -140,15 +140,21 @@ enum TVChannelsService {
         let base = try PlexPlaybackService.baseURL(serverURL)
         guard option.action == "play-hls",
               !option.playback_id.isEmpty,
-              option.playback_id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }),
-              let endpoint = URL(string: "/api/live/stream/\(option.playback_id)", relativeTo: base)?.absoluteURL else {
+              option.playback_id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else {
             throw PlexPlaybackError.invalidSession
+        }
+        if option.timeshift {
+            return try await startTimeshift(base: base, playbackID: option.playback_id, title: title)
+        }
+        // Compatibility with a backend source that offers direct HLS only.
+        guard let endpoint = URL(string: "/api/live/stream/\(option.playback_id)", relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidServer
         }
         var request = URLRequest(url: endpoint)
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw PlexPlaybackError.server("Channels DVR could not open this station. Use Open in Philo instead.")
+            throw PlexPlaybackError.server("Live stream could not be opened. Use Open in Philo instead.")
         }
         let result = try JSONDecoder().decode(TVChannelsResponse.self, from: data)
         guard let url = URL(string: result.stream_url), url.scheme == "http",
@@ -156,7 +162,70 @@ enum TVChannelsService {
             throw PlexPlaybackError.invalidSession
         }
         return .channels(TVChannelsSession(
-            id: "live-\(option.playback_id)", title: title, playlistURL: url))
+            id: "live-\(option.playback_id)", title: title, playlistURL: url,
+            serverURL: nil, isTimeshift: false))
+    }
+
+    private static func startTimeshift(base: URL, playbackID: String, title: String) async throws -> TVMediaSession {
+        guard let endpoint = URL(string: "/api/live/timeshift/start/\(playbackID)", relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidServer
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let code = response as? HTTPURLResponse, code.statusCode == 200 else {
+            throw PlexPlaybackError.server("Channels DVR buffer could not start. Open in Philo remains available.")
+        }
+        let result = try JSONDecoder().decode(TVTabloResponse.self, from: data)
+        guard result.playlist_url.hasPrefix("/api/live/timeshift/"),
+              result.playlist_url.hasSuffix("/index.m3u8"),
+              !result.session_id.isEmpty,
+              let playlist = URL(string: result.playlist_url, relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidSession
+        }
+        let session = TVChannelsSession(id: result.session_id, title: title,
+                                        playlistURL: playlist, serverURL: base,
+                                        isTimeshift: true)
+        do {
+            // Never hand the Apple TV an empty manifest. Tablo uses the same
+            // four-segment readiness check for a stable rolling seek window.
+            for _ in 0..<45 {
+                try Task.checkCancellation()
+                guard let statusURL = URL(string: "/api/live/timeshift/\(session.id)/status",
+                                          relativeTo: base)?.absoluteURL else {
+                    throw PlexPlaybackError.invalidServer
+                }
+                var healthRequest = URLRequest(url: statusURL)
+                healthRequest.timeoutInterval = 8
+                let (bytes, reply) = try await URLSession.shared.data(for: healthRequest)
+                if (reply as? HTTPURLResponse)?.statusCode == 200 {
+                    let health = try JSONDecoder().decode(TVTabloStatus.self, from: bytes)
+                    if health.transcoder_running == false {
+                        throw PlexPlaybackError.server("Channels DVR buffer stopped unexpectedly.")
+                    }
+                    if health.manifest_ready == true &&
+                       (health.disk_dvr_playlist?.segment_count ?? 0) >= 4 {
+                        return .channels(session)
+                    }
+                }
+                try await Task.sleep(for: .seconds(1))
+            }
+            throw PlexPlaybackError.server("Channels DVR did not create a playable DVR buffer.")
+        } catch {
+            await stop(session)
+            throw error
+        }
+    }
+
+    static func stop(_ session: TVChannelsSession) async {
+        guard session.isTimeshift, let base = session.serverURL,
+              let endpoint = URL(string: "/api/live/timeshift/\(session.id)",
+                                  relativeTo: base)?.absoluteURL else { return }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 10
+        _ = try? await URLSession.shared.data(for: request)
     }
 }
 
@@ -176,11 +245,16 @@ enum TVMediaSession: Identifiable {
     var isLiveSource: Bool { isTablo || isChannels }
     var isChannels: Bool { if case .channels = self { return true }; return false }
     var isTablo: Bool { if case .tablo = self { return true }; return false }
+    var isSeekableLive: Bool {
+        if isTablo { return true }
+        if case .channels(let c) = self { return c.isTimeshift }
+        return false
+    }
     func stop() async {
         switch self {
         case .plex(let p): await PlexPlaybackService.stop(p)
         case .tablo(let t): await TVTabloService.stop(t)
-        case .channels: break // Channels owns this HLS stream; no server session to delete.
+        case .channels(let c): await TVChannelsService.stop(c)
         }
     }
 }
