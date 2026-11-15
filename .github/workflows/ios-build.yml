@@ -44,6 +44,48 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+      - name: Smoke test iPhone app launch in Simulator
+        working-directory: iOS
+        shell: bash
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          mkdir -p launch-diagnostics
+          DEVICE="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; candidates=[x["udid"] for devices in d.values() for x in devices if x["name"].startswith("iPhone") and x.get("state") in ("Shutdown","Booted") and x.get("isAvailable",True)]; print(candidates[0] if candidates else "")')"
+          if [ -z "$DEVICE" ]; then
+            echo "::error::No iPhone simulator available to validate app launch"
+            exit 1
+          fi
+          echo "Testing iOS launch on $DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          APP="build/Build/Products/Debug-iphonesimulator/UniversalGuidePhone.app"
+          xcrun simctl install "$DEVICE" "$APP"
+          set +e
+          xcrun simctl launch "$DEVICE" co.thejonesfamily.universalguide.iphone > launch-diagnostics/launch.txt 2>&1
+          LAUNCH_RESULT=$?
+          sleep 12
+          xcrun simctl spawn "$DEVICE" launchctl list > launch-diagnostics/processes.txt 2>&1
+          xcrun simctl spawn "$DEVICE" log show --last 3m --style compact --predicate 'process == "UniversalGuidePhone"' > launch-diagnostics/app-log.txt 2>&1
+          xcrun simctl io "$DEVICE" screenshot launch-diagnostics/screenshot.png || true
+          cp -R "$HOME/Library/Logs/DiagnosticReports/." launch-diagnostics/ 2>/dev/null || true
+          set -e
+          cat launch-diagnostics/launch.txt
+          if [ "$LAUNCH_RESULT" -ne 0 ]; then
+            echo "::error::iPhone app launch failed"
+            exit 1
+          fi
+          if ! grep -q 'co.thejonesfamily.universalguide.iphone' launch-diagnostics/processes.txt; then
+            echo "::error::App process disappeared within 12 seconds of launch; review simulator diagnostics"
+            exit 1
+          fi
+      - name: Upload simulator launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalGuidePhone-launch-diagnostics
+          path: iOS/launch-diagnostics/
+          if-no-files-found: ignore
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
