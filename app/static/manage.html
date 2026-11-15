@@ -40,7 +40,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 <div class="row"><label>Channel name <input id="virtualName" maxlength="80" placeholder="Movie Night"></label><label><input type="checkbox" id="virtualEnabled" checked>Enabled</label></div>
 <div class="row" style="margin:12px 0"><label>Programming <select id="virtualMode"><option value="manual">Manual playlist</option><option value="smart">Smart metadata rules</option></select></label></div>
 <div id="smartRules" hidden>
-  <p class="hint">Build a channel automatically from matching Plex content. The schedule remains consistent across guide refreshes and updates after a Plex library sync. Hold Ctrl/Command to select multiple genres or TV shows; leave blank for all.</p>
+  <p class="hint">Build a channel automatically from matching Plex content. Use genres, Plex Labels and Tags/Collections as separate filters; selections within a category match any, and selected categories must all match. The schedule remains consistent across guide refreshes and updates after a Plex library sync. Hold Ctrl/Command to select multiple genres or TV shows; leave blank for all.</p>
   <div class="row">
     <label>Content <select id="smartType"><option value="episodes">TV episodes</option><option value="movies">Movies</option><option value="all">Movies + TV</option></select></label>
     <label>Order <select id="smartOrder"><option value="shuffle">Stable shuffle</option><option value="chronological">Show / season / episode</option><option value="newest">Newest release first</option></select></label>
@@ -48,6 +48,8 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
   </div>
   <div class="row" style="margin:10px 0">
     <label>Genres <select id="smartGenres" multiple size="7" style="min-width:210px"></select></label>
+    <label>Plex Labels <select id="smartLabels" multiple size="7" style="min-width:210px"></select></label>
+    <label>Tags / Collections <select id="smartTags" multiple size="7" style="min-width:210px"></select></label>
     <label>TV shows <select id="smartShows" multiple size="7" style="min-width:280px"></select></label>
     <label>Year from <input id="smartYearMin" type="number" min="1880" max="2200" placeholder="Any"></label>
     <label>Year through <input id="smartYearMax" type="number" min="1880" max="2200" placeholder="Any"></label>
@@ -68,7 +70,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 const $=id=>document.getElementById(id);
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let token='',stations=[],virtuals=[],editingId=null,playlist=[],searchHits=[];
-let metadataFilters={genres:[],shows:[]};
+let metadataFilters={genres:[],shows:[],labels:[],tags:[]};
 function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
 function err(e){message(e.message||String(e),true)}
@@ -97,9 +99,9 @@ $('virtualMode').onchange=smartMode;
 function getSelections(id){return Array.from($(id).selectedOptions,x=>x.value)}
 function setSelections(id,values){for(const opt of $(id).options)opt.selected=(values||[]).includes(opt.value)}
 function fillSelect(id,items){const el=$(id);el.replaceChildren();for(const value of items){const option=document.createElement('option');option.value=value;option.textContent=value;el.append(option)}}
-async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[])}catch(e){err(e)}}
-function readSmartRules(){return {media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
-function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartShows',r.shows||[])}
+async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[])}catch(e){err(e)}}
+function readSmartRules(){return {media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
+function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartLabels',r.labels||[]);setSelections('smartTags',r.tags||[]);setSelections('smartShows',r.shows||[])}
 $('previewSmart').onclick=async()=>{try{const data=await api('/api/manage/virtual/preview',{method:'POST',body:JSON.stringify(readSmartRules())});$('smartPreview').textContent=data.matching+' matching titles ('+data.movies+' movies, '+data.episodes+' episodes). Sample: '+data.sample.map(x=>(x.show?x.show+' — ':'')+x.title).join('; ');message('Smart channel pool preview updated')}catch(e){err(e)}};
 async function openVirtual(v){editingId=v?.id||null;playlist=(v?.items||[]).map(x=>({...x,title:'Plex item '+x.rating_key}));$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('virtualMode').value=v?.mode||'manual';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
 $('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};

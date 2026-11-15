@@ -1001,3 +1001,22 @@ between Apple TV and the web guide. Content can be opened through the existing
 Plex player. **This feature still does not implement uninterrupted continuous
 broadcasting or automatic handoff to the next media item.** Those playback
 features are separate from metadata-driven EPG scheduling.
+
+
+### Plex Labels and Tags/Collections in smart channels
+
+In the Unraid `/manage` virtual channel editor, smart rules include
+independent multi-select filters for **Plex Labels** and **Tags / Collections**
+in addition to genres, shows and release years. Within one filter category,
+matching **any** selected value is sufficient; across different categories,
+the content must satisfy **all** configured categories. An empty category
+does not restrict the library. Label and Tag/Collection values are stored as
+JSON arrays so commas within a Plex label are preserved.
+
+Plex movie labels and Collection/Tag metadata are imported from Plex. TV
+episodes inherit their parent show's Labels and Collections/Tags, supplemented
+by episode-specific metadata when present. Run **Sync Plex** after updating
+the Docker container so these newly indexed metadata fields are populated.
+Existing virtual rules, manual playlists and labels used for Plex library
+allow/exclude access control remain intact. A smart filter never overrides
+the existing Plex label access policy or reintroduces excluded media.

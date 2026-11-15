@@ -250,16 +250,24 @@ def preview_rules(body: SmartRules, request: Request):
 def rule_filters(request: Request):
     require_admin(request)
     from app.main import db
+    from app.virtual_rules import _metadata_values
     with db() as c:
-        catalog=[dict(x) for x in c.execute("SELECT kind,show_title,genres FROM media")]
+        catalog=[dict(x) for x in c.execute(
+            "SELECT kind,show_title,genres,plex_labels,plex_tags FROM media")]
     genres=set()
     shows=set()
+    labels=set()
+    tags=set()
     for item in catalog:
         genres.update(g.strip() for g in (item.get("genres") or "").split(",") if g.strip())
+        labels.update(_metadata_values(item.get("plex_labels")))
+        tags.update(_metadata_values(item.get("plex_tags")))
         if item["kind"]=="episode" and item.get("show_title"):
             shows.add(item["show_title"])
     return {"genres":sorted(genres,key=str.casefold),
-            "shows":sorted(shows,key=str.casefold)}
+            "shows":sorted(shows,key=str.casefold),
+            "labels":sorted(labels,key=str.casefold),
+            "tags":sorted(tags,key=str.casefold)}
 
 
 @router.get("/virtual")

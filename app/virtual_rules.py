@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 class SmartRules(BaseModel):
     media_type: str = "episodes"  # episodes, movies, all
     genres: list[str] = Field(default_factory=list, max_length=12)
+    labels: list[str] = Field(default_factory=list, max_length=20)
+    tags: list[str] = Field(default_factory=list, max_length=20)
     shows: list[str] = Field(default_factory=list, max_length=30)
     year_min: int | None = Field(default=None, ge=1880, le=2200)
     year_max: int | None = Field(default=None, ge=1880, le=2200)
@@ -29,7 +31,7 @@ def validate_rules(rule):
         raise HTTPException(422,"Invalid programming order")
     if rule.year_min is not None and rule.year_max is not None and rule.year_min > rule.year_max:
         raise HTTPException(422,"Year range is reversed")
-    for v in rule.genres + rule.shows:
+    for v in rule.genres + rule.shows + rule.labels + rule.tags:
         if not v.strip() or len(v)>100 or any(ord(c)<32 for c in v):
             raise HTTPException(422,"Invalid genre or TV show")
     if rule.media_type == "movies" and rule.shows:
@@ -38,10 +40,23 @@ def validate_rules(rule):
 def _normalize(v):
     return str(v or "").casefold().strip()
 
+def _metadata_values(raw):
+    """Plex Labels and Collections/Tags are stored as JSON string arrays."""
+    if not raw:
+        return set()
+    try:
+        values=json.loads(raw) if isinstance(raw,str) else raw
+    except (ValueError,TypeError):
+        return set()
+    return {_normalize(v) for v in values if isinstance(v,str) and v.strip()} if isinstance(values,list) else set()
+
+
 def matching_items(catalog, rule):
     validate_rules(rule)
     genres={_normalize(x) for x in rule.genres}
     shows={_normalize(x) for x in rule.shows}
+    labels={_normalize(x) for x in rule.labels}
+    tags={_normalize(x) for x in rule.tags}
     result=[]
     for item in catalog:
         if item["kind"] not in ("movie","episode"):
@@ -57,6 +72,10 @@ def matching_items(catalog, rule):
             continue
         item_genres={_normalize(x) for x in (item.get("genres") or "").split(",") if x}
         if genres and not genres.intersection(item_genres):
+            continue
+        if labels and not labels.intersection(_metadata_values(item.get("plex_labels"))):
+            continue
+        if tags and not tags.intersection(_metadata_values(item.get("plex_tags"))):
             continue
         if shows and _normalize(item.get("show_title")) not in shows:
             continue
