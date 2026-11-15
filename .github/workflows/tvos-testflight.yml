@@ -1,6 +1,11 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/channels-timeshift-testflight-20261115
+    paths:
+      - '.github/channels-timeshift-testflight-once.txt'
 permissions:
   contents: read
 concurrency:
