@@ -78,6 +78,24 @@ class ChannelManagementTests(unittest.TestCase):
         self.assertEqual(matching[0]["programs"][0]["title"], "Live TV")
         self.assertEqual(matching[0]["source"], "channels-dvr")
 
+    def test_virtual_channels_are_at_top_of_normal_apple_tv_guide(self):
+        # Normal browsing must reach virtual stations without searching
+        # through every Philo/Tablo row first.
+        cm.create_virtual(cm.VirtualUpdate(
+            name="Movie Night",
+            items=[cm.VirtualItem(rating_key=100, duration_minutes=90)]), Request())
+        with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)), \
+             patch("app.channels_epg.schedule", return_value=({}, None)):
+            all_guide = main.guide(hours=2, source="all")
+            virtual_guide = main.guide(hours=2, source="virtual")
+        self.assertGreater(len(all_guide["channels"]), 1)
+        self.assertEqual(all_guide["channels"][0]["label"], "Movie Night")
+        self.assertEqual(all_guide["channels"][0]["source"], "virtual")
+        self.assertEqual([x["source"] for x in virtual_guide["channels"]],
+                         ["virtual"])
+        self.assertEqual(all_guide["channels"][0]["id"],
+                         virtual_guide["channels"][0]["id"])
+
     def test_unexported_station_is_not_allowed(self):
         body = cm.StationUpdate(number="6999", name="Missing",guide_label="Missing")
         with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)):
