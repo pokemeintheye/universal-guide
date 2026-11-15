@@ -342,7 +342,10 @@ def next_virtual_program(channel_id: str, after: str):
     if not VIRTUAL_ID.fullmatch(channel_id):
         raise HTTPException(404, "Unknown virtual channel")
     try:
-        cursor=datetime.fromisoformat(after.replace("Z","+00:00"))
+        # A literal "+" in a URL query can be decoded as a space by HTTP
+        # query parsers. Recover only the trailing HH:MM timezone offset.
+        clean_after=re.sub(r" (?=\d{2}:\d{2}$)", "+", after)
+        cursor=datetime.fromisoformat(clean_after.replace("Z","+00:00"))
         if cursor.tzinfo is None:
             raise ValueError("Timezone required")
         cursor=cursor.astimezone(timezone.utc)

@@ -1270,7 +1270,12 @@ struct TVMediaPlayerScreen: View {
             let base = try PlexPlaybackService.baseURL(channel.serverURL)
             var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)!
             parts.path = "/api/manage/virtual/\(channel.channelID)/next"
-            parts.queryItems = [URLQueryItem(name: "after", value: after)]
+            // Backend schedules use UTC "+00:00". URL query parsers may
+            // interpret its plus as a space, making an otherwise valid
+            // timestamp fail validation. Send canonical UTC Z instead.
+            let queryAfter = after.hasSuffix("+00:00")
+                ? String(after.dropLast(6)) + "Z" : after
+            parts.queryItems = [URLQueryItem(name: "after", value: queryAfter)]
             guard let url = parts.url else { throw PlexPlaybackError.invalidServer }
             var request = URLRequest(url: url)
             request.timeoutInterval = 15
