@@ -870,3 +870,37 @@ this functionality. The standalone experimental staging container is
 not required after production validation. The endpoint is LAN-only by
 deployment policy; do not expose port 8787 or the returned stream URL
 to the public Internet.
+
+## Channels DVR rolling timeshift
+
+An experimental disk-backed DVR buffer for the existing backend-managed
+Channels DVR HLS TVE stations. The backend continues to own the channel
+mappings, and the Apple TV reads the \`timeshift\` capability from
+\`GET /api/live/guide-options\`. No channel numbers are hardcoded in tvOS.
+
+For \`timeshift: true\`, tvOS starts a live session with
+\`POST /api/live/timeshift/start/{playback_id}\`. The server records the
+allowlisted Channels DVR HLS stream to a rolling local HLS playlist under
+\`/data/channels-live-cache\`. The Apple TV receives only the local playlist,
+never raw local disk paths. It checks \`GET /api/live/timeshift/{sid}/status\`
+until several segments are ready and deletes its buffer with
+\`DELETE /api/live/timeshift/{sid}\` when playback ends.
+
+The TVE buffer copies the video codec (currently already playable as HLS)
+and converts audio to AAC. It does not store permanent recordings. It uses
+the same seekable AVPlayer controls as Tablo: rewind 20 seconds, forward
+30 seconds, pause/resume, seek bar and Go Live. The buffer starts when
+the station is tuned, so it **cannot** rewind before tuning. A channel
+whose TVE source fails to start may still be opened in Philo.
+
+Defaults: **20-minute** segment window, **4-second** target segments,
+**2** concurrent sessions, and **30 minutes** of inactivity before an
+abandoned session is cleaned up. The media is written on the writable
+Unraid appdata volume (container \`/data\`), not \`/tmp\`.
+Configure optional \`CHANNELS_DVR_BUFFER_MINUTES\` (2–30) and
+\`CHANNELS_DVR_CACHE_DIR\` (default \`/data/channels-live-cache\`).
+Allow for several hundred MB of storage per active session at normal
+TVE video bitrates. Do not place the cache on a read-only volume.
+
+This feature must be validated against real Channels DVR streams and tvOS
+remote controls before merging into production.
