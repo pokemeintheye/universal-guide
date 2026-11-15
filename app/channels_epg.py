@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import requests
+from fastapi import HTTPException
 
 from app.channels_dvr import _base
 
@@ -171,7 +172,7 @@ def schedule(start, end, configured):
             try:
                 xmltv = parse_xmltv(_fetch(duration))
                 err = None
-            except (requests.RequestException, ValueError, ET.ParseError, OSError) as exc:
+            except (requests.RequestException, HTTPException, ValueError, ET.ParseError, OSError) as exc:
                 xmltv, err = None, "Channels DVR EPG unavailable: " + type(exc).__name__
             _CACHE.update(at=now, duration=duration, rows=xmltv, error=err)
     if xmltv is None:
