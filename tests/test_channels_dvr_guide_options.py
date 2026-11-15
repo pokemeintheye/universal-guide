@@ -26,6 +26,16 @@ class BackendPlaybackOptionsTests(unittest.TestCase):
         self.assertTrue(all(x["provider"] == "channels-dvr" for x in payload["options"]))
         self.assertEqual(payload["fallback"], "philo")
 
+    def test_generic_playback_contract(self):
+        with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", M3U)):
+            listing = cd.live_guide_options()["options"]
+            stream = cd.live_stream("tve-6105")
+        tlc = next(item for item in listing if item["guide_label"] == "TLC")
+        self.assertEqual(tlc["action"], "play-hls")
+        self.assertEqual(tlc["playback_id"], "tve-6105")
+        self.assertIn("/6105/hls/", stream["stream_url"])
+        self.assertFalse(stream["timeshift"])
+
     def test_unavailable_channel_not_offered(self):
         with patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", "#EXTM3U")):
             self.assertEqual(cd.guide_options()["options"], [])
