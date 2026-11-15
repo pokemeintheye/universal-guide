@@ -82,23 +82,58 @@ enum TVTabloService {
     }
 }
 
+// Initial Channels DVR test: live HLS only. No disk-backed timeshift yet.
+struct TVChannelsSession: Identifiable {
+    let id: String
+    let title: String
+    let playlistURL: URL
+}
+
+private struct TVChannelsResponse: Decodable {
+    let stream_url: String
+}
+
+enum TVChannelsService {
+    static func start(serverURL: String, title: String) async throws -> TVMediaSession {
+        let base = try PlexPlaybackService.baseURL(serverURL)
+        guard let endpoint = URL(string: "/api/channels-dvr/test/hgtv", relativeTo: base)?.absoluteURL else {
+            throw PlexPlaybackError.invalidServer
+        }
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw PlexPlaybackError.server("Channels DVR HGTV stream could not be discovered.")
+        }
+        let result = try JSONDecoder().decode(TVChannelsResponse.self, from: data)
+        guard let url = URL(string: result.stream_url), url.scheme == "http",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else {
+            throw PlexPlaybackError.invalidSession
+        }
+        return .channels(TVChannelsSession(id: "channels-hgtv-6104", title: title, playlistURL: url))
+    }
+}
+
 enum TVMediaSession: Identifiable {
     case plex(PlexPlaybackSession)
     case tablo(TVTabloSession)
+    case channels(TVChannelsSession)
     var id: String {
-        switch self { case .plex(let x): return x.id; case .tablo(let x): return x.id }
+        switch self { case .plex(let x): return x.id; case .tablo(let x): return x.id; case .channels(let x): return x.id }
     }
     var title: String {
-        switch self { case .plex(let x): return x.title; case .tablo(let x): return x.title }
+        switch self { case .plex(let x): return x.title; case .tablo(let x): return x.title; case .channels(let x): return x.title }
     }
     var playlist: URL {
-        switch self { case .plex(let x): return x.playlistURL; case .tablo(let x): return x.playlistURL }
+        switch self { case .plex(let x): return x.playlistURL; case .tablo(let x): return x.playlistURL; case .channels(let x): return x.playlistURL }
     }
+    var isChannels: Bool { if case .channels = self { return true }; return false }
     var isTablo: Bool { if case .tablo = self { return true }; return false }
     func stop() async {
         switch self {
         case .plex(let p): await PlexPlaybackService.stop(p)
         case .tablo(let t): await TVTabloService.stop(t)
+        case .channels: break // Channels owns this HLS stream; no server session to delete.
         }
     }
 }
@@ -202,7 +237,7 @@ struct TVMediaPlayerScreen: View {
         return ([yearText, existing].filter { !$0.isEmpty }).joined(separator: " · ")
     }
     private var sourceName: String {
-        session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX"
+        session.isChannels ? (metadata.channelName ?? "HGTV") : (session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX")
     }
     private var currentSession: TVMediaSession {
         if let replacementPlex { return .plex(replacementPlex) }
@@ -234,6 +269,7 @@ struct TVMediaPlayerScreen: View {
         return seekProgress
     }
     private var remoteButtons: [String] {
+        session.isChannels ? ["back", "pause"] :
         session.isTablo ? ["back", "pause", "forward", "live"] :
                           ["back", "pause", "forward", "chapters", "captions", "audio"]
     }
@@ -313,7 +349,8 @@ struct TVMediaPlayerScreen: View {
                         .foregroundStyle(.white)
 
                         Button {
-                            if session.isTablo { seekTo(elapsed + 30) }
+                            if session.isChannels { /* No seek support until a DVR buffer is verified. */ }
+                            else if session.isTablo { seekTo(elapsed + 30) }
                             else { handlePlexScrubOK() }
                         } label: {
                             GeometryReader { geometry in
