@@ -282,9 +282,20 @@ struct TVPlaybackMetadata {
     }
 }
 
+struct TVVirtualContinuation {
+    let channelID: String
+    let serverURL: String
+    let after: String
+}
+
+private struct TVVirtualNextResponse: Decodable {
+    let program: GuideProgram
+}
+
 struct TVMediaPlayerScreen: View {
     let session: TVMediaSession
     let metadata: TVPlaybackMetadata
+    var virtualChannel: TVVirtualContinuation? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
     @State private var controlsVisible = false
@@ -313,6 +324,9 @@ struct TVMediaPlayerScreen: View {
     @State private var checkedPlayback = false
     @State private var streamError: String?
     @State private var explicitlyClosing = false
+    @State private var virtualAfter: String?
+    @State private var virtualPlayingNext = false
+    @State private var virtualMetadata: TVPlaybackMetadata?
     @State private var replacementPlex: PlexPlaybackSession?
     @State private var retiringPlex: PlexPlaybackSession?
     @State private var plexMetadata: PlexPlaybackMetadata?
@@ -343,13 +357,18 @@ struct TVMediaPlayerScreen: View {
     private func isSelected(_ key: String) -> Bool {
         controlsVisible && selectedControl == key
     }
+    private var currentDisplayMetadata: TVPlaybackMetadata {
+        virtualMetadata ?? metadata
+    }
     private var playbackTitle: String {
-        metadata.title.isEmpty ? session.title : metadata.title
+        let current = currentDisplayMetadata
+        return current.title.isEmpty ? session.title : current.title
     }
     private var playerDetailLine: String {
-        if session.isLiveSource || !metadata.isMovie { return metadata.detailLine }
-        let year = plexMetadata?.year ?? metadata.year ?? 0
-        let existing = metadata.detailLine
+        let current = currentDisplayMetadata
+        if session.isLiveSource || !current.isMovie { return current.detailLine }
+        let year = plexMetadata?.year ?? current.year ?? 0
+        let existing = current.detailLine
         guard year > 0 else { return existing }
         let yearText = String(year)
         if existing.split(separator: "·").map({ $0.trimmingCharacters(in: .whitespaces) }).contains(yearText) {
@@ -625,6 +644,7 @@ struct TVMediaPlayerScreen: View {
         .tint(playerBlue)
         .preferredColorScheme(.dark)
         .onAppear {
+            virtualAfter = virtualChannel?.after
             streamStartedAt = Date()
             if let plex = plexSession {
                 Task {
@@ -665,6 +685,15 @@ struct TVMediaPlayerScreen: View {
             // transition. Don't DELETE a Plex session until an explicit exit.
             // Preserve existing Tablo cleanup.
             if session.isLiveSource { Task { await session.stop() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemDidPlayToEndTime)) { notice in
+            // Only the currently playing item may trigger the next program.
+            // Track/audio switches retire old items asynchronously.
+            guard let ended = notice.object as? AVPlayerItem,
+                  ended === player.currentItem, !explicitlyClosing,
+                  virtualChannel != nil, !virtualPlayingNext else { return }
+            Task { await playNextVirtualProgram() }
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             tickPlexScrub()
@@ -1226,6 +1255,84 @@ struct TVMediaPlayerScreen: View {
             } catch {
                 // Not all Plex movies have generated preview indexes.
             }
+        }
+    }
+
+    @MainActor
+    private func playNextVirtualProgram() async {
+        guard let channel = virtualChannel,
+              let after = virtualAfter,
+              !virtualPlayingNext, !explicitlyClosing,
+              let previous = plexSession else { return }
+        virtualPlayingNext = true
+        defer { virtualPlayingNext = false }
+        do {
+            let base = try PlexPlaybackService.baseURL(channel.serverURL)
+            var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+            parts.path = "/api/manage/virtual/\(channel.channelID)/next"
+            parts.queryItems = [URLQueryItem(name: "after", value: after)]
+            guard let url = parts.url else { throw PlexPlaybackError.invalidServer }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 15
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw PlexPlaybackError.server("The next virtual channel program is unavailable.")
+            }
+            let program = try JSONDecoder().decode(TVVirtualNextResponse.self,
+                                                   from: data).program
+            guard let rawKey = program.plex?.ratingKey, let ratingKey = Int(rawKey),
+                  ratingKey > 0, program.stop != after else {
+                throw PlexPlaybackError.server("The virtual channel has no valid next Plex program.")
+            }
+            let next = try await PlexPlaybackService.start(
+                serverURL: channel.serverURL, ratingKey: ratingKey,
+                mode: "beginning", airingStart: program.start, airingEnd: program.stop)
+            if explicitlyClosing {
+                await PlexPlaybackService.stop(next)
+                return
+            }
+            // Reuse the current full-screen AVPlayer; no guide dismissal
+            // or competing presentation during the program transition.
+            retiringPlex = previous
+            replacementPlex = next
+            virtualAfter = program.stop
+            virtualMetadata = TVPlaybackMetadata(
+                channelName: currentDisplayMetadata.channelName,
+                title: program.title, subtitle: program.subtitle,
+                season: program.season, episode: program.episode,
+                year: program.year, isMovie: program.programKind == "movie")
+            plexMetadata = nil
+            audioID = nil
+            subtitleID = nil
+            trackMenu = nil
+            scrubPosition = nil
+            scrubThumbnail = nil
+            scrubThumbnailCache.removeAll()
+            optionsError = nil
+            streamError = nil
+            plexPlaybackOrigin = 0
+            pendingTrackSeek = nil
+            applyingTrackSeek = false
+            elapsed = 0
+            minimum = 0
+            maximum = 1
+            seekProgress = 0
+            checkedPlayback = false
+            recoveredOnce = false
+            videoReady = false
+            streamStartedAt = Date()
+            player.replaceCurrentItem(with: AVPlayerItem(url: next.playlistURL))
+            player.play()
+            if let details = try? await PlexPlaybackService.metadata(next),
+               !explicitlyClosing, plexSession?.id == next.id {
+                plexMetadata = details
+                audioID = details.audio.first(where: { $0.selected })?.id
+                subtitleID = details.subtitles.first(where: { $0.selected })?.id ?? 0
+            }
+        } catch {
+            optionsError = "Unable to continue virtual channel: " + error.localizedDescription
+            controlsVisible = true
         }
     }
 
