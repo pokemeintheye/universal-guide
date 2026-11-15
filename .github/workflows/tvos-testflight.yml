@@ -1,6 +1,11 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/tvos-testflight-guide-tiles-20261115
+    paths:
+      - '.github/tvos-testflight-guide-tiles-once.txt'
 permissions:
   contents: read
 concurrency:
