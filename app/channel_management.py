@@ -5,6 +5,7 @@ on a Docker image rebuild. Keep the container LAN-only or set GUIDE_ADMIN_TOKEN.
 """
 import os
 import re
+import json
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -172,7 +173,7 @@ def virtual_definitions():
             rules_row=c.execute("SELECT rules_json FROM virtual_rule_config WHERE channel_id=?",
                                 (item["id"],)).fetchone()
             item["mode"]="smart" if rules_row else "manual"
-            item["rules"]=__import__("json").loads(rules_row["rules_json"]) if rules_row else None
+            item["rules"]=json.loads(rules_row["rules_json"]) if rules_row else None
             item["items"] = [dict(x) for x in c.execute(
                 "SELECT rating_key,duration_minutes FROM virtual_items WHERE channel_id=? ORDER BY position",
                 (item["id"],))]
@@ -338,7 +339,6 @@ def virtual_guide(window_start, window_end):
         catalog = {int(x["id"].rsplit(":", 1)[-1]): dict(x)
                    for x in c.execute("SELECT * FROM media")
                    if str(x["id"]).rsplit(":", 1)[-1].isdigit()}
-    epoch = datetime(2020, 1, 1, tzinfo=timezone.utc)
     start = window_start.astimezone(timezone.utc)
     end = window_end.astimezone(timezone.utc)
     rows = []
