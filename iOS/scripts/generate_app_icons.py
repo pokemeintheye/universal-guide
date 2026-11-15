@@ -27,11 +27,14 @@ def main():
     for idiom,size,scale in specs:
         dim=1024 if idiom=="ios-marketing" else int(size.split("x")[0])*scale
         background=Image.new("RGB",(dim,dim),(14,19,32))
-        # Use the same approved TV artwork across the full iOS icon canvas.
-        # Preserve its proportions and existing logo padding rather than
-        # shrinking the entire square artwork a second time.
-        resized=ImageOps.contain(source,(dim,dim),method=Image.Resampling.LANCZOS)
-        background.paste(resized,((dim-resized.width)//2,(dim-resized.height)//2),resized)
+        # The TV asset is landscape. Fitting it inside an iOS square
+        # letterboxes its logo and makes the home-screen icon look tiny.
+        # Crop to a centered square, preserving aspect ratio and filling
+        # the iOS icon canvas edge-to-edge instead.
+        resized=ImageOps.fit(source,(dim,dim),
+                             method=Image.Resampling.LANCZOS,
+                             centering=(0.5,0.5))
+        background.paste(resized,(0,0),resized)
         filename=f"AppIcon-{dim}.png"
         # The 40/58/60/80/87/120/180/1024 sizes are all distinct for this catalog.
         background.save(ICONSET/filename,format="PNG",optimize=True)
