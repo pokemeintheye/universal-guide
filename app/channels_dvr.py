@@ -98,13 +98,15 @@ def _playlist():
 
 
 def _resolve(number):
-    if number not in TVE_STATIONS:
-        raise HTTPException(404, "This channel is not in the configured TVE station list")
+    from app.channel_management import configured_stations
+    station = configured_stations().get(number)
+    if not station or not station["enabled"] or station["priority"] != "channels-dvr":
+        raise HTTPException(404, "This channel is not enabled for Channels DVR playback")
     base, playlist = _playlist()
     stream = _channel_stream(playlist, base, number)
     if not stream:
         raise HTTPException(404, f"Channel {number} is not in the current Channels DVR M3U export")
-    return {"channel_number": number, "name": TVE_STATIONS[number],
+    return {"channel_number": number, "name": station["name"],
             "stream_url": stream, "source": "channels-dvr", "playback_tested": False}
 
 
@@ -113,9 +115,10 @@ def channels():
     """List configured channels present in the current M3U export."""
     base, playlist = _playlist()
     available = []
-    for number, name in TVE_STATIONS.items():
-        if _channel_stream(playlist, base, number):
-            available.append({"channel_number": number, "name": name})
+    from app.channel_management import configured_stations
+    for number, station in configured_stations().items():
+        if station["enabled"] and station["priority"] == "channels-dvr" and _channel_stream(playlist, base, number):
+            available.append({"channel_number": number, "name": station["name"]})
     return {"channels": available, "source": "channels-dvr",
             "playback_tested": False}
 
@@ -143,8 +146,12 @@ def guide_options():
     """
     base, playlist = _playlist()
     options = []
-    for number, labels in GUIDE_LABELS.items():
-        if number in TVE_STATIONS and _channel_stream(playlist, base, number):
+    from app.channel_management import configured_stations
+    for number, station in configured_stations().items():
+        if not station["enabled"] or station["priority"] != "channels-dvr":
+            continue
+        if _channel_stream(playlist, base, number):
+            labels = station["aliases"]
             for label in labels:
                 options.append({
                     "guide_source": "philo", "guide_label": label,
