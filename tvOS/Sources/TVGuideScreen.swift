@@ -219,13 +219,17 @@ struct TVGuideScreen: View {
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
                 onNow: { playPlex("join") },
-                onExtra: selected?.0.source == "philo" ? "Open in Philo" :
+                onExtra: selected?.0.source == "philo" && selected?.0.label.caseInsensitiveCompare("HGTV") == .orderedSame && selected?.1.isOnNow == true
+                    ? "Watch HGTV Live" : (selected?.0.source == "philo" ? "Open in Philo" :
                          (selected?.0.source == "tablo" && selected?.1.isOnNow == true ?
-                          "Watch Live on Tablo" : nil),
+                          "Watch Live on Tablo" : nil)),
                 onExtraAction: {
                     if let (channel, program) = selected {
                         if channel.source == "tablo" { playTablo() }
-                        else {
+                        else if channel.source == "philo" && channel.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
+                            dismissPlexChoice()
+                            playChannelsHGTV()
+                        } else {
                             dismissPlexChoice()
                             openPhilo(channel, program)
                         }
