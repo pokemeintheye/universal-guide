@@ -127,6 +127,7 @@ enum TVMediaSession: Identifiable {
     var playlist: URL {
         switch self { case .plex(let x): return x.playlistURL; case .tablo(let x): return x.playlistURL; case .channels(let x): return x.playlistURL }
     }
+    var isLiveSource: Bool { isTablo || isChannels }
     var isChannels: Bool { if case .channels = self { return true }; return false }
     var isTablo: Bool { if case .tablo = self { return true }; return false }
     func stop() async {
@@ -226,7 +227,7 @@ struct TVMediaPlayerScreen: View {
         metadata.title.isEmpty ? session.title : metadata.title
     }
     private var playerDetailLine: String {
-        if session.isTablo || !metadata.isMovie { return metadata.detailLine }
+        if session.isLiveSource || !metadata.isMovie { return metadata.detailLine }
         let year = plexMetadata?.year ?? metadata.year ?? 0
         let existing = metadata.detailLine
         guard year > 0 else { return existing }
@@ -251,19 +252,19 @@ struct TVMediaPlayerScreen: View {
         max(1, plexMetadata?.duration_seconds ?? 1)
     }
     private var playbackElapsedSeconds: Double {
-        if session.isTablo { return max(0, elapsed - minimum) }
+        if session.isLiveSource { return max(0, elapsed - minimum) }
         if let plex = plexSession { return currentPlexPosition(plex) }
         return max(0, elapsed)
     }
     private var playbackRemainingSeconds: Double {
-        if session.isTablo { return max(0, maximum - elapsed) }
+        if session.isLiveSource { return max(0, maximum - elapsed) }
         return max(0, plexScrubDuration - playbackElapsedSeconds)
     }
     private var shownSeekProgress: Double {
-        if !session.isTablo, let scrubPosition {
+        if !session.isLiveSource, let scrubPosition {
             return min(1, max(0, scrubPosition / plexScrubDuration))
         }
-        if !session.isTablo, let plex = plexSession, plexMetadata != nil {
+        if !session.isLiveSource, let plex = plexSession, plexMetadata != nil {
             return min(1, max(0, currentPlexPosition(plex) / plexScrubDuration))
         }
         return seekProgress
@@ -342,7 +343,7 @@ struct TVMediaPlayerScreen: View {
                         HStack {
                             Text(time(playbackElapsedSeconds))
                             Spacer()
-                            Text(session.isTablo && maximum-elapsed < 8 ? "LIVE" :
+                            Text(session.isLiveSource && maximum-elapsed < 8 ? "LIVE" :
                                  "-" + time(playbackRemainingSeconds))
                         }
                         .font(.system(size: isCompact ? 13 : 18, weight: .medium))
@@ -377,7 +378,7 @@ struct TVMediaPlayerScreen: View {
                         // Putting the preview inside that tiny button caused tvOS to
                         // clip everything except the bottom edge of the card.
                         .overlay(alignment: .topLeading) {
-                            if !session.isTablo, let preview = scrubPosition {
+                            if !session.isLiveSource, let preview = scrubPosition {
                                 GeometryReader { geometry in
                                     VStack(spacing: 5) {
                                         if let thumbnail = scrubThumbnail {
@@ -519,7 +520,7 @@ struct TVMediaPlayerScreen: View {
             // SwiftUI can tear down a playback view during a presentation
             // transition. Don't DELETE a Plex session until an explicit exit.
             // Preserve existing Tablo cleanup.
-            if session.isTablo { Task { await session.stop() } }
+            if session.isLiveSource { Task { await session.stop() } }
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             tickPlexScrub()
@@ -857,6 +858,7 @@ struct TVMediaPlayerScreen: View {
             return
         }
         if !controlsVisible {
+            if session.isChannels { reveal(); return }
             switch direction {
             case "left": skip(-20)
             case "right": skip(30)
@@ -866,7 +868,7 @@ struct TVMediaPlayerScreen: View {
         }
         scheduleHideControls()
         if selectedControl == "seek" {
-            if !session.isTablo {
+            if !session.isLiveSource {
                 switch direction {
                 case "left": changePlexScrubDirection(-1); return
                 case "right": changePlexScrubDirection(1); return
@@ -920,7 +922,9 @@ struct TVMediaPlayerScreen: View {
         case "pause": playPause()
         case "forward": skip(30)
         case "seek":
-            if session.isTablo { seekTo(elapsed) } else { handlePlexScrubOK() }
+            if session.isChannels { break }
+            else if session.isTablo { seekTo(elapsed) }
+            else { handlePlexScrubOK() }
         case "live": goLive()
         case "chapters", "captions", "audio": openPlexOptions(selectedControl)
         case "close": exitPlayback()
@@ -1125,7 +1129,7 @@ struct TVMediaPlayerScreen: View {
             let resumeAt = pausePosition
             pauseBeganAt = nil
             pausePosition = nil
-            if !session.isTablo, pausedTooLong, let position = resumeAt {
+            if !session.isLiveSource, pausedTooLong, let position = resumeAt {
                 restoringLongPause = true
                 Task {
                     await replacePlexStream(at: position, audio: audioID,
@@ -1175,7 +1179,7 @@ struct TVMediaPlayerScreen: View {
         let current = CMTimeGetSeconds(player.currentTime())
         if current.isFinite {
             elapsed = current
-            if !session.isTablo, plexPlaybackOrigin == nil, videoReady,
+            if !session.isLiveSource, plexPlaybackOrigin == nil, videoReady,
                item.status == .readyToPlay {
                 plexPlaybackOrigin = current
             }
@@ -1221,7 +1225,7 @@ struct TVMediaPlayerScreen: View {
         player.play()
     }
     private func monitorPlexStartup() {
-        guard !session.isTablo, !videoReady, !checkedPlayback else { return }
+        guard !session.isLiveSource, !videoReady, !checkedPlayback else { return }
         let age = Date().timeIntervalSince(streamStartedAt)
         if age >= 10 && !recoveredOnce {
             recoveredOnce = true
