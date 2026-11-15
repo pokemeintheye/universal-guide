@@ -1,11 +1,6 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/channels-dvr-hgtv-6104
-    paths:
-      - '.github/channels-hgtv-publish-once.txt'
 permissions:
   contents: read
 concurrency:
