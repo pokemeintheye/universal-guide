@@ -1,11 +1,6 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - release/tvos-testflight-virtual-autoplay-20261115
-    paths:
-      - '.github/tvos-testflight-virtual-autoplay-once.txt'
 permissions:
   contents: read
 concurrency:
