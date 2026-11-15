@@ -78,7 +78,7 @@ class GuidePriorityTests(unittest.TestCase):
         discovery = next(c for c in result["channels"] if c["source"] == "philo" and c["label"] == "Discovery")
         self.assertEqual(discovery["programs"][0]["title"], "Wrong Philo Listing")
 
-    def test_channels_only_uses_dvr_listing_without_philo(self):
+    def test_missing_philo_epg_uses_dvr_listing_without_inventing_schedule(self):
         from app import channels_dvr as cd
         class Request:
             headers = {}
@@ -96,10 +96,13 @@ class GuidePriorityTests(unittest.TestCase):
         with (patch("app.channels_epg.schedule", return_value=(rows, None)),
               patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", playlist))):
             result = main.guide(hours=1, start="2026-11-15T17:00:00+00:00")
+        # Discovery may still have a verified Philo handoff without any
+        # actual Philo EPG rows. Preserve that channel and use DVR listings.
         discovery = next(c for c in result["channels"]
-                         if c["source"] == "channels-dvr" and c["number"] == "6101")
+                         if c["label"].casefold() == "discovery" and
+                         c["programs"] and
+                         c.get("guide_data_source") == "channels-dvr")
         self.assertEqual(discovery["programs"][0]["title"], "Discovery Actual Listing")
-        self.assertEqual(discovery["guide_data_source"], "channels-dvr")
 
     def test_export_failure_does_not_destroy_existing_philo_programs(self):
         with patch("app.channels_epg.schedule", return_value=({}, "offline")), \
