@@ -358,7 +358,7 @@ struct TVMediaPlayerScreen: View {
         return ([yearText, existing].filter { !$0.isEmpty }).joined(separator: " · ")
     }
     private var sourceName: String {
-        session.isChannels ? (metadata.channelName ?? "HGTV") : (session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX")
+        session.isChannels ? (metadata.channelName ?? "LIVE TV") : (session.isTablo ? (metadata.channelName ?? "Live TV") : "PLEX")
     }
     private var currentSession: TVMediaSession {
         if let replacementPlex { return .plex(replacementPlex) }
@@ -390,8 +390,8 @@ struct TVMediaPlayerScreen: View {
         return seekProgress
     }
     private var remoteButtons: [String] {
+        session.isSeekableLive ? ["back", "pause", "forward", "live"] :
         session.isChannels ? ["pause"] :
-        session.isTablo ? ["back", "pause", "forward", "live"] :
                           ["back", "pause", "forward", "chapters", "captions", "audio"]
     }
     private var menuCount: Int {
@@ -482,8 +482,8 @@ struct TVMediaPlayerScreen: View {
                         .foregroundStyle(.white)
 
                         Button {
-                            if session.isChannels { /* No seek until timeshift is supported */ }
-                            else if session.isTablo { seekTo(elapsed + 30) }
+                            if session.isSeekableLive { seekTo(elapsed + 30) }
+                            else if session.isChannels { /* direct HLS only */ }
                             else { handlePlexScrubOK() }
                         } label: {
                             GeometryReader { geometry in
@@ -562,7 +562,7 @@ struct TVMediaPlayerScreen: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)
-                            if session.isTablo {
+                            if session.isSeekableLive {
                                 Button {
                                     goLive()
                                 } label: {
@@ -575,7 +575,7 @@ struct TVMediaPlayerScreen: View {
                                                     lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
-                            } else {
+                            } else if !session.isLiveSource {
                                 HStack(spacing: isCompact ? 6 : 12) {
                                     plexOptionsButton("chapters", icon: "book.closed",
                                                       enabled: !(plexMetadata?.chapters.isEmpty ?? true))
@@ -1013,7 +1013,7 @@ struct TVMediaPlayerScreen: View {
             return
         }
         if !controlsVisible {
-            if session.isChannels { reveal(); return }
+            if session.isChannels && !session.isSeekableLive { reveal(); return }
             switch direction {
             case "left": skip(-20)
             case "right": skip(30)
@@ -1077,8 +1077,8 @@ struct TVMediaPlayerScreen: View {
         case "pause": playPause()
         case "forward": skip(30)
         case "seek":
-            if session.isChannels { break }
-            else if session.isTablo { seekTo(elapsed) }
+            if session.isSeekableLive { seekTo(elapsed) }
+            else if session.isChannels { break }
             else { handlePlexScrubOK() }
         case "live": goLive()
         case "chapters", "captions", "audio": openPlexOptions(selectedControl)
@@ -1235,7 +1235,7 @@ struct TVMediaPlayerScreen: View {
         explicitlyClosing = true
         hideControlsTask?.cancel()
         player.pause()
-        if !session.isTablo {
+        if !session.isLiveSource {
             let active = replacementPlex
             let previous = retiringPlex
             let original = session
@@ -1251,7 +1251,7 @@ struct TVMediaPlayerScreen: View {
         dismiss()
     }
     private func goLive() {
-        guard session.isTablo else { return }
+        guard session.isSeekableLive else { return }
         seekTo(maximum - 2)
         player.play()
         isPaused = false
