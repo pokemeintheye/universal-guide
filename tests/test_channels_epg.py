@@ -78,6 +78,26 @@ class GuidePriorityTests(unittest.TestCase):
         discovery = next(c for c in result["channels"] if c["source"] == "philo" and c["label"] == "Discovery")
         self.assertEqual(discovery["programs"][0]["title"], "Wrong Philo Listing")
 
+    def test_channels_only_uses_dvr_listing_without_philo(self):
+        from app import channels_dvr as cd
+        class Request:
+            headers = {}
+        cm.save_channel("6101", cm.StationUpdate(
+            number="6101",name="Discovery Channel",guide_label="Discovery",
+            priority="channels-dvr"), Request())
+        # A Channels-only row is used if Philo doesn't have the station.
+        with main.db() as c:
+            c.execute("DELETE FROM philo_listings WHERE channel_label='Discovery'")
+        rows = epg._map_stations(epg.parse_xmltv(DOC), cm.configured_stations())
+        playlist = '#EXTM3U\\n#EXTINF:-1 tvg-chno="6101",DISCOVERY\\n/devices/ANY/channels/6101/hls/master.m3u8\\n'
+        with patch("app.channels_epg.schedule", return_value=(rows, None)), \\
+             patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", playlist)):
+            result = main.guide(hours=1, start="2026-11-15T17:00:00+00:00")
+        discovery = next(c for c in result["channels"]
+                         if c["source"] == "channels-dvr" and c["number"] == "6101")
+        self.assertEqual(discovery["programs"][0]["title"], "Discovery Actual Listing")
+        self.assertEqual(discovery["guide_data_source"], "channels-dvr")
+
     def test_export_failure_does_not_destroy_existing_philo_programs(self):
         with patch("app.channels_epg.schedule", return_value=({}, "offline")), \
              patch("app.channels_dvr._playlist", return_value=("http://192.168.2.4:8089", "#EXTM3U")):
