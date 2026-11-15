@@ -528,23 +528,26 @@ struct TVGuideScreen: View {
             .padding(.horizontal, isCompact ? 8 : 16)
             .padding(.vertical, isCompact ? 5 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            #if os(iOS)
+            // Read the actual viewport without a GeometryReader that can
+            // recursively invalidate the iPhone's first SwiftUI layout.
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
+                guard size.width.isFinite, size.height.isFinite,
+                      size.width > 0, size.height > 0 else { return }
+                if viewportWidth != size.width { viewportWidth = size.width }
+                if viewportHeight != size.height { viewportHeight = size.height }
+            }
+            #else
             .background {
                 GeometryReader { geometry in
                     Color.clear
-                        .onAppear {
-                            viewportHeight = geometry.size.height
-                            #if os(iOS)
-                            viewportWidth = geometry.size.width
-                            #endif
-                        }
+                        .onAppear { viewportHeight = geometry.size.height }
                         .onChange(of: geometry.size) { _, size in
                             viewportHeight = size.height
-                            #if os(iOS)
-                            viewportWidth = size.width
-                            #endif
                         }
                 }
             }
+            #endif
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
@@ -1087,26 +1090,29 @@ struct TVGuideScreen: View {
                                        let startDate = program.startDate,
                                        let endDate = program.endDate,
                                        endDate > startDate {
+                                        let duration = endDate.timeIntervalSince(startDate)
+                                        let progress = max(0, min(1, now.timeIntervalSince(startDate) / duration))
+                                        #if os(iOS)
+                                        // No nested GeometryReader on iPhone: avoid a second
+                                        // fragile layout measurement inside narrow guide cells.
+                                        ProgressView(value: progress)
+                                            .progressViewStyle(.linear)
+                                            .tint(TVPalette.blue)
+                                            .frame(height: 6, alignment: .bottom)
+                                        #else
                                         GeometryReader { geometry in
-                                            let duration = endDate.timeIntervalSince(startDate)
-                                            let progress = max(0, min(1, now.timeIntervalSince(startDate) / duration))
-                                            #if os(tvOS)
-                                            let progressHeight: CGFloat = 3
-                                            #else
-                                            let progressHeight: CGFloat = 5
-                                            #endif
                                             Capsule()
                                                 .fill(Color.white.opacity(0.16))
-                                                .frame(height: progressHeight)
+                                                .frame(height: 3)
                                                 .overlay(alignment: .leading) {
                                                     Capsule()
-                                                        .fill(isCompact ? TVPalette.blue.opacity(0.9) : TVPalette.blue.opacity(0.85))
-                                                        .frame(width: geometry.size.width * progress,
-                                                               height: progressHeight)
+                                                        .fill(TVPalette.blue.opacity(0.85))
+                                                        .frame(width: geometry.size.width * progress, height: 3)
                                                 }
                                                 .frame(maxHeight: .infinity, alignment: .bottom)
                                         }
                                         .frame(height: 6)
+                                        #endif
                                     }
                                 }
                             }
