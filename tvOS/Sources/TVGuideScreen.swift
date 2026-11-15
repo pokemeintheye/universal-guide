@@ -582,7 +582,15 @@ struct TVGuideScreen: View {
                 onCancel: { dismissPlexChoice() })
         }
         .fullScreenCover(item: $mediaSession) { session in
-            TVMediaPlayerScreen(session: session, metadata: playerMetadata)
+            TVMediaPlayerScreen(session: session, metadata: playerMetadata,
+                virtualChannel: selected.flatMap { choice in
+                    let (channel, program) = choice
+                    guard channel.source == "virtual",
+                          channel.id.hasPrefix("virtual:") else { return nil }
+                    return TVVirtualContinuation(
+                        channelID: String(channel.id.dropFirst("virtual:".count)),
+                        serverURL: serverURL, after: program.stop)
+                })
         }
         .fullScreenCover(isPresented: $showSettings, onDismiss: {
             Task { await refreshGuide() }
