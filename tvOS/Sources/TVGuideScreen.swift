@@ -816,17 +816,23 @@ struct TVGuideScreen: View {
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let net = channel.network, !net.isEmpty {
-                                    Text(net.uppercased())
-                                        .font(.system(size: isCompact ? 9 : 16, weight: .bold))
-                                        .foregroundStyle(TVPalette.blue)
-                                }
-                                Text(channel.number ?? channel.label)
+                            VStack(alignment: .leading, spacing: 3) {
+                                // Make the network/channel name the primary label.
+                                // Keep the channel number as quieter secondary metadata.
+                                Text((channel.network?.isEmpty == false ? channel.network! : channel.label))
                                     .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
-                                if channel.number != nil && channel.label != channel.number {
-                                    Text(channel.label)
-                                        .font(.system(size: isCompact ? 10 : 18))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.72)
+                                if let number = channel.number, !number.isEmpty,
+                                   number != channel.label {
+                                    Text(number)
+                                        .font(.system(size: isCompact ? 10 : 16, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                } else if let number = channel.number, !number.isEmpty {
+                                    Text(number)
+                                        .font(.system(size: isCompact ? 10 : 16, weight: .medium))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
