@@ -1,0 +1,1 @@
+One-time Apple TV TestFlight publish explicitly requested November 15, 2026. Based on main a315f28f58bbf1a6c1898b7d93fa15384c140b35, including EPG gaps, horizontal guide navigation, and selector outline corrections.
