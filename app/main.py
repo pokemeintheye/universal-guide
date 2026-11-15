@@ -633,6 +633,30 @@ def matched_numbered_parts(series,subtitle,index):
             "rating_key":payload[0]["rating_key"],"parts":payload}
 
 
+def movie_match_key(raw):
+    """Normalize an EPG movie title while recognizing a trailing year.
+
+    Do not remove arbitrary parenthetical subtitles; only a final four-digit
+    release year is metadata rather than part of the actual movie title.
+    """
+    value=str(raw or "").strip()
+    match=re.search(r"\s*\(\s*((?:18|19|20)\d{2})\s*\)\s*$",value)
+    year=int(match.group(1)) if match else None
+    if match:
+        value=value[:match.start()].rstrip()
+    normalized=norm(value)
+    # Exact, finite aliases for this well-defined theatrical title.
+    # Do not perform broad "Star Wars" substring matching.
+    if normalized in (
+        "star wars episode vi return of the jedi",
+        "star wars episode 6 return of the jedi",
+        "star wars return of the jedi",
+        "return of the jedi",
+    ):
+        normalized="star wars return of the jedi"
+    return normalized,year
+
+
 def build_media_index(catalog):
     """Build hash indexes once per guide request instead of scanning every Plex
     episode for every guide program (the previous O(programs * media) delay)."""
@@ -644,7 +668,8 @@ def build_media_index(catalog):
     series_counts={}
     for m in catalog:
         if m["kind"]=="movie":
-            movies.setdefault(m["normalized"],[]).append(m)
+            key,_=movie_match_key(m["title"])
+            movies.setdefault(key,[]).append(m)
         elif m["kind"]=="episode":
             show=norm(m["show_title"])
             series_counts[show]=series_counts.get(show,0)+1
@@ -711,9 +736,16 @@ def match(p,index):
     kind=p.get("program_kind","unknown")
     year=int(p.get("year") or 0)
     if kind=="movie":
-        candidates=index["movies"].get(title,[])
-        if year:
-            candidates=[m for m in candidates if m["year"] and abs(m["year"]-year)<=1]
+        movie_key,title_year=movie_match_key(p["title"])
+        # If the provider supplies both a standalone release year and one
+        # embedded in the title they must agree, otherwise fail closed.
+        if title_year and year and abs(title_year-year)>1:
+            return None
+        expected_year=year or title_year or 0
+        candidates=index["movies"].get(movie_key,[])
+        if expected_year:
+            candidates=[m for m in candidates if m["year"] and
+                        abs(m["year"]-expected_year)<=1]
         if len(candidates)==1:
             m=candidates[0]
             return {"kind":"movie","title":m["title"],"rating_key":m["id"].split(":",1)[1]}
