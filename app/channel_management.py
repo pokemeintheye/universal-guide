@@ -332,6 +332,41 @@ def delete_virtual(channel_id: str, request: Request):
     return {"deleted": True}
 
 
+@router.get("/virtual/{channel_id}/next")
+def next_virtual_program(channel_id: str, after: str):
+    """Return the next scheduled Plex item for unattended virtual TV playout.
+
+    No admin credential is necessary to read guide metadata; the actual
+    stream is still created via the existing authenticated backend Plex proxy.
+    """
+    if not VIRTUAL_ID.fullmatch(channel_id):
+        raise HTTPException(404, "Unknown virtual channel")
+    try:
+        cursor=datetime.fromisoformat(after.replace("Z","+00:00"))
+        if cursor.tzinfo is None:
+            raise ValueError("Timezone required")
+        cursor=cursor.astimezone(timezone.utc)
+    except (ValueError,TypeError,AttributeError):
+        raise HTTPException(422,"after must be a timezone-aware ISO timestamp")
+    now=datetime.now(timezone.utc)
+    if cursor<now-timedelta(days=3) or cursor>now+timedelta(days=8):
+        raise HTTPException(422,"Guide position is outside the supported window")
+    matches=[c for c in virtual_guide(cursor,cursor+timedelta(hours=8))
+             if c["id"]=="virtual:"+channel_id]
+    if not matches:
+        raise HTTPException(404,"Virtual channel has no playable schedule")
+    programs=matches[0]["programs"]
+    # Query at an exact slot boundary (the preceding item's stop time).
+    # An updated playlist may have shifted: accept a slot containing the
+    # requested boundary instead of looping or skipping a whole cycle.
+    next_item=next((p for p in programs if p["start"]>=cursor.isoformat()),None)
+    if not next_item:
+        next_item=next((p for p in programs if p["stop"]>cursor.isoformat()),None)
+    if not next_item or not next_item.get("plex"):
+        raise HTTPException(404,"No next Plex program found")
+    return {"program":next_item}
+
+
 def virtual_guide(window_start, window_end):
     """Build a repeatable 24/7 schedule from explicitly selected Plex items.
 
