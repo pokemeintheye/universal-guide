@@ -212,7 +212,7 @@ struct TVMediaPlayerScreen: View {
     @State private var changingTrack = false
     @State private var optionsError: String?
     @State private var hideControlsTask: Task<Void, Never>?
-    private let purple = Color(red: 0.72, green: 0.53, blue: 1)
+    private let playerBlue = Color(red: 0.04, green: 0.62, blue: 0.98)
     private var isCompact: Bool {
         #if os(iOS)
         true
@@ -270,7 +270,7 @@ struct TVMediaPlayerScreen: View {
         return seekProgress
     }
     private var remoteButtons: [String] {
-        session.isChannels ? ["back", "pause"] :
+        session.isChannels ? ["pause"] :
         session.isTablo ? ["back", "pause", "forward", "live"] :
                           ["back", "pause", "forward", "chapters", "captions", "audio"]
     }
@@ -304,6 +304,18 @@ struct TVMediaPlayerScreen: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            #if os(iOS)
+            // Tap the native video surface to reveal the same playback controls
+            // used on Apple TV. Keep the video layer noninteractive and let the
+            // controls above it handle their own taps once visible.
+            .overlay {
+                if !controlsVisible && trackMenu == nil {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { reveal() }
+                }
+            }
+            #endif
 
             if controlsVisible {
                 VStack(spacing: 0) {
@@ -311,7 +323,7 @@ struct TVMediaPlayerScreen: View {
                         VStack(alignment: .leading, spacing: 7) {
                             Text(sourceName.uppercased())
                                 .font(.system(size: isCompact ? 13 : 20, weight: .bold))
-                                .foregroundStyle(purple)
+                                .foregroundStyle(playerBlue)
                             Text(playbackTitle)
                                 .font(.system(size: isCompact ? 21 : 32, weight: .bold))
                                 .lineLimit(2)
@@ -329,7 +341,7 @@ struct TVMediaPlayerScreen: View {
                                 .foregroundStyle(.white)
                                 .padding(8)
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected("close") ? purple : .clear,
+                                    .stroke(isSelected("close") ? playerBlue : .clear,
                                             lineWidth: 2))
                         }
                         .buttonStyle(.plain)
@@ -350,7 +362,7 @@ struct TVMediaPlayerScreen: View {
                         .foregroundStyle(.white)
 
                         Button {
-                            if session.isChannels { /* No seek support until a DVR buffer is verified. */ }
+                            if session.isChannels { /* No seek until timeshift is supported */ }
                             else if session.isTablo { seekTo(elapsed + 30) }
                             else { handlePlexScrubOK() }
                         } label: {
@@ -359,13 +371,13 @@ struct TVMediaPlayerScreen: View {
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(Color.white.opacity(0.36))
                                         .frame(height: 6)
-                                    Capsule().fill(purple.opacity(0.6))
+                                    Capsule().fill(playerBlue.opacity(0.6))
                                         .frame(width: geometry.size.width*shownSeekProgress,
                                                height: 6)
                                     Circle().fill(.white)
                                         .frame(width: 24, height: 24)
                                         .overlay(Circle().stroke(
-                                            isSelected("seek") ? purple : .clear,
+                                            isSelected("seek") ? playerBlue : .clear,
                                             lineWidth: 4))
                                         .offset(x: usable*shownSeekProgress)
                                 }
@@ -439,7 +451,7 @@ struct TVMediaPlayerScreen: View {
                                         .foregroundStyle(.white)
                                         .padding(isCompact ? 7 : 10)
                                         .overlay(RoundedRectangle(cornerRadius: 9)
-                                            .stroke(isSelected("live") ? purple : .clear,
+                                            .stroke(isSelected("live") ? playerBlue : .clear,
                                                     lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
@@ -482,7 +494,15 @@ struct TVMediaPlayerScreen: View {
             .ignoresSafeArea()
             #endif
         }
-        .tint(purple)
+        #if os(tvOS)
+        .onExitCommand {
+            // Handle the Siri Remote Back command at the playback presentation
+            // boundary so SwiftUI cannot dismiss the player while a track menu
+            // is open. Playback continues with the same AVPlayer item.
+            remoteExit()
+        }
+        #endif
+        .tint(playerBlue)
         .preferredColorScheme(.dark)
         .onAppear {
             streamStartedAt = Date()
@@ -496,9 +516,13 @@ struct TVMediaPlayerScreen: View {
                 }
             }
             plexPlaybackOrigin = plexSession?.offsetSeconds == 0 ? 0 : nil
+            pendingTrackSeek = plexSession?.initialSeekSeconds
+            applyingTrackSeek = false
             let item = AVPlayerItem(url: currentSession.playlist)
             player.replaceCurrentItem(with: item)
-            player.play()
+            // The initial seek must finish before playback starts, or
+            // AVPlayer may display the tail of the stream first.
+            if pendingTrackSeek == nil { player.play() }
             isPaused = false
             playbackTimeObserver = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
@@ -575,11 +599,16 @@ struct TVMediaPlayerScreen: View {
                 .foregroundStyle(enabled ? .white : .gray)
                 .frame(width: isCompact ? 34 : 46, height: isCompact ? 40 : 52)
                 .overlay(RoundedRectangle(cornerRadius: 9)
-                    .stroke(isSelected(key) ? purple : .clear, lineWidth: 2))
+                    .stroke(isSelected(key) ? playerBlue : .clear, lineWidth: 2))
         }
         .buttonStyle(.plain)
         .disabled(!enabled || changingTrack)
         .accessibilityLabel(key == "captions" ? "Captions" : key.capitalized)
+    }
+
+    private func closePlexOptions() {
+        trackMenu = nil
+        scheduleHideControls()
     }
 
     private var plexOptionsOverlay: some View {
@@ -589,10 +618,13 @@ struct TVMediaPlayerScreen: View {
                 HStack {
                     Text(menuTitle).font(.system(size: isCompact ? 24 : 35, weight: .bold))
                     Spacer()
-                    Button { trackMenu = nil } label: {
+                    Button { closePlexOptions() } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: isCompact ? 24 : 32))
                     }
+                    #if os(tvOS)
+                    .focusable(false)
+                    #endif
                 }
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -630,18 +662,21 @@ struct TVMediaPlayerScreen: View {
                                         }
                                         Spacer()
                                         if optionIsSelected(index) {
-                                            Image(systemName: "checkmark").foregroundStyle(purple)
+                                            Image(systemName: "checkmark").foregroundStyle(playerBlue)
                                         }
                                     }
                                     .foregroundStyle(.white)
                                     .padding(isCompact ? 9 : 16)
-                                    .background(menuIndex == index ? purple.opacity(0.28) :
+                                    .background(menuIndex == index ? playerBlue.opacity(0.28) :
                                                 Color.white.opacity(0.08),
                                                 in: RoundedRectangle(cornerRadius: 10))
                                     .overlay(RoundedRectangle(cornerRadius: 10)
-                                        .stroke(menuIndex == index ? purple : .clear, lineWidth: 2))
+                                        .stroke(menuIndex == index ? playerBlue : .clear, lineWidth: 2))
                                 }
                                 .buttonStyle(.plain)
+                                #if os(tvOS)
+                                .focusable(false)
+                                #endif
                                 .id(index)
                             }
                         }
@@ -653,7 +688,7 @@ struct TVMediaPlayerScreen: View {
             }
             .padding(isCompact ? 18 : 34)
             .frame(maxWidth: isCompact ? 560 : 900, maxHeight: isCompact ? 300 : 700)
-            .background(Color(red: 0.09, green: 0.08, blue: 0.16),
+            .background(Color(red: 0.115, green: 0.122, blue: 0.133),
                         in: RoundedRectangle(cornerRadius: 20))
         }
     }
@@ -841,7 +876,7 @@ struct TVMediaPlayerScreen: View {
             }
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .overlay(Circle().stroke(isSelected(key) ? purple : .clear,
+            .overlay(Circle().stroke(isSelected(key) ? playerBlue : .clear,
                                      lineWidth: 3))
         }
         .buttonStyle(.plain)
@@ -932,7 +967,7 @@ struct TVMediaPlayerScreen: View {
         }
     }
     private func remoteExit() {
-        if trackMenu != nil { trackMenu = nil; scheduleHideControls(); return }
+        if trackMenu != nil { closePlexOptions(); return }
         if changingTrack { return }
         if controlsVisible {
             cancelPlexScrub()
@@ -940,7 +975,7 @@ struct TVMediaPlayerScreen: View {
         } else { exitPlayback() }
     }
     private func changePlexScrubDirection(_ requested: Int) {
-        guard !session.isTablo, let plex = plexSession, !changingTrack else { return }
+        guard !session.isLiveSource, let plex = plexSession, !changingTrack else { return }
         if scrubPosition == nil {
             scrubPosition = currentPlexPosition(plex)
             scrubNeedsConfirm = false

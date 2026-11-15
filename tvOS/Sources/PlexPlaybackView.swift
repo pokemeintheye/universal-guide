@@ -9,6 +9,8 @@ struct PlexPlaybackSession: Identifiable {
     let title: String
     let ratingKey: Int
     let offsetSeconds: Double
+    // Absolute movie time to seek after opening a full-length HLS stream.
+    var initialSeekSeconds: Double? = nil
 }
 
 struct PlexChapter: Decodable, Identifiable {
