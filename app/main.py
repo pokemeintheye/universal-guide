@@ -1322,7 +1322,11 @@ def philo_coverage():
 
 @app.get("/api/guide")
 def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool=False,source:str="all",include_hidden:bool=False,start:str|None=None):
-    now=datetime.now(timezone.utc)
+    # Apple TV's ruler starts on the preceding :00/:30 boundary. Previously
+    # the API began at the current second, leaving an empty stripe from the
+    # ruler's left edge to the first program even after gap filling.
+    current=datetime.now(timezone.utc)
+    now=current.replace(minute=(current.minute//30)*30,second=0,microsecond=0)
     if start:
         try:
             now=datetime.fromisoformat(start.replace("Z","+00:00"))
