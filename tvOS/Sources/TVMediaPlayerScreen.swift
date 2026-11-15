@@ -141,7 +141,7 @@ enum TVChannelsService {
         guard option.provider == "channels-dvr",
               option.channel_number.count == 4,
               option.channel_number.allSatisfy({ $0.isNumber }),
-              let endpoint = URL(string: "/api/channels-dvr/live/\\(option.channel_number)", relativeTo: base)?.absoluteURL else {
+              let endpoint = URL(string: "/api/channels-dvr/live/\(option.channel_number)", relativeTo: base)?.absoluteURL else {
             throw PlexPlaybackError.invalidSession
         }
         var request = URLRequest(url: endpoint)
@@ -156,7 +156,7 @@ enum TVChannelsService {
             throw PlexPlaybackError.invalidSession
         }
         return .channels(TVChannelsSession(
-            id: "channels-\\(option.channel_number)", title: title, playlistURL: url))
+            id: "channels-\(option.channel_number)", title: title, playlistURL: url))
     }
 }
 
