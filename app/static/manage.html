@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Universal Guide • Channel Management</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#101319;color:#ecf2fa}
+*{box-sizing:border-box}body{margin:0}header{background:#1c222d;border-bottom:1px solid #343c4b;padding:18px clamp(18px,3vw,48px);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+h1{font-size:22px;margin:0}h2{font-size:20px;margin:0 0 12px}h3{font-size:16px;margin:12px 0}
+main{max-width:1320px;margin:auto;padding:24px}a{color:#8bcdff;text-decoration:none}
+button,input,select{font:inherit;border:1px solid #4b5c72;background:#232d3d;color:#fff;border-radius:9px;padding:9px 11px}
+button{cursor:pointer}button:hover{background:#324561}button:disabled{opacity:.45;cursor:default}
+button.primary{background:#075d9d;border-color:#398ac6}button.warn{color:#ffc1bf}
+input[type=checkbox]{width:19px;height:19px;accent-color:#169cef}
+input[type=number]{width:94px}input[type=search]{width:min(100%,520px)}
+label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:18px;margin:16px 0}
+.tabs{display:flex;gap:8px;margin:14px 0}.tabs button[aria-selected=true]{background:#08649e;border-color:#389bcc}
+.muted,.hint{color:#b2c0d4}.hint{font-size:13px;line-height:1.5}
+#message{min-height:26px;color:#80d1ff;margin-top:12px}#message.error{color:#ffa8a8}
+#stationlist{display:grid;gap:8px}.station{display:grid;grid-template-columns:70px minmax(110px,1fr) minmax(140px,1.1fr) minmax(140px,1fr) auto auto;align-items:center;gap:10px;background:#202a3a;border:1px solid #354359;border-radius:10px;padding:12px}
+.station input:not([type=checkbox]),.station select{width:100%;min-width:0}.station small{display:block;color:#a1b8d3}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.stack{display:grid;gap:10px}
+#plexresults,#playlist{max-height:330px;overflow:auto;border:1px solid #3c495d;border-radius:10px}
+.mediaitem{padding:9px 12px;border-bottom:1px solid #344155;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mediaitem:last-child{border:0}.playlistitem{display:grid;grid-template-columns:minmax(130px,1fr) 100px auto;gap:10px;align-items:center}
+.virtualcard{padding:12px;background:#222d3b;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:8px}
+#virtualEditor[hidden],#channelPanel[hidden],#virtualPanel[hidden]{display:none!important}
+@media(max-width:800px){.station{grid-template-columns:60px 1fr 1fr}.station input:nth-child(3),.station select{grid-column:span 2}.station button{grid-column:auto}main{padding:12px}}
+</style></head>
+<body><header><div><h1>Universal Guide · Channel Management</h1><span class="muted">Live channel sources and Plex virtual channels</span></div>
+<div class="row"><a href="/">← Back to guide</a><button id="reload">Refresh</button></div></header>
+<main><div class="tabs"><button id="tabChannels" aria-selected="true">Live channels</button><button id="tabVirtual" aria-selected="false">Plex virtual channels</button></div>
+<section><div class="row"><label>Admin token (optional) <input id="adminToken" type="password" autocomplete="off" placeholder="GUIDE_ADMIN_TOKEN"></label><button id="setToken">Apply</button></div><div class="hint">If GUIDE_ADMIN_TOKEN is set in Docker, enter it here. This page is intended for your trusted LAN; do not expose management APIs to the Internet.</div></section>
+<div id="message" role="status" aria-live="polite"></div>
+<div id="channelPanel"><section><h2>Channels DVR sources</h2><p class="hint">Stations discovered in Channels DVR appear below. Add any discovered station, choose Channels DVR or Philo as the primary live source, and save. Changes apply at the next guide refresh without Docker or TestFlight rebuilds. Philo must already have a matching channel link for Philo playback.</p>
+<div class="row"><label>Find station <input id="stationSearch" type="search" placeholder="Discovery, 6101, HGTV…"></label><span id="stationCount" class="muted"></span></div>
+<div id="stationlist"></div></section></div>
+<div id="virtualPanel" hidden><section><h2>Plex virtual channels</h2><p class="hint">Create a repeating 24/7 schedule from movies or episodes already indexed in Plex. Each program opens through the existing Plex player; true automatic continuous playout between programs is not included yet. Choose approximate runtime per item (minutes).</p>
+<div class="row"><button class="primary" id="newVirtual">+ Create virtual channel</button><button id="reloadVirtual">Refresh channels</button></div><div id="virtualList"></div></section>
+<section id="virtualEditor" hidden><h2 id="virtualHeading">New virtual channel</h2>
+<div class="row"><label>Channel name <input id="virtualName" maxlength="80" placeholder="Movie Night"></label><label><input type="checkbox" id="virtualEnabled" checked>Enabled</label></div>
+<h3>Choose Plex content</h3><div class="row"><input id="plexSearch" type="search" placeholder="Search synced Plex movies and episodes"><button id="plexLookup">Search</button></div><div id="plexresults" aria-label="Plex search results"></div>
+<h3>Channel playlist <span id="playlistCount" class="muted"></span></h3><div class="hint">Programs play in this order and repeat. Adjust runtime if necessary to match the media.</div>
+<div id="playlist" aria-label="Virtual channel playlist"></div>
+<div class="row" style="margin-top:14px"><button id="saveVirtual" class="primary">Save virtual channel</button><button id="cancelVirtual">Cancel</button></div></section></div>
+</main><script>
+const $=id=>document.getElementById(id);
+const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token='',stations=[],virtuals=[],editingId=null,playlist=[],searchHits=[];
+function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
+async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
+function err(e){message(e.message||String(e),true)}
+$('setToken').onclick=()=>{token=$('adminToken').value.trim();message('Token applied for this page session');loadActive()};
+$('reload').onclick=()=>loadActive();
+function tab(which){const live=which==='channels';$('channelPanel').hidden=!live;$('virtualPanel').hidden=live;$('tabChannels').setAttribute('aria-selected',live);$('tabVirtual').setAttribute('aria-selected',!live);loadActive()}
+$('tabChannels').onclick=()=>tab('channels');$('tabVirtual').onclick=()=>tab('virtual');
+async function loadActive(){if(!$('channelPanel').hidden)await loadStations();else await loadVirtuals()}
+async function loadStations(){try{message('Loading discovered channels…');const data=await api('/api/manage/channels');stations=data.channels||[];drawStations();message(data.error?'Channels DVR not reachable: '+data.error:'Channel configuration loaded. '+stations.filter(x=>x.available).length+' stations available.',!!data.error)}catch(e){err(e)}}
+function drawStations(){const needle=$('stationSearch').value.trim().toLowerCase();const filtered=stations.filter(s=>(s.name+' '+s.guide_label+' '+s.number).toLowerCase().includes(needle));$('stationCount').textContent=filtered.length+' channels';const root=$('stationlist');root.replaceChildren();
+for(const s of filtered){const node=document.createElement('div');node.className='station';node.dataset.number=s.number;
+node.innerHTML='<div><strong>'+safe(s.number)+'</strong><small>'+safe(s.available?'Available':(s.discovered?'Unverified':'Not discovered'))+'</small></div>'
++'<input class="name" aria-label="Station name" maxlength="90" value="'+safe(s.name)+'">'
++'<input class="guide-label" aria-label="Guide label" maxlength="90" value="'+safe(s.guide_label)+'">'
++'<select class="priority" aria-label="Primary source"><option value="channels-dvr">Channels DVR</option><option value="philo">Philo</option></select>'
++'<label><input type="checkbox" class="enabled"> Enabled</label>'
++'<div class="row"><button class="primary save">Save</button>'+(s.configured?'<button class="reset" title="Reset custom configuration">Reset</button>':'')+'</div>';
+node.querySelector('.priority').value=s.priority;node.querySelector('.enabled').checked=s.enabled;
+node.querySelector('.save').onclick=async()=>{try{const v={number:s.number,name:node.querySelector('.name').value,guide_label:node.querySelector('.guide-label').value,priority:node.querySelector('.priority').value,enabled:node.querySelector('.enabled').checked};await api('/api/manage/channels/'+encodeURIComponent(s.number),{method:'PUT',body:JSON.stringify(v)});message(s.number+' saved. Refresh the guide on Apple TV to apply.');await loadStations()}catch(e){err(e)}};
+const reset=node.querySelector('.reset');if(reset)reset.onclick=async()=>{if(!confirm('Reset settings for '+s.number+'?'))return;try{await api('/api/manage/channels/'+encodeURIComponent(s.number),{method:'DELETE'});await loadStations()}catch(e){err(e)}};root.append(node)}
+}
+$('stationSearch').oninput=drawStations;
+async function loadVirtuals(){try{const d=await api('/api/manage/virtual');virtuals=d.channels||[];const root=$('virtualList');root.replaceChildren();if(!virtuals.length)root.textContent='No virtual channels yet.';for(const v of virtuals){const row=document.createElement('div');row.className='virtualcard';row.innerHTML='<div><strong>'+safe(v.name)+'</strong><div class="hint">'+v.items.length+' items · '+(v.enabled?'Enabled':'Disabled')+'</div></div><div class="row"><button class="edit">Edit</button><button class="warn del">Delete</button></div>';row.querySelector('.edit').onclick=()=>openVirtual(v);row.querySelector('.del').onclick=async()=>{if(!confirm('Delete '+v.name+'?'))return;try{await api('/api/manage/virtual/'+encodeURIComponent(v.id),{method:'DELETE'});await loadVirtuals();message('Virtual channel deleted')}catch(e){err(e)}};root.append(row)}message('Virtual channels loaded')}catch(e){err(e)}}
+function openVirtual(v){editingId=v?.id||null;playlist=(v?.items||[]).map(x=>({...x,title:'Plex item '+x.rating_key}));$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('virtualEditor').hidden=false;renderPlaylist();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
+$('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};
+async function lookupPlex(){const q=$('plexSearch').value.trim();if(q.length<2){message('Enter at least two letters to search Plex');return}try{const d=await api('/api/manage/plex-items?q='+encodeURIComponent(q));searchHits=d.items||[];const root=$('plexresults');root.replaceChildren();if(!searchHits.length)root.textContent='No matching synced Plex content';for(const item of searchHits){const row=document.createElement('div');row.className='mediaitem';row.innerHTML='<div><strong>'+safe(item.show_title?item.show_title+' — '+item.title:item.title)+'</strong><div class="hint">'+safe(item.kind)+(item.season!=null?' S'+item.season+' E'+item.episode:'')+'</div></div><button>Add</button>';row.querySelector('button').onclick=()=>{playlist.push({rating_key:item.rating_key,duration_minutes:item.kind==='movie'?100:30,title:item.show_title?item.show_title+' — '+item.title:item.title});renderPlaylist()};root.append(row)}message(searchHits.length+' Plex items found')}catch(e){err(e)}}
+$('plexLookup').onclick=lookupPlex;$('plexSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();lookupPlex()}};
+function renderPlaylist(){const root=$('playlist');root.replaceChildren();$('playlistCount').textContent=playlist.length+' items';playlist.forEach((p,i)=>{const node=document.createElement('div');node.className='mediaitem playlistitem';node.innerHTML='<div><strong>'+safe(p.title||('Plex item '+p.rating_key))+'</strong><div class="hint">ID '+p.rating_key+'</div></div><label><input type="number" min="1" max="360" value="'+p.duration_minutes+'">min</label><div class="row"><button class="up" title="Move up">↑</button><button class="down" title="Move down">↓</button><button class="remove warn">×</button></div>';node.querySelector('input').onchange=e=>{p.duration_minutes=Number(e.target.value)||30};node.querySelector('.up').onclick=()=>{if(i){[playlist[i-1],playlist[i]]=[playlist[i],playlist[i-1]];renderPlaylist()}};node.querySelector('.down').onclick=()=>{if(i<playlist.length-1){[playlist[i+1],playlist[i]]=[playlist[i],playlist[i+1]];renderPlaylist()}};node.querySelector('.remove').onclick=()=>{playlist.splice(i,1);renderPlaylist()};root.append(node)})}
+$('saveVirtual').onclick=async()=>{if(!playlist.length){message('Add at least one Plex item',true);return}try{const payload={name:$('virtualName').value,enabled:$('virtualEnabled').checked,items:playlist.map(({rating_key,duration_minutes})=>({rating_key:Number(rating_key),duration_minutes:Number(duration_minutes)}))};const url='/api/manage/virtual'+(editingId?'/'+encodeURIComponent(editingId):'');await api(url,{method:editingId?'PUT':'POST',body:JSON.stringify(payload)});$('virtualEditor').hidden=true;await loadVirtuals();message('Saved virtual channel. Refresh Apple TV guide to see it.')}catch(e){err(e)}};
+loadStations();
+</script></body></html>
