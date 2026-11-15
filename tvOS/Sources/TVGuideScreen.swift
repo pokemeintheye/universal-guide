@@ -1312,7 +1312,9 @@ struct TVGuideScreen: View {
                     self.tvSelection = "watch-primary"
                 }
             case "right", "down":
-                if tvSelection == "watch-primary", selectedLiveOption != nil {
+                if tvSelection == "watch-channels", selected?.0.source == "philo" {
+                    self.tvSelection = "watch-philo"
+                } else if tvSelection == "watch-primary", selectedLiveOption != nil {
                     self.tvSelection = "watch-channels"
                 } else if tvSelection == "watch-primary", selected?.0.source == "philo" {
                     self.tvSelection = "watch-philo"
@@ -1424,7 +1426,9 @@ struct TVGuideScreen: View {
                     selectPhoneProgram()
                 }
             case "right", "down":
-                if phoneSelection == "watch-primary" && hasTablo {
+                if phoneSelection == "watch-channels" && hasPhilo {
+                    phoneSelection = "watch-philo"
+                } else if phoneSelection == "watch-primary" && hasTablo {
                     phoneSelection = "watch-live"
                 } else if phoneSelection == "watch-primary" && selectedLiveOption != nil {
                     phoneSelection = "watch-channels"
@@ -1592,8 +1596,10 @@ struct TVGuideScreen: View {
     private func playChannelsLive() {
         guard let (channel, program) = selected,
               let option = liveOption(for: channel, program: program) else { return }
-        let choiceWasOpen = selectedAction == .plex
-        if choiceWasOpen { dismissPlexChoice() }
+        // A Plex choice sheet can still be dismissing even after selectedAction
+        // was cleared. Queue the Channels player until its onDismiss completes.
+        let choiceWasOpen = selectedAction == .plex || !plexChoiceDismissed
+        if selectedAction == .plex { dismissPlexChoice() }
         loadingPlayback = true
         Task {
             defer { loadingPlayback = false }
