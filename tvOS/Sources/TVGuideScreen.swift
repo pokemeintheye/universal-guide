@@ -817,20 +817,17 @@ struct TVGuideScreen: View {
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 3) {
-                                // Make the network/channel name the primary label.
-                                // Keep the channel number as quieter secondary metadata.
-                                Text((channel.network?.isEmpty == false ? channel.network! : channel.label))
+                                // Channel identity is primary; number is secondary.
+                                let stationName = channel.network.flatMap {
+                                    $0.isEmpty ? nil : $0
+                                } ?? channel.label
+                                Text(stationName)
                                     .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
                                     .foregroundStyle(.primary)
                                     .lineLimit(2)
                                     .minimumScaleFactor(0.72)
                                 if let number = channel.number, !number.isEmpty,
-                                   number != channel.label {
-                                    Text(number)
-                                        .font(.system(size: isCompact ? 10 : 16, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                } else if let number = channel.number, !number.isEmpty {
+                                   number != stationName {
                                     Text(number)
                                         .font(.system(size: isCompact ? 10 : 16, weight: .medium))
                                         .foregroundStyle(.secondary)
