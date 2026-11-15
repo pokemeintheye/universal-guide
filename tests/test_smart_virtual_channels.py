@@ -1,5 +1,7 @@
 """Metadata-driven Plex virtual channel scheduling and migration tests."""
 import tempfile
+import json
+import xml.etree.ElementTree as ET
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -44,6 +46,61 @@ class SmartChannelTests(unittest.TestCase):
         movies=vr.SmartRules(media_type="movies",genres=["Sci-Fi"],year_max=2000)
         self.assertEqual([m["id"] for m in vr.matching_items(items,movies)],["movie:200"])
         self.assertEqual(vr.duration_minutes(items[0],vr.SmartRules()),22)
+
+    def test_labels_and_tags_filter_independently_and_in_combination(self):
+        with main.db() as c:
+            c.execute("UPDATE media SET plex_labels=?, plex_tags=? WHERE id='episode:100'",
+                      (json.dumps(["Family, Favorite", "Kids"]),json.dumps(["Sitcoms","Comedy Night"])))
+            c.execute("UPDATE media SET plex_labels=?, plex_tags=? WHERE id='episode:101'",
+                      (json.dumps(["Kids"]),json.dumps(["Sitcoms"])))
+            c.execute("UPDATE media SET plex_labels=?, plex_tags=? WHERE id='movie:200'",
+                      (json.dumps(["Family, Favorite"]),json.dumps(["Sci-Fi Classics"])))
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        only_label=vr.SmartRules(media_type="all",labels=["family, favorite"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,only_label)},
+                         {"episode:100","movie:200"})
+        only_tag=vr.SmartRules(media_type="all",tags=["Sitcoms"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,only_tag)},
+                         {"episode:100","episode:101"})
+        combined=vr.SmartRules(media_type="all",labels=["Family, Favorite"],
+                               tags=["Comedy Night"],genres=["Comedy"])
+        self.assertEqual([x["id"] for x in vr.matching_items(catalog,combined)],
+                         ["episode:100"])
+        choices=cm.rule_filters(Request())
+        self.assertIn("family, favorite",choices["labels"])
+        self.assertIn("sitcoms",choices["tags"])
+        self.assertNotIn("Sitcoms",choices["labels"])
+        self.assertNotIn("Kids",choices["tags"])
+
+    def test_plex_element_metadata_keeps_labels_separate_from_tags(self):
+        item=ET.fromstring('''<Video ratingKey="100">
+            <Label tag="Family, Favorite"/><Label tag="Kid Safe"/>
+            <Collection tag="Halloween"/><Tag tag="Broadcast Block"/>
+            <Genre tag="Comedy"/>
+        </Video>''')
+        self.assertEqual(main.plex_metadata_tags(item,("Label",)),
+                         ["Family, Favorite","Kid Safe"])
+        self.assertEqual(main.plex_metadata_tags(item,("Collection","Tag")),
+                         ["Broadcast Block","Halloween"])
+        self.assertEqual(main.plex_item_labels(item),
+                         {"family, favorite","kid safe"})
+
+    def test_smart_rules_persist_and_drive_schedule(self):
+        with main.db() as c:
+            c.execute("UPDATE media SET plex_labels=?,plex_tags=? WHERE id='episode:100'",
+                      ('["Kids"]','["Comedy Night"]'))
+            c.execute("UPDATE media SET plex_labels=?,plex_tags=? WHERE id='episode:101'",
+                      ('["Kids"]','["Other"]'))
+        rule=vr.SmartRules(media_type="episodes",labels=["Kids"],tags=["Comedy Night"])
+        created=cm.create_virtual(cm.VirtualUpdate(name="Tagged",
+                        mode="smart",rules=rule),Request())
+        definition=cm.virtual_definitions()[0]
+        self.assertEqual(definition["rules"]["labels"],["Kids"])
+        self.assertEqual(definition["rules"]["tags"],["Comedy Night"])
+        start=datetime(2026,11,15,13,tzinfo=timezone.utc)
+        guide=cm.virtual_guide(start,start+timedelta(hours=2))
+        self.assertEqual({p["plex"]["rating_key"] for p in guide[0]["programs"]},{"100"})
+        cm.delete_virtual(created["id"],Request())
 
     def test_stable_shuffle_across_reloads(self):
         with main.db() as c:
@@ -102,6 +159,8 @@ class SmartChannelTests(unittest.TestCase):
             columns={x["name"] for x in c.execute("PRAGMA table_info(media)")}
         self.assertIn("genres",columns)
         self.assertIn("duration_ms",columns)
+        self.assertIn("plex_labels",columns)
+        self.assertIn("plex_tags",columns)
 
 if __name__=="__main__":
     unittest.main()
