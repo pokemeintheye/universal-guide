@@ -99,7 +99,7 @@ class GuidePriorityTests(unittest.TestCase):
         # Discovery may still have a verified Philo handoff without any
         # actual Philo EPG rows. Preserve that channel and use DVR listings.
         discovery = next(c for c in result["channels"]
-                         if c["label"].casefold() == "discovery" and
+                         if c.get("number") == "6101" and
                          c["programs"] and
                          c.get("guide_data_source") == "channels-dvr")
         self.assertEqual(discovery["programs"][0]["title"], "Discovery Actual Listing")
