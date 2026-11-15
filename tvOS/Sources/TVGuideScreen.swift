@@ -43,6 +43,7 @@ struct TVGuideScreen: View {
     @State private var plexChoiceDismissed = true
     @State private var playbackError: String?
     @State private var loadingPlayback = false
+    @State private var liveOptions: [String: TVLiveOption] = [:]
     @State private var selectedArtworkURL: URL?
     @State private var artworkTask: Task<Void, Never>?
     @State private var artworkCache: [String: URL] = [:]
@@ -144,6 +145,14 @@ struct TVGuideScreen: View {
              ch.label.localizedCaseInsensitiveContains(searchText) ||
              ch.programs.contains(where: {$0.title.localizedCaseInsensitiveContains(searchText)}))
         }
+    }
+    private func liveOption(for channel: GuideChannel, program: GuideProgram) -> TVLiveOption? {
+        guard program.isOnNow else { return nil }
+        return liveOptions[TVChannelsService.guideKey(channel.source, channel.label)]
+    }
+    private var selectedLiveOption: TVLiveOption? {
+        guard let (channel, program) = selected else { return nil }
+        return liveOption(for: channel, program: program)
     }
     private var selected: (GuideChannel, GuideProgram)? {
         guard channels.indices.contains(selectedChannel) else { return nil }
@@ -555,15 +564,15 @@ struct TVGuideScreen: View {
                 canJoin: selected?.1.isOnNow == true,
                 onBeginning: { playPlex("beginning") },
                 onNow: { playPlex("join") },
-                onExtra: selected?.0.source == "philo" && selected?.0.label.caseInsensitiveCompare("HGTV") == .orderedSame && selected?.1.isOnNow == true ? "Watch HGTV Live" : (selected?.0.source == "philo" ? "Open in Philo" :
+                onExtra: selectedLiveOption?.label ?? (selected?.0.source == "philo" ? "Open in Philo" :
                          (selected?.0.source == "tablo" && selected?.1.isOnNow == true ?
                           "Watch Live on Tablo" : nil)),
                 onExtraAction: {
                     if let (channel, program) = selected {
                         if channel.source == "tablo" { playTablo() }
-                        else if channel.source == "philo" && channel.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
+                        else if liveOption(for: channel, program: program) != nil {
                             dismissPlexChoice()
-                            playChannelsHGTV()
+                            playChannelsLive()
                         } else {
                             dismissPlexChoice()
                             openPhilo(channel, program)
@@ -655,6 +664,7 @@ struct TVGuideScreen: View {
             #endif
         }
         .onChange(of: serverURL) { _, _ in
+            liveOptions.removeAll()
             artworkCache.removeAll()
             noArtwork.removeAll()
             #if os(iOS)
@@ -1141,8 +1151,8 @@ struct TVGuideScreen: View {
                                 openPlexChoice()
                             }
                         }
-                        if selected?.0.source == "philo" && selected?.0.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
-                            watchButton("Watch HGTV Live", key: "watch-channels") { playChannelsHGTV() }
+                        if let option = selectedLiveOption {
+                            watchButton(option.label, key: "watch-channels") { playChannelsLive() }
                         }
                         if selected?.0.source == "philo" {
                             watchButton("Open in Philo", key: "watch-philo") {
@@ -1201,6 +1211,7 @@ struct TVGuideScreen: View {
     }
     private func refreshGuide() async {
         await store.refresh(server: serverURL)
+        liveOptions = await TVChannelsService.availableOptions(serverURL: serverURL)
     }
     private func refreshSelectedArtwork() {
         artworkTask?.cancel()
@@ -1301,7 +1312,11 @@ struct TVGuideScreen: View {
                     self.tvSelection = "watch-primary"
                 }
             case "right", "down":
-                if tvSelection == "watch-primary", selected?.0.source == "philo" {
+                if tvSelection == "watch-channels", selected?.0.source == "philo" {
+                    self.tvSelection = "watch-philo"
+                } else if tvSelection == "watch-primary", selectedLiveOption != nil {
+                    self.tvSelection = "watch-channels"
+                } else if tvSelection == "watch-primary", selected?.0.source == "philo" {
                     self.tvSelection = "watch-philo"
                 } else if tvSelection == "watch-primary", selected?.0.source == "tablo" {
                     self.tvSelection = "watch-live"
@@ -1411,8 +1426,12 @@ struct TVGuideScreen: View {
                     selectPhoneProgram()
                 }
             case "right", "down":
-                if phoneSelection == "watch-primary" && hasTablo {
+                if phoneSelection == "watch-channels" && hasPhilo {
+                    phoneSelection = "watch-philo"
+                } else if phoneSelection == "watch-primary" && hasTablo {
                     phoneSelection = "watch-live"
+                } else if phoneSelection == "watch-primary" && selectedLiveOption != nil {
+                    phoneSelection = "watch-channels"
                 } else if phoneSelection == "watch-primary" && hasPhilo {
                     phoneSelection = "watch-philo"
                 }
@@ -1486,7 +1505,7 @@ struct TVGuideScreen: View {
                 playTablo()
             }
         case "watch-channels":
-            if selected?.1.isOnNow == true { playChannelsHGTV() }
+            if selectedLiveOption != nil { playChannelsLive() }
         case "watch-philo":
             if let (channel,program) = selected { openPhilo(channel,program) }
         default:
@@ -1501,8 +1520,8 @@ struct TVGuideScreen: View {
             // Keep the full Plex playback choice without a hidden panel.
             if isCompact { phoneSelection = "watch-primary" }
             else { openPlexChoice() }
-        } else if channel.source == "philo" && channel.label.caseInsensitiveCompare("HGTV") == .orderedSame && program.isOnNow {
-            playChannelsHGTV()
+        } else if liveOption(for: channel, program: program) != nil {
+            playChannelsLive()
         } else if channel.source == "philo" {
             openPhilo(channel, program)
         } else if channel.source == "tablo" && program.isOnNow {
@@ -1574,16 +1593,18 @@ struct TVGuideScreen: View {
             _ = channel
         }
     }
-    private func playChannelsHGTV() {
+    private func playChannelsLive() {
         guard let (channel, program) = selected,
-              channel.source == "philo", channel.label.caseInsensitiveCompare("HGTV") == .orderedSame else { return }
-        let choiceWasOpen = selectedAction == .plex
-        if choiceWasOpen { dismissPlexChoice() }
+              let option = liveOption(for: channel, program: program) else { return }
+        // A Plex choice sheet can still be dismissing even after selectedAction
+        // was cleared. Queue the Channels player until its onDismiss completes.
+        let choiceWasOpen = selectedAction == .plex || !plexChoiceDismissed
+        if selectedAction == .plex { dismissPlexChoice() }
         loadingPlayback = true
         Task {
             defer { loadingPlayback = false }
             do {
-                let session = try await TVChannelsService.start(serverURL: serverURL, title: program.title)
+                let session = try await TVChannelsService.start(serverURL: serverURL, option: option, title: program.title)
                 if !choiceWasOpen || plexChoiceDismissed { mediaSession = session }
                 else { pendingTabloSession = session }
             } catch { playbackError = error.localizedDescription }

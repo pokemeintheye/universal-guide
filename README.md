@@ -823,6 +823,27 @@ Find pane, and Local/Plex filter buttons are removed from normal viewing.
 No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
 mechanism are required by this redesign.
 
+## Backend-driven live playback options (Apple TV)
+
+The backend decides which existing guide rows offer direct live streaming.
+The Apple TV app requests `GET /api/live/guide-options` and receives an
+`action` (currently `play-hls`), an opaque `playback_id`, a button
+label, and time-shift capability flags for each matching guide station.
+On selection, the app requests
+`GET /api/live/stream/{playback_id}` for the current HLS URL.
+
+The mapping between Philo guide names and authorized Channels DVR TVE
+stations is maintained in `app/channels_dvr.py` (`GUIDE_LABELS` and
+`TVE_STATIONS`), **not in the Apple TV app**. Changes to those mappings
+require a backend Docker update, not a new Apple TV build. Currently
+supported direct live streams use the native HLS player; introducing a
+different media protocol or a new player feature may still require an
+Apple TV update. The normal Open in Philo action stays available.
+
+The backend only offers channels found in the current Channels DVR M3U
+export. An exported entry does not guarantee successful playback.
+Direct live streaming does not yet provide the Tablo-style disk timeshift.
+
 ## Channels DVR: HGTV live playback (channel 6104)
 
 Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` on the
