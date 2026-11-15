@@ -298,11 +298,20 @@ struct TVGuideScreen: View {
             ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(channel.network ?? channel.label)
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.84))
-                        Text(channel.number ?? channel.label)
+                        let stationName = channel.network.flatMap {
+                            $0.isEmpty ? nil : $0
+                        } ?? channel.label
+                        Text(stationName)
                             .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.72)
+                        if let number = channel.number, !number.isEmpty,
+                           number != stationName {
+                            Text(number)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.68))
+                        }
                     }
                     .frame(width: 180, alignment: .leading)
                     // Match the production tvOS timeline scale: 18pt per minute,
@@ -826,17 +835,20 @@ struct TVGuideScreen: View {
                     ForEach(visibleChannelRange, id: \.self) { channelIndex in
                         let channel = channels[channelIndex]
                         HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let net = channel.network, !net.isEmpty {
-                                    Text(net.uppercased())
-                                        .font(.system(size: isCompact ? 9 : 16, weight: .bold))
-                                        .foregroundStyle(TVPalette.blue)
-                                }
-                                Text(channel.number ?? channel.label)
+                            VStack(alignment: .leading, spacing: 3) {
+                                // Channel name is primary; its number is secondary.
+                                let stationName = channel.network.flatMap {
+                                    $0.isEmpty ? nil : $0
+                                } ?? channel.label
+                                Text(stationName)
                                     .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
-                                if channel.number != nil && channel.label != channel.number {
-                                    Text(channel.label)
-                                        .font(.system(size: isCompact ? 10 : 18))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.72)
+                                if let number = channel.number, !number.isEmpty,
+                                   number != stationName {
+                                    Text(number)
+                                        .font(.system(size: isCompact ? 10 : 16, weight: .medium))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
