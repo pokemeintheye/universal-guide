@@ -298,11 +298,20 @@ struct TVGuideScreen: View {
             ForEach(Array(store.channels.prefix(7).enumerated()), id: \.element.id) { index, channel in
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(channel.network ?? channel.label)
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.84))
-                        Text(channel.number ?? channel.label)
+                        let stationName = channel.network.flatMap {
+                            $0.isEmpty ? nil : $0
+                        } ?? channel.label
+                        Text(stationName)
                             .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.72)
+                        if let number = channel.number, !number.isEmpty,
+                           number != stationName {
+                            Text(number)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.68))
+                        }
                     }
                     .frame(width: 180, alignment: .leading)
                     // Match the production tvOS timeline scale: 18pt per minute,
