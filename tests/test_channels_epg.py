@@ -89,9 +89,12 @@ class GuidePriorityTests(unittest.TestCase):
         with main.db() as c:
             c.execute("DELETE FROM philo_listings WHERE channel_label='Discovery'")
         rows = epg._map_stations(epg.parse_xmltv(DOC), cm.configured_stations())
-        playlist = '#EXTM3U\\n#EXTINF:-1 tvg-chno="6101",DISCOVERY\\n/devices/ANY/channels/6101/hls/master.m3u8\\n'
-        with patch("app.channels_epg.schedule", return_value=(rows, None)), \\
-             patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", playlist)):
+        playlist = """#EXTM3U
+#EXTINF:-1 tvg-chno="6101",DISCOVERY
+/devices/ANY/channels/6101/hls/master.m3u8
+"""
+        with (patch("app.channels_epg.schedule", return_value=(rows, None)),
+              patch.object(cd, "_playlist", return_value=("http://192.168.2.4:8089", playlist))):
             result = main.guide(hours=1, start="2026-11-15T17:00:00+00:00")
         discovery = next(c for c in result["channels"]
                          if c["source"] == "channels-dvr" and c["number"] == "6101")
