@@ -1860,7 +1860,7 @@ private struct TVGuideFilterPanel: View {
         false
         #endif
     }
-    private var selection: Int? { phoneIndex }
+    private var selection: Int? { isCompact ? nil : phoneIndex }
 
     var body: some View {
         ZStack {
