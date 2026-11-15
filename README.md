@@ -822,3 +822,29 @@ Find pane, and Local/Plex filter buttons are removed from normal viewing.
 
 No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
 mechanism are required by this redesign.
+
+## Experimental Channels DVR: HGTV channel 6104 (development branch only)
+
+This optional, read-only source discovery test does not modify the guide, tvOS
+player, Philo handoffs, Plex playback, or Tablo playback. It is **not** a complete
+Channels DVR integration or a TestFlight build.
+
+Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` in the Universal Guide
+Unraid Docker environment (use the Channels DVR server LAN IP, not its
+localhost address). The server retrieves a Channels DVR HLS-format M3U export
+and looks for channel **6104** in its channel metadata.
+
+On the same LAN, request:
+
+```text
+http://YOUR-UNRAID-IP:8787/api/channels-dvr/test/hgtv
+```
+
+A successful JSON response returns `channel_number`, `name`, and
+`stream_url`. This only confirms source discovery; it does not verify that
+Universal Guide's Apple TV player can play the stream. A 404 means the M3U
+export did not identify channel 6104; check the actual M3U EXTINF attributes.
+A 503 indicates missing or invalid server configuration.
+
+No Philo credentials are stored in Universal Guide. Keep both local server
+ports private to your trusted LAN. Do not publish the returned stream URL.
