@@ -23,14 +23,25 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 .mediaitem{padding:9px 12px;border-bottom:1px solid #344155;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .mediaitem:last-child{border:0}.playlistitem{display:grid;grid-template-columns:minmax(130px,1fr) 100px auto;gap:10px;align-items:center}
 .virtualcard{padding:12px;background:#222d3b;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:8px}
-#virtualEditor[hidden],#channelPanel[hidden],#virtualPanel[hidden]{display:none!important}
+#virtualEditor[hidden],#channelPanel[hidden],#virtualPanel[hidden],#lineupPanel[hidden]{display:none!important}
+#lineupList{display:grid;gap:6px;max-height:75vh;overflow:auto}
+.lineupRow{display:grid;grid-template-columns:36px minmax(130px,1fr) 140px 60px auto;gap:12px;align-items:center;background:#222d3b;padding:10px;border:1px solid #354258;border-radius:8px}
+.lineupRow .handle{cursor:grab;font-size:22px;color:#b6c9db;text-align:center}
+.lineupRow.dragging{opacity:.45}
+.lineupRow.dropTarget{border-color:#169cef}
+@media(max-width:650px){.lineupRow{grid-template-columns:25px 1fr auto;gap:7px}.lineupRow .source{display:none}.lineupRow .position{width:52px}}
+
 @media(max-width:800px){.station{grid-template-columns:60px 1fr 1fr}.station input:nth-child(3),.station select{grid-column:span 2}.station button{grid-column:auto}main{padding:12px}}
 </style></head>
 <body><header><div><h1>Universal Guide · Channel Management</h1><span class="muted">Live channel sources and Plex virtual channels</span></div>
 <div class="row"><a href="/">← Back to guide</a><button id="reload">Refresh</button></div></header>
-<main><div class="tabs"><button id="tabChannels" aria-selected="true">Live channels</button><button id="tabVirtual" aria-selected="false">Plex virtual channels</button></div>
+<main><div class="tabs"><button id="tabChannels" aria-selected="true">Live channels</button><button id="tabVirtual" aria-selected="false">Plex virtual channels</button><button id="tabLineup" aria-selected="false">Guide lineup</button></div>
 <section><div class="row"><label>Admin token (optional) <input id="adminToken" type="password" autocomplete="off" placeholder="GUIDE_ADMIN_TOKEN"></label><button id="setToken">Apply</button></div><div class="hint">If GUIDE_ADMIN_TOKEN is set in Docker, enter it here. This page is intended for your trusted LAN; do not expose management APIs to the Internet.</div></section>
 <div id="message" role="status" aria-live="polite"></div>
+<div id="lineupPanel" hidden><section><h2>Guide lineup</h2>
+<p class="hint">Arrange channels from every provider, including virtual channels. Drag a row, enter a position, or use the arrows. Uncheck Enabled to hide that channel from the Apple TV guide; its playback source settings stay unchanged. Save changes, then refresh the Apple TV guide.</p>
+<div class="row"><label>Find a channel <input id="lineupSearch" type="search" placeholder="Search names, numbers, sources"></label><button id="lineupSave" class="primary">Save lineup</button><button id="lineupRefresh">Reload</button><span id="lineupCount" class="muted"></span></div>
+<div id="lineupList"></div></section></div>
 <div id="channelPanel"><section><h2>Channels DVR sources</h2><p class="hint">Stations discovered in Channels DVR appear below. Add any discovered station, choose Channels DVR or Philo as the primary live source, and save. Changes apply at the next guide refresh without Docker or TestFlight rebuilds. Philo must already have a matching channel link for Philo playback.</p>
 <div class="row"><label>Find station <input id="stationSearch" type="search" placeholder="Discovery, 6101, HGTV…"></label><span id="stationCount" class="muted"></span></div>
 <div id="stationlist"></div></section></div>
@@ -70,15 +81,16 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 const $=id=>document.getElementById(id);
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let token='',stations=[],virtuals=[],editingId=null,playlist=[],searchHits=[];
+let guideLineup=[],lineupDirty=false;
 let metadataFilters={genres:[],shows:[],labels:[],tags:[]};
 function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
 function err(e){message(e.message||String(e),true)}
 $('setToken').onclick=()=>{token=$('adminToken').value.trim();message('Token applied for this page session');loadActive()};
 $('reload').onclick=()=>loadActive();
-function tab(which){const live=which==='channels';$('channelPanel').hidden=!live;$('virtualPanel').hidden=live;$('tabChannels').setAttribute('aria-selected',live);$('tabVirtual').setAttribute('aria-selected',!live);loadActive()}
-$('tabChannels').onclick=()=>tab('channels');$('tabVirtual').onclick=()=>tab('virtual');
-async function loadActive(){if(!$('channelPanel').hidden)await loadStations();else await loadVirtuals()}
+function tab(which){if(lineupDirty&&which!=='lineup'&&!confirm('Discard unsaved lineup changes?'))return;const live=which==='channels',virtual=which==='virtual',lineup=which==='lineup';$('channelPanel').hidden=!live;$('virtualPanel').hidden=!virtual;$('lineupPanel').hidden=!lineup;$('tabChannels').setAttribute('aria-selected',live);$('tabVirtual').setAttribute('aria-selected',virtual);$('tabLineup').setAttribute('aria-selected',lineup);if(!lineup)lineupDirty=false;loadActive()}
+$('tabChannels').onclick=()=>tab('channels');$('tabVirtual').onclick=()=>tab('virtual');$('tabLineup').onclick=()=>tab('lineup');
+async function loadActive(){if(!$('channelPanel').hidden)await loadStations();else if(!$('lineupPanel').hidden)await loadLineup();else await loadVirtuals()}
 async function loadStations(){try{message('Loading discovered channels…');const data=await api('/api/manage/channels');stations=data.channels||[];drawStations();message(data.error?'Channels DVR not reachable: '+data.error:'Channel configuration loaded. '+stations.filter(x=>x.available).length+' stations available.',!!data.error)}catch(e){err(e)}}
 function drawStations(){const needle=$('stationSearch').value.trim().toLowerCase();const filtered=stations.filter(s=>(s.name+' '+s.guide_label+' '+s.number).toLowerCase().includes(needle));$('stationCount').textContent=filtered.length+' channels';const root=$('stationlist');root.replaceChildren();
 for(const s of filtered){const node=document.createElement('div');node.className='station';node.dataset.number=s.number;
@@ -93,6 +105,25 @@ node.querySelector('.save').onclick=async()=>{try{const v={number:s.number,name:
 const reset=node.querySelector('.reset');if(reset)reset.onclick=async()=>{if(!confirm('Reset settings for '+s.number+'?'))return;try{await api('/api/manage/channels/'+encodeURIComponent(s.number),{method:'DELETE'});await loadStations()}catch(e){err(e)}};root.append(node)}
 }
 $('stationSearch').oninput=drawStations;
+async function loadLineup(){try{const data=await api('/api/manage/lineup');guideLineup=data.channels||[];lineupDirty=false;drawLineup();message('Guide lineup loaded. '+guideLineup.length+' channels')}catch(e){err(e)}}
+function changeLineup(from,to){if(from<0||to<0||from>=guideLineup.length||to>=guideLineup.length||from===to)return;const [item]=guideLineup.splice(from,1);guideLineup.splice(to,0,item);lineupDirty=true;drawLineup()}
+function drawLineup(){const root=$('lineupList');root.replaceChildren();const query=$('lineupSearch').value.trim().toLowerCase();$('lineupCount').textContent=guideLineup.filter(c=>c.enabled).length+' enabled / '+guideLineup.length+' channels'+(lineupDirty?' · Unsaved changes':'');
+guideLineup.forEach((channel,i)=>{if(query&&!([channel.label,channel.number,channel.source].join(' ').toLowerCase().includes(query)))return;
+const node=document.createElement('div');node.className='lineupRow';node.draggable=true;
+node.innerHTML='<div class="handle" title="Drag to reorder" aria-label="Drag channel">☰</div><div><strong>'+safe(channel.label)+'</strong>'+(channel.number?'<div class="hint">'+safe(channel.number)+'</div>':'')+'</div><span class="source muted">'+safe(channel.source)+'</span><label><input class="enabled" type="checkbox"'+(channel.enabled?' checked':'')+'>Enabled</label><div class="row"><input class="position" type="number" min="1" max="'+guideLineup.length+'" value="'+(i+1)+'" aria-label="Channel position"><button class="up" aria-label="Move up">↑</button><button class="down" aria-label="Move down">↓</button></div>';
+node.querySelector('.enabled').onchange=e=>{channel.enabled=e.target.checked;lineupDirty=true;drawLineup()};
+node.querySelector('.up').onclick=()=>changeLineup(i,i-1);
+node.querySelector('.down').onclick=()=>changeLineup(i,i+1);
+node.querySelector('.position').onchange=e=>changeLineup(i,Math.max(0,Math.min(guideLineup.length-1,Number(e.target.value)-1)));
+node.ondragstart=e=>{e.dataTransfer.setData('text/plain',String(i));e.dataTransfer.effectAllowed='move';node.classList.add('dragging')};
+node.ondragend=()=>node.classList.remove('dragging');
+node.ondragover=e=>{e.preventDefault();node.classList.add('dropTarget')};
+node.ondragleave=()=>node.classList.remove('dropTarget');
+node.ondrop=e=>{e.preventDefault();node.classList.remove('dropTarget');changeLineup(Number(e.dataTransfer.getData('text/plain')),i)};
+root.append(node)})}
+$('lineupSearch').oninput=drawLineup;
+$('lineupRefresh').onclick=()=>{if(lineupDirty&&!confirm('Discard unsaved changes?'))return;loadLineup()};
+$('lineupSave').onclick=async()=>{try{const enabled=Object.fromEntries(guideLineup.map(x=>[x.id,!!x.enabled]));await api('/api/manage/lineup',{method:'PUT',body:JSON.stringify({ids:guideLineup.map(x=>x.id),enabled})});lineupDirty=false;drawLineup();message('Lineup saved. Refresh the Apple TV guide to see changes.')}catch(e){err(e)}};
 async function loadVirtuals(){try{const d=await api('/api/manage/virtual');virtuals=d.channels||[];const root=$('virtualList');root.replaceChildren();if(!virtuals.length)root.textContent='No virtual channels yet.';for(const v of virtuals){const row=document.createElement('div');row.className='virtualcard';row.innerHTML='<div><strong>'+safe(v.name)+'</strong><div class="hint">'+(v.mode==='smart'?'Smart metadata rules':v.items.length+' manual items')+' · '+(v.enabled?'Enabled':'Disabled')+'</div></div><div class="row"><button class="edit">Edit</button><button class="warn del">Delete</button></div>';row.querySelector('.edit').onclick=()=>openVirtual(v);row.querySelector('.del').onclick=async()=>{if(!confirm('Delete '+v.name+'?'))return;try{await api('/api/manage/virtual/'+encodeURIComponent(v.id),{method:'DELETE'});await loadVirtuals();message('Virtual channel deleted')}catch(e){err(e)}};root.append(row)}message('Virtual channels loaded')}catch(e){err(e)}}
 function smartMode(){const isSmart=$('virtualMode').value==='smart';$('smartRules').hidden=!isSmart;$('manualRules').hidden=isSmart}
 $('virtualMode').onchange=smartMode;
