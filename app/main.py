@@ -498,6 +498,53 @@ def sync_tablo():
     finally:
         tablo_lock.release()
 
+def fill_broadcast_schedule_gaps(programs,channel_id,channel_label,window_start,window_end):
+    """Fill missing EPG intervals without guessing what aired.
+
+    The timeline must remain navigable and visibly continuous even if the
+    external provider omits part of the schedule. Existing real program
+    metadata and times remain unchanged; placeholders never have Plex matches.
+    """
+    if window_end <= window_start:
+        return programs
+    ordered=sorted(programs,key=lambda p:(p["start"],p["stop"]))
+    filled=[]
+    cursor=window_start
+    for program in ordered:
+        try:
+            start=datetime.fromisoformat(program["start"].replace("Z","+00:00"))
+            end=datetime.fromisoformat(program["stop"].replace("Z","+00:00"))
+            start=start.astimezone(timezone.utc)
+            end=end.astimezone(timezone.utc)
+        except (ValueError,TypeError,AttributeError):
+            filled.append(program)
+            continue
+        if end <= window_start or start >= window_end or end <= start:
+            continue
+        if start > cursor:
+            filled.append({
+                "channel_id":channel_id,"channel_label":channel_label,
+                "start":cursor.isoformat(),"stop":start.isoformat(),
+                "title":"No guide information","subtitle":"",
+                "description":"Program listings are unavailable for this time.",
+                "program_kind":"other","season":None,"episode":None,
+                "plex":None,"no_guide_data":True})
+        filled.append(program)
+        if end > cursor:
+            cursor=end
+        if cursor >= window_end:
+            break
+    if cursor < window_end:
+        filled.append({
+            "channel_id":channel_id,"channel_label":channel_label,
+            "start":cursor.isoformat(),"stop":window_end.isoformat(),
+            "title":"No guide information","subtitle":"",
+            "description":"Program listings are unavailable for this time.",
+            "program_kind":"other","season":None,"episode":None,
+            "plex":None,"no_guide_data":True})
+    return filled
+
+
 def fill_tablo_schedule_gaps(programs,channel_id,channel_label,start,stop):
     """Show a tuneable no-EPG block for every uncovered time interval.
 
@@ -1402,6 +1449,17 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
                          if not favorites_only and
                          (not plex_only or any(p.get("plex") for p in row["programs"]))]
         result.extend(visible_virtual)
+    # Philo, XMLTV and Channels DVR often omit a few minutes around the
+    # start of a program (for example 1:30–1:44). The native guide otherwise
+    # renders these as dark, unnavigable voids. Keep the actual EPG content
+    # intact and show a neutral "No guide information" tile in each hole.
+    # Tablo already has a provider-specific schedule gap filler and virtual
+    # channels have complete generated schedules, so leave them unchanged.
+    for channel in result:
+        if channel["source"] in ("philo","xmltv","channels-dvr"):
+            channel["programs"]=fill_broadcast_schedule_gaps(
+                channel["programs"],channel["id"].split(":",1)[-1],
+                channel["label"],now,until)
     # Apply one cross-provider lineup, including Plex virtual channels.
     # Unknown/newly-discovered sources remain visible until configured.
     result=sort_lineup(result,include_hidden=include_hidden)
