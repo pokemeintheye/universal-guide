@@ -93,24 +93,61 @@ private struct TVChannelsResponse: Decodable {
     let stream_url: String
 }
 
+private struct TVChannelsCatalog: Decodable {
+    struct Station: Decodable { let channel_number: String; let name: String }
+    let channels: [Station]
+}
+
+// Station numbers provided by the Channels DVR owner. Only numbers in the
+// server's current M3U catalog are offered in the guide.
 enum TVChannelsService {
-    static func start(serverURL: String, title: String) async throws -> TVMediaSession {
+    static func number(for label: String) -> String? {
+        let normalized = label.lowercased().filter { $0.isLetter || $0.isNumber }
+        return [
+            "ae":"6043", "aetv":"6043", "history":"6044", "historychannel":"6044",
+            "fyi":"6045", "lifetime":"6046", "sundancetv":"6085", "sundance":"6085",
+            "amc":"6086", "bbcamerica":"6087", "ifc":"6088", "wetv":"6089",
+            "own":"6100", "oprahwinfreynetwork":"6100",
+            "foodnetwork":"6102", "animalplanet":"6103", "hgtv":"6104",
+            "tlc":"6105", "travelchannel":"6106", "investigationdiscovery":"6107",
+            "magnolianetwork":"6108", "diynetwork":"6108", "diy":"6108",
+            "cookingchannel":"6109", "sciencechannel":"6110", "science":"6110",
+            "americanheroeschannel":"6111", "ahc":"6111",
+            "destinationamerica":"6112", "discoverylife":"6113", "motortrend":"6114"
+        ][normalized]
+    }
+
+    static func availableChannels(serverURL: String) async -> Set<String> {
+        do {
+            let base = try PlexPlaybackService.baseURL(serverURL)
+            guard let url = URL(string: "/api/channels-dvr/channels", relativeTo: base)?.absoluteURL else { return [] }
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 15
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+            let catalog = try JSONDecoder().decode(TVChannelsCatalog.self, from: data)
+            return Set(catalog.channels.map(\.channel_number))
+        } catch { return [] }
+    }
+
+    static func start(serverURL: String, channelNumber: String, title: String) async throws -> TVMediaSession {
         let base = try PlexPlaybackService.baseURL(serverURL)
-        guard let endpoint = URL(string: "/api/channels-dvr/test/hgtv", relativeTo: base)?.absoluteURL else {
+        guard channelNumber.count == 4, channelNumber.allSatisfy({ $0.isNumber }),
+              let endpoint = URL(string: "/api/channels-dvr/live/\(channelNumber)", relativeTo: base)?.absoluteURL else {
             throw PlexPlaybackError.invalidServer
         }
         var request = URLRequest(url: endpoint)
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw PlexPlaybackError.server("Channels DVR HGTV stream could not be discovered.")
+            throw PlexPlaybackError.server("Channels DVR stream for channel \(channelNumber) is unavailable. Use Open in Philo instead.")
         }
         let result = try JSONDecoder().decode(TVChannelsResponse.self, from: data)
         guard let url = URL(string: result.stream_url), url.scheme == "http",
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else {
             throw PlexPlaybackError.invalidSession
         }
-        return .channels(TVChannelsSession(id: "channels-hgtv-6104", title: title, playlistURL: url))
+        return .channels(TVChannelsSession(id: "channels-tve-\(channelNumber)", title: title, playlistURL: url))
     }
 }
 
