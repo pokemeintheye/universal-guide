@@ -1287,7 +1287,7 @@ struct TVMediaPlayerScreen: View {
                         "The Unraid Universal Guide backend does not support virtual-channel autoplay yet (HTTP 404). Update the Docker container to the latest image.")
                 }
                 throw PlexPlaybackError.server(
-                    "Next virtual program request failed (HTTP \\(http.statusCode)): " +
+                    "Next virtual program request failed (HTTP \(http.statusCode)): " +
                     (detail ?? "Unknown backend error. Check the Unraid container log."))
             }
             let program = try JSONDecoder().decode(TVVirtualNextResponse.self,
