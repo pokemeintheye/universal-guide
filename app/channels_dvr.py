@@ -13,6 +13,7 @@ import requests
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/channels-dvr", tags=["channels-dvr"])
+playback_router = APIRouter(prefix="/api/live", tags=["live-playback"])
 CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "").strip().rstrip("/")
 # Channel numbers supplied by the owner; stream existence is verified in M3U.
 TVE_STATIONS = {
@@ -25,6 +26,22 @@ TVE_STATIONS = {
     "6110": "Science Channel", "6111": "American Heroes Channel",
     "6112": "Destination America", "6113": "Discovery Life",
     "6114": "MotorTrend",
+}
+# The backend owns matching between existing guide labels and stream providers.
+# Update mappings here, not in tvOS, when a provider changes its channel labels.
+GUIDE_LABELS = {
+    "6043": ["A&E", "AETV"], "6044": ["HISTORY", "History Channel"],
+    "6045": ["FYI"], "6046": ["Lifetime"], "6085": ["Sundance TV", "Sundance"],
+    "6086": ["AMC"], "6087": ["BBC America", "BBCA"], "6088": ["IFC"],
+    "6089": ["We TV", "WETV"], "6100": ["Oprah Winfrey Network", "OWN"],
+    "6102": ["Food Network"], "6103": ["Animal Planet"], "6104": ["HGTV"],
+    "6105": ["TLC"], "6106": ["Travel Channel"],
+    "6107": ["Investigation Discovery"],
+    "6108": ["Magnolia Network", "DIY Network", "DIY"],
+    "6109": ["Cooking Channel"], "6110": ["Science Channel", "Science"],
+    "6111": ["American Heroes Channel", "AHC"],
+    "6112": ["Destination America"], "6113": ["Discovery Life"],
+    "6114": ["MotorTrend"],
 }
 TEST_CHANNEL = "6104"
 M3U_PATH = "/devices/ANY/channels.m3u?format=hls&codec=copy"
@@ -112,3 +129,59 @@ def live_channel(number: str):
 def test_hgtv():
     """Backward-compatible HGTV discovery endpoint."""
     return _resolve(TEST_CHANNEL)
+
+
+@router.get("/guide-options")
+def guide_options():
+    """Backend-owned choices for existing Philo guide rows.
+
+    Return only channels actually present in the live M3U export. This is
+    evidence of discoverability, NOT a guarantee that playback succeeds.
+    The client uses provider for selecting its existing player and uses
+    channel_number solely as an opaque stream identifier.
+    """
+    base, playlist = _playlist()
+    options = []
+    for number, labels in GUIDE_LABELS.items():
+        if number in TVE_STATIONS and _channel_stream(playlist, base, number):
+            for label in labels:
+                options.append({
+                    "guide_source": "philo", "guide_label": label,
+                    "provider": "channels-dvr", "channel_number": number,
+                    "label": "Watch Live", "is_live": True,
+                    "timeshift": False,
+                })
+    return {"options": options, "fallback": "philo", "source": "backend"}
+
+
+@playback_router.get("/guide-options")
+def live_guide_options():
+    """Stable provider-independent contract used by tvOS.
+
+    A future HLS source can be plugged into this backend without requiring a
+    new Apple TV channel mapping or player update.
+    """
+    source_options = guide_options()["options"]
+    options = []
+    for entry in source_options:
+        options.append({
+            "guide_source": entry["guide_source"],
+            "guide_label": entry["guide_label"],
+            "action": "play-hls",
+            "playback_id": "tve-" + entry["channel_number"],
+            "label": entry["label"],
+            "is_live": entry["is_live"],
+            "timeshift": entry["timeshift"],
+        })
+    return {"options": options, "fallback": "philo"}
+
+
+@playback_router.get("/stream/{playback_id}")
+def live_stream(playback_id: str):
+    """Resolve a server-owned stream ID to its current HLS URL."""
+    if not re.fullmatch(r"tve-[0-9]{4}", playback_id):
+        raise HTTPException(404, "Unknown live stream")
+    number = playback_id[4:]
+    result = _resolve(number)
+    return {"stream_url": result["stream_url"], "type": "hls",
+            "is_live": True, "timeshift": False}
