@@ -1,8 +1,8 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # Manual iOS TestFlight publish for launch crash lazy-loading fix, 2026-11-15.
-  # Test exact half-hour guide ticks, scroll follow, filters and D-pad text entry.
+  # iPhone TestFlight release: validated GeometryReader launch crash fix, 2026-11-15.
+  # Simulator startup smoke test passed on PR #51; verify device launch and touch guide.
   push:
     branches: [main]
     paths:
