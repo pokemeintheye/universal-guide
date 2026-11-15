@@ -1396,9 +1396,13 @@ def guide(hours:int=Query(8,ge=1,le=24),plex_only:bool=False,favorites_only:bool
             pass  # Other guide providers remain available when DVR is offline.
     if source in ("all","virtual"):
         virtual_rows=virtual_guide(now,until)
-        result.extend([row for row in virtual_rows
-                       if not favorites_only and
-                       (not plex_only or any(p.get("plex") for p in row["programs"]))])
+        # Native Apple TV scrolls channels in API order. Virtual channels
+        # previously followed every Philo, Tablo and XMLTV row, making them
+        # effectively undiscoverable without Search. Keep them visible first.
+        visible_virtual=[row for row in virtual_rows
+                         if not favorites_only and
+                         (not plex_only or any(p.get("plex") for p in row["programs"]))]
+        result=visible_virtual+result
     return {"generated_at":datetime.now(timezone.utc).isoformat(),
             "window_start":now.isoformat(),"window_end":until.isoformat(),
             "channels":result}
