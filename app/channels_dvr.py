@@ -13,6 +13,7 @@ import requests
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/channels-dvr", tags=["channels-dvr"])
+playback_router = APIRouter(prefix="/api/live", tags=["live-playback"])
 CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "").strip().rstrip("/")
 # Channel numbers supplied by the owner; stream existence is verified in M3U.
 TVE_STATIONS = {
@@ -151,3 +152,36 @@ def guide_options():
                     "timeshift": False,
                 })
     return {"options": options, "fallback": "philo", "source": "backend"}
+
+
+@playback_router.get("/guide-options")
+def live_guide_options():
+    """Stable provider-independent contract used by tvOS.
+
+    A future HLS source can be plugged into this backend without requiring a
+    new Apple TV channel mapping or player update.
+    """
+    source_options = guide_options()["options"]
+    options = []
+    for entry in source_options:
+        options.append({
+            "guide_source": entry["guide_source"],
+            "guide_label": entry["guide_label"],
+            "action": "play-hls",
+            "playback_id": "tve-" + entry["channel_number"],
+            "label": entry["label"],
+            "is_live": entry["is_live"],
+            "timeshift": entry["timeshift"],
+        })
+    return {"options": options, "fallback": "philo"}
+
+
+@playback_router.get("/stream/{playback_id}")
+def live_stream(playback_id: str):
+    """Resolve a server-owned stream ID to its current HLS URL."""
+    if not re.fullmatch(r"tve-[0-9]{4}", playback_id):
+        raise HTTPException(404, "Unknown live stream")
+    number = playback_id[4:]
+    result = _resolve(number)
+    return {"stream_url": result["stream_url"], "type": "hls",
+            "is_live": True, "timeshift": False}
