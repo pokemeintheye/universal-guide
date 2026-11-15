@@ -822,3 +822,30 @@ Find pane, and Local/Plex filter buttons are removed from normal viewing.
 
 No changes to Tablo's DVR streaming mechanism or Plex's HLS playback/transcode
 mechanism are required by this redesign.
+
+## Channels DVR: HGTV live playback (channel 6104)
+
+Set `CHANNELS_DVR_URL=http://YOUR-CHANNELS-DVR-IP:8089` on the
+Universal Guide Unraid Docker container. The backend discovers channel
+6104 from the Channels DVR M3U export, using your existing Channels DVR
+authentication. It does not store Philo credentials.
+
+Verify the backend on your trusted LAN:
+
+```text
+http://YOUR-UNRAID-IP:8787/api/channels-dvr/test/hgtv
+```
+
+The endpoint returns the HGTV channel number, name, and HLS stream URL.
+In the Apple TV Universal Guide app, select a currently airing HGTV
+program under the existing Philo listings and choose **Watch HGTV Live**.
+That option uses Channels DVR instead of opening Philo; **Open in Philo**
+remains available as a fallback. The tvOS player currently supports
+live playback but not the Tablo disk-backed rewind/fast-forward buffer
+for this source.
+
+The backend and the Apple TV TestFlight app must both be updated to use
+this functionality. The standalone experimental staging container is
+not required after production validation. The endpoint is LAN-only by
+deployment policy; do not expose port 8787 or the returned stream URL
+to the public Internet.
