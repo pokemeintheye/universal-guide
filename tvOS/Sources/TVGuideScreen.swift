@@ -809,12 +809,14 @@ struct TVGuideScreen: View {
                             .foregroundStyle(.secondary)
                             .frame(width: stationWidth, alignment: .leading)
                             .padding(.leading, 13)
+                            .id("guide-horizontal-start")
                         ForEach(0..<16, id: \.self) { slot in
                             Text(anchor.addingTimeInterval(Double(slot * 1800))
                                 .formatted(date: .omitted, time: .shortened))
                                 .font(.system(size: isCompact ? 10 : 18, weight: .semibold))
                                 .foregroundStyle(isCompact ? Color(red: 0.83, green: 0.77, blue: 0.95) : Color.white.opacity(0.74))
                                 .frame(width: minutePixels * 30, alignment: .leading)
+                                .id("guide-time-slot-\(slot)")
                         }
                     }
                     .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
@@ -853,6 +855,9 @@ struct TVGuideScreen: View {
                                     (channelIndex.isMultiple(of: 2) ?
                                         tvGuideSurface : tvGuideSurface))
                         .id("row-\(channelIndex)")
+                        // Focus outlines sit outside the tile's inner bounds.
+                        // Draw the selected row on top of adjacent rows.
+                        .zIndex(channelIndex == selectedChannel ? 1 : 0)
                     }
                 }
                 .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
@@ -896,14 +901,40 @@ struct TVGuideScreen: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard !Task.isCancelled,
                   selectedChannel == channel, selectedProgram == program else { return }
-            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+            scrollToSelectedAiring(proxy, channel: channel, program: program)
         }
         #else
         DispatchQueue.main.async {
             guard selectedChannel == channel, selectedProgram == program else { return }
-            proxy.scrollTo("program-\(channel)-\(program)", anchor: .center)
+            scrollToSelectedAiring(proxy, channel: channel, program: program)
         }
         #endif
+    }
+
+    private func scrollToSelectedAiring(_ proxy: ScrollViewProxy,
+                                        channel: Int, program: Int) {
+        guard channels.indices.contains(channel),
+              channels[channel].programs.indices.contains(program) else { return }
+        let entries = channels[channel].programs
+        let selected = entries[program]
+        let start = selected.startDate ?? anchor
+        // Always return the full channel column and first tile when moving
+        // back to the earliest airing. Centering a long first tile prevented
+        // ScrollViewReader from ever reaching its true leftmost offset.
+        let firstVisible = entries.firstIndex {
+            ($0.endDate ?? .distantPast) > anchor
+        } ?? 0
+        if program <= firstVisible ||
+           start.timeIntervalSince(anchor) < 30 * 60 {
+            proxy.scrollTo("guide-horizontal-start", anchor: .leading)
+            return
+        }
+        // Target a fixed ruler slot rather than the tile's center. Program
+        // lengths vary widely (especially films), and recentering their
+        // midpoint can hide the selected border or jump over other tiles.
+        let minutes = max(0, start.timeIntervalSince(anchor) / 60)
+        let slot = min(15, max(0, Int(minutes / 30)))
+        proxy.scrollTo("guide-time-slot-\(slot)", anchor: .leading)
     }
 
     // Isolate the complex program label from the row's ForEach/geometry builder.
@@ -1058,15 +1089,16 @@ struct TVGuideScreen: View {
                                     in: RoundedRectangle(cornerRadius: isCompact ? 9 : 7))
                         .overlay(RoundedRectangle(cornerRadius: isCompact ? 9 : 7)
                             .stroke(selectedFocus == "program-\(index)-\(pi)" ?
-                                    (isCompact ? Color.white.opacity(0.9) : TVPalette.blue.opacity(0.58)) :
+                                    (isCompact ? Color.white.opacity(0.9) : TVPalette.blue) :
                                     Color.white.opacity(0.13),
                                     lineWidth: selectedFocus == "program-\(index)-\(pi)" ?
-                                        (isCompact ? 2.5 : 1.5) : 1))
+                                        (isCompact ? 2.5 : 3) : 1))
                         .shadow(color: .clear, radius: 0)
                     }
                     .frame(width: max(2,CGFloat(end-cellStart)*minutePixels-7),
                            height: rowHeight-(isCompact ? 6 : 14))
                     .padding(.trailing, 7)
+                    .zIndex(selectedFocus == "program-\(index)-\(pi)" ? 2 : 0)
                     .buttonStyle(TVFocusCard())
                     .accessibilityIdentifier("guide.program.\(index).\(pi)")
                     .focused($focus, equals: "program-\(index)-\(pi)")
@@ -1103,7 +1135,8 @@ struct TVGuideScreen: View {
             }
             #endif
         }
-        .clipped()
+        // The enclosing ScrollView handles horizontal clipping. Clipping
+        // each row itself cut off the top/bottom of tvOS focused Plex tiles.
     }
 
     private var detailBar: some View {
