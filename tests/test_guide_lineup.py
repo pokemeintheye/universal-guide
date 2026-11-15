@@ -48,7 +48,14 @@ class GuideLineupTests(unittest.TestCase):
             second=next(x for x in names if x.startswith("philo:"))
             # Reorder all and hide a Philo source.
             new=[second,vid]+[x for x in names if x not in (second,vid)]
-            saved=lineup.save_lineup(lineup.LineupUpdate(ids=new,enabled={second:False,vid:True}),Request())
+            # The save endpoint normally validates against the current live guide.
+            # Freeze that lookup to this test's fixture time so the test remains
+            # deterministic even after the dated EPG listings have expired.
+            live_guide=main.guide
+            with patch("app.main.guide", side_effect=lambda **kwargs:
+                       live_guide(**{**kwargs,"start":"2026-11-15T13:00:00+00:00"})):
+                saved=lineup.save_lineup(
+                    lineup.LineupUpdate(ids=new,enabled={second:False,vid:True}),Request())
             self.assertEqual(saved["saved"],len(new))
             visible=main.guide(hours=2,start="2026-11-15T13:00:00+00:00")["channels"]
             self.assertEqual(visible[0]["id"],vid)
