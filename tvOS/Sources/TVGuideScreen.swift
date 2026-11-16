@@ -104,7 +104,7 @@ struct TVGuideScreen: View {
     @State private var phoneGuideX: CGFloat = 0
     @GestureState private var phoneGuideDrag = CGSize.zero
     private var phoneGuideViewportWidth: CGFloat {
-        max(180, viewportWidth - railWidth - 23)
+        max(120, viewportWidth - railWidth - 32)
     }
     private var phoneGuideMaxX: CGFloat {
         max(0, stationWidth + CGFloat(durationMinutes) * minutePixels - phoneGuideViewportWidth)
@@ -216,9 +216,31 @@ struct TVGuideScreen: View {
             diagnosticStartupBody
         }
         #else
-        productionBody
+        // Measure the phone's actual window OUTSIDE the guide. Previously
+        // onGeometryChange watched the guide's own HStack, whose intrinsic
+        // multi-hour timeline width could expand the measurement and move
+        // the entire interface offscreen (black screen with no header).
+        GeometryReader { geometry in
+            productionBody
+                .frame(width: geometry.size.width,
+                       height: geometry.size.height, alignment: .topLeading)
+                .clipped()
+                .onAppear { updatePhoneViewport(geometry.size) }
+                .onChange(of: geometry.size) { _, size in
+                    updatePhoneViewport(size)
+                }
+        }
         #endif
     }
+
+    #if os(iOS)
+    private func updatePhoneViewport(_ size: CGSize) {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0 else { return }
+        if viewportWidth != size.width { viewportWidth = size.width }
+        if viewportHeight != size.height { viewportHeight = size.height }
+    }
+    #endif
 
     #if os(tvOS)
     #if os(tvOS)
@@ -544,23 +566,16 @@ struct TVGuideScreen: View {
                 // Without a ScrollView the wide EPG's ideal width can escape
                 // HStack and push the entire content column off screen.
                 // Explicitly reserve the usable column next to the sidebar.
-                .frame(width: max(180, viewportWidth - railWidth - 23),
+                .frame(width: max(120, viewportWidth - railWidth - 32),
                        alignment: .topLeading)
-                .layoutPriority(1)
                 #endif
             }
             .padding(.horizontal, isCompact ? 8 : 16)
             .padding(.vertical, isCompact ? 5 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             #if os(iOS)
-            // Read the actual viewport without a GeometryReader that can
-            // recursively invalidate the iPhone's first SwiftUI layout.
-            .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
-                guard size.width.isFinite, size.height.isFinite,
-                      size.width > 0, size.height > 0 else { return }
-                if viewportWidth != size.width { viewportWidth = size.width }
-                if viewportHeight != size.height { viewportHeight = size.height }
-            }
+            // The root GeometryReader owns phone viewport measurements;
+            // never derive screen size from this wide inner guide HStack.
             #else
             .background {
                 GeometryReader { geometry in
