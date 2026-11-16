@@ -5,10 +5,12 @@ on:
   pull_request:
     paths:
       - 'app/channel_management.py'
+      - 'app/virtual_rules.py'
       - 'app/channels_dvr.py'
       - 'app/main.py'
       - 'app/static/manage.html'
       - 'tests/test_channel_management.py'
+      - 'tests/test_smart_virtual_channels.py'
 permissions:
   contents: read
 jobs:
@@ -24,7 +26,7 @@ jobs:
       - name: Prepare appdata equivalent
         run: sudo install -d -m 0777 /data
       - name: Compile backend
-        run: python -m py_compile app/main.py app/channels_dvr.py app/channel_management.py
+        run: python -m py_compile app/main.py app/channels_dvr.py app/channel_management.py app/virtual_rules.py
       - name: Validate channel management browser JavaScript
         run: |
           python - <<'PY'

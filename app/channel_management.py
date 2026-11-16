@@ -40,6 +40,9 @@ def _db():
         FOREIGN KEY(channel_id) REFERENCES virtual_channels(id));
     CREATE TABLE IF NOT EXISTS virtual_rule_config(
         channel_id TEXT PRIMARY KEY, rules_json TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS virtual_exclusions(
+        channel_id TEXT NOT NULL, rating_key INTEGER NOT NULL,
+        PRIMARY KEY(channel_id,rating_key));
     """)
     return c
 
@@ -177,6 +180,9 @@ def virtual_definitions():
             item["items"] = [dict(x) for x in c.execute(
                 "SELECT rating_key,duration_minutes FROM virtual_items WHERE channel_id=? ORDER BY position",
                 (item["id"],))]
+            item["exclude_rating_keys"] = [x["rating_key"] for x in c.execute(
+                "SELECT rating_key FROM virtual_exclusions WHERE channel_id=? ORDER BY rating_key",
+                (item["id"],))]
             channels.append(item)
     return channels
 
@@ -192,6 +198,7 @@ class VirtualUpdate(BaseModel):
     mode: str = "manual"
     rules: SmartRules | None = None
     items: list[VirtualItem] = Field(default_factory=list, max_length=100)
+    exclude_rating_keys: list[int] = Field(default_factory=list, max_length=2000)
 
 
 def _validated_virtual(body):
@@ -203,9 +210,12 @@ def _validated_virtual(body):
         if body.rules is None:
             raise HTTPException(422,"Smart channel rules are required")
         validate_rules(body.rules)
-        return
-    if not body.items:
+    elif not body.items:
         raise HTTPException(422, "Choose at least one Plex movie or episode")
+    if any(key <= 0 for key in body.exclude_rating_keys):
+        raise HTTPException(422, "Invalid excluded Plex rating key")
+    if set(body.exclude_rating_keys).intersection(x.rating_key for x in body.items):
+        raise HTTPException(422, "The same Plex item cannot be both included and excluded")
     from app.main import db
     with db() as c:
         ids = {str(x["id"]) for x in c.execute("SELECT id FROM media")}
@@ -292,6 +302,8 @@ def create_virtual(body: VirtualUpdate, request: Request):
         if body.mode == "smart":
             c.execute("INSERT INTO virtual_rule_config VALUES (?,?)",
                       (channel_id,body.rules.model_dump_json()))
+        c.executemany("INSERT INTO virtual_exclusions VALUES (?,?)",
+                      [(channel_id,key) for key in set(body.exclude_rating_keys)])
         c.commit()
     return {"id": channel_id, "saved": True}
 
@@ -315,6 +327,9 @@ def update_virtual(channel_id: str, body: VirtualUpdate, request: Request):
         if body.mode == "smart":
             c.execute("INSERT INTO virtual_rule_config VALUES (?,?)",
                       (channel_id,body.rules.model_dump_json()))
+        c.execute("DELETE FROM virtual_exclusions WHERE channel_id=?", (channel_id,))
+        c.executemany("INSERT INTO virtual_exclusions VALUES (?,?)",
+                      [(channel_id,key) for key in set(body.exclude_rating_keys)])
         c.commit()
     return {"id": channel_id, "saved": True}
 
@@ -327,6 +342,7 @@ def delete_virtual(channel_id: str, request: Request):
     with _db() as c:
         c.execute("DELETE FROM virtual_items WHERE channel_id=?", (channel_id,))
         c.execute("DELETE FROM virtual_rule_config WHERE channel_id=?", (channel_id,))
+        c.execute("DELETE FROM virtual_exclusions WHERE channel_id=?", (channel_id,))
         c.execute("DELETE FROM virtual_channels WHERE id=?", (channel_id,))
         c.commit()
     return {"deleted": True}
@@ -392,6 +408,15 @@ def virtual_guide(window_start, window_end):
         if channel["mode"] == "smart":
             rule=SmartRules.model_validate(channel["rules"])
             playlist=build_cycle(list(catalog.values()),rule)
+            excluded=set(channel.get("exclude_rating_keys") or [])
+            playlist=[(item,minutes) for item,minutes in playlist
+                      if int(item["id"].rsplit(":",1)[-1]) not in excluded]
+            included={int(item["id"].rsplit(":",1)[-1]) for item,_ in playlist}
+            for override in channel["items"]:
+                key=override["rating_key"]
+                if key in catalog and key not in included:
+                    playlist.append((catalog[key],override["duration_minutes"]))
+                    included.add(key)
         else:
             playlist = [(catalog[x["rating_key"]], x["duration_minutes"])
                         for x in channel["items"] if x["rating_key"] in catalog]

@@ -3,6 +3,7 @@ import tempfile
 import json
 import xml.etree.ElementTree as ET
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -47,6 +48,33 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in vr.matching_items(items,movies)],["movie:200"])
         self.assertEqual(vr.duration_minutes(items[0],vr.SmartRules()),22)
 
+    def test_mixed_movies_and_selected_shows_match_independently(self):
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        # Previously the show filter rejected every movie, and a movie-only
+        # genre filter also excluded the requested TV episodes.
+        rules=vr.SmartRules(media_type="all",shows=["The Office"],
+                            genres=["Sci-Fi"],order="chronological")
+        matches=vr.matching_items(catalog,rules)
+        self.assertEqual({x["id"] for x in matches},
+                         {"episode:100","episode:101","movie:200"})
+        preview=vr.pool(catalog,rules)
+        self.assertEqual((preview["matching"],preview["movies"],preview["episodes"]),
+                         (3,1,2))
+        # Don't unintentionally include the entire movie library if only
+        # shows were selected.
+        show_only=vr.SmartRules(media_type="all",shows=["The Office"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,show_only)},
+                         {"episode:100","episode:101"})
+        # No shows selected preserves the original metadata behavior.
+        genre_only=vr.SmartRules(media_type="all",genres=["Sci-Fi"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,genre_only)},
+                         {"movie:200"})
+        # A deterministic mixed schedule actually includes both media types.
+        cycle=vr.build_cycle(catalog,rules)
+        self.assertEqual(len(cycle),3)
+        self.assertTrue(all(minutes>0 for _,minutes in cycle))
+
     def test_labels_and_tags_filter_independently_and_in_combination(self):
         with main.db() as c:
             c.execute("UPDATE media SET plex_labels=?, plex_tags=? WHERE id='episode:100'",
@@ -84,6 +112,18 @@ class SmartChannelTests(unittest.TestCase):
                          ["Broadcast Block","Halloween"])
         self.assertEqual(main.plex_item_labels(item),
                          {"family, favorite","kid safe"})
+
+    def test_label_detail_cache_retains_metadata_omitted_from_listing(self):
+        listing=ET.fromstring('<Video ratingKey="200" type="movie" title="Space Movie"/>')
+        detail=ET.fromstring('<MediaContainer><Video ratingKey="200" type="movie" title="Space Movie"><Label tag="Family Approved"/></Video></MediaContainer>')
+        cache={}
+        with (patch.object(main,"PLEX_ALLOWED_LABEL","Family Approved"),
+              patch.object(main,"PLEX_LABEL_MODE","allow"),
+              patch.object(main,"plex_xml",return_value=detail) as fetch):
+            self.assertTrue(main.plex_item_has_allowed_label(listing,cache))
+        fetch.assert_called_once_with("/library/metadata/200")
+        self.assertEqual(main.plex_metadata_tags(cache["200"],("Label",)),
+                         ["Family Approved"])
 
     def test_smart_rules_persist_and_drive_schedule(self):
         with main.db() as c:
@@ -130,6 +170,41 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual(cm.virtual_definitions()[0]["rules"]["media_type"],"movies")
         cm.delete_virtual(channel_id,Request())
         self.assertEqual(cm.virtual_definitions(),[])
+
+    def test_smart_channel_manual_includes_and_excludes_survive_reopen(self):
+        rule=vr.SmartRules(media_type="episodes",shows=["The Office"],
+                           order="chronological")
+        body=cm.VirtualUpdate(
+            name="Mixed overrides",mode="smart",rules=rule,
+            items=[cm.VirtualItem(rating_key=200,duration_minutes=115)],
+            exclude_rating_keys=[101])
+        created=cm.create_virtual(body,Request())
+        channel_id=created["id"]
+        saved=cm.virtual_definitions()[0]
+        self.assertEqual(saved["exclude_rating_keys"],[101])
+        self.assertEqual(saved["items"][0]["rating_key"],200)
+        start=datetime(2026,11,15,13,tzinfo=timezone.utc)
+        guide=cm.virtual_guide(start,start+timedelta(hours=8))
+        ids={p["plex"]["rating_key"] for p in guide[0]["programs"]}
+        self.assertEqual(ids,{"100","200"})
+        # Updating the same channel preserves the underlying channel ID,
+        # but overrides change dynamically at the next guide refresh.
+        cm.update_virtual(channel_id,cm.VirtualUpdate(
+            name="Mixed overrides",mode="smart",rules=rule,
+            items=[cm.VirtualItem(rating_key=201,duration_minutes=100)],
+            exclude_rating_keys=[100]),Request())
+        again=cm.virtual_guide(start,start+timedelta(hours=8))
+        self.assertEqual({p["plex"]["rating_key"] for p in again[0]["programs"]},
+                         {"101","201"})
+        cm.delete_virtual(channel_id,Request())
+        self.assertEqual(cm.virtual_definitions(),[])
+
+    def test_manual_include_cannot_also_be_excluded(self):
+        with self.assertRaises(HTTPException):
+            cm.create_virtual(cm.VirtualUpdate(name="Conflicting",
+                mode="smart",rules=vr.SmartRules(),
+                items=[cm.VirtualItem(rating_key=200,duration_minutes=120)],
+                exclude_rating_keys=[200]),Request())
 
     def test_existing_manual_playlist_remains_supported(self):
         body=cm.VirtualUpdate(name="Manual",items=[cm.VirtualItem(rating_key=200,duration_minutes=90)])
