@@ -84,6 +84,50 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual(item["labels"],["family"])
         self.assertEqual(item["tags"],["comedy night"])
 
+    def test_exclusive_genre_set_allows_drama_and_romance_only(self):
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,year,genres) VALUES (?,?,?,?,?)",
+                [("movie:301","movie","Drama",2020,"Drama"),
+                 ("movie:302","movie","Romance",2021,"Romance"),
+                 ("movie:303","movie","Both",2022,"Drama,Romance"),
+                 ("movie:304","movie","Action Drama",2023,"Drama,Action"),
+                 ("movie:305","movie","Action",2024,"Action"),
+                 ("movie:306","movie","No genres",2025,"")])
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        expression={"field":"genre","operator":"is_only","value":["Drama","Romance"]}
+        matches={x["id"] for x in vr.matching_items(
+            catalog,vr.SmartRules(media_type="movies",logic=expression))}
+        self.assertEqual(matches,{"movie:301","movie:302","movie:303"})
+        inverse={"field":"genre","operator":"is_only_not","value":["Drama","Romance"]}
+        opposite={x["id"] for x in vr.matching_items(
+            catalog,vr.SmartRules(media_type="movies",logic=inverse))}
+        self.assertIn("movie:304",opposite)
+        self.assertIn("movie:305",opposite)
+        self.assertNotIn("movie:301",opposite)
+        self.assertNotIn("movie:302",opposite)
+        self.assertNotIn("movie:303",opposite)
+        self.assertNotIn("movie:306",opposite)
+        self.assertNotIn("movie:306",matches)
+        # Exact comparison is case insensitive and permits a single choice.
+        single={"field":"genre","operator":"is_only","value":["drama"]}
+        self.assertIn("movie:301",{x["id"] for x in vr.matching_items(
+            catalog,vr.SmartRules(media_type="movies",logic=single))})
+
+    def test_exclusive_operators_restricted_to_genre_and_nonempty_set(self):
+        invalid=[
+            {"field":"genre","operator":"is_only","value":[]},
+            {"field":"genre","operator":"is_only","value":"Drama"},
+            {"field":"genre","operator":"is_only_not","value":[]},
+            {"field":"genre","operator":"is_only","value":[""]},
+            {"field":"year","operator":"is_only","value":2020},
+            {"field":"label","operator":"is_only","value":["Family"]},
+            {"field":"genre","operator":"is_only","value":["Drama"]*31},
+        ]
+        for expression in invalid:
+            with self.subTest(expression=expression),self.assertRaises(HTTPException):
+                vr.validate_rules(vr.SmartRules(media_type="movies",logic=expression))
+
     def test_nested_boolean_logic_and_exception_collection(self):
         with main.db() as c:
             c.execute("UPDATE media SET genres=?,plex_tags=? WHERE id='movie:200'",

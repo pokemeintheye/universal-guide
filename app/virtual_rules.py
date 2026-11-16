@@ -56,7 +56,7 @@ def _metadata_values(raw):
 
 
 LOGIC_FIELDS = {"genre", "year", "label", "tag", "show", "kind"}
-LOGIC_OPERATORS = {"is", "is_not", "gte", "lte"}
+LOGIC_OPERATORS = {"is", "is_not", "is_only", "is_only_not", "gte", "lte"}
 LOGIC_GROUPS = {"all", "any", "none"}
 
 def validate_logic(node):
@@ -81,8 +81,15 @@ def validate_logic(node):
             if field not in LOGIC_FIELDS or op not in LOGIC_OPERATORS:
                 raise HTTPException(422, "Invalid metadata field or operator")
             if field == "year":
-                if type(value) is not int or not 1880 <= value <= 2200:
+                if op not in ("is", "is_not", "gte", "lte") or type(value) is not int or not 1880 <= value <= 2200:
                     raise HTTPException(422, "Year must be a valid numeric year")
+            elif field == "genre" and op in ("is_only", "is_only_not"):
+                # The allowed genres form one set, e.g. [Drama, Romance].
+                # A single choice cannot express Drama OR Romance exclusively.
+                if (not isinstance(value, list) or not 1 <= len(value) <= 30
+                    or any(not isinstance(v, str) or not v.strip() or len(v) > 100
+                           or any(ord(c) < 32 for c in v) for v in value)):
+                    raise HTTPException(422, "Choose one or more allowed genres for IS ONLY")
             else:
                 if op not in ("is", "is_not") or not isinstance(value, str) or not value.strip() or len(value) > 100 or any(ord(c)<32 for c in value):
                     raise HTTPException(422, "Invalid metadata comparison")
@@ -109,6 +116,14 @@ def matches_logic(item, expr):
                 "gte": year >= wanted, "lte": year <= wanted}[op]
     if field == "genre":
         values = {_normalize(x) for x in (item.get("genres") or "").split(",") if x.strip()}
+        if op in ("is_only", "is_only_not"):
+            allowed = {_normalize(x) for x in wanted}
+            exclusive = bool(values) and values.issubset(allowed)
+            # IS ONLY NOT is the inverse: any additional/unallowed genre
+            # means it matches; no genre metadata never matches either.
+            if not values:
+                return False
+            return exclusive if op == "is_only" else not exclusive
     elif field == "label":
         values = _metadata_values(item.get("plex_labels"))
     elif field == "tag":
