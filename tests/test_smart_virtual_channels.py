@@ -47,6 +47,33 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in vr.matching_items(items,movies)],["movie:200"])
         self.assertEqual(vr.duration_minutes(items[0],vr.SmartRules()),22)
 
+    def test_mixed_movies_and_selected_shows_match_independently(self):
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        # Previously the show filter rejected every movie, and a movie-only
+        # genre filter also excluded the requested TV episodes.
+        rules=vr.SmartRules(media_type="all",shows=["The Office"],
+                            genres=["Sci-Fi"],order="chronological")
+        matches=vr.matching_items(catalog,rules)
+        self.assertEqual({x["id"] for x in matches},
+                         {"episode:100","episode:101","movie:200"})
+        preview=vr.pool(catalog,rules)
+        self.assertEqual((preview["matching"],preview["movies"],preview["episodes"]),
+                         (3,1,2))
+        # Don't unintentionally include the entire movie library if only
+        # shows were selected.
+        show_only=vr.SmartRules(media_type="all",shows=["The Office"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,show_only)},
+                         {"episode:100","episode:101"})
+        # No shows selected preserves the original metadata behavior.
+        genre_only=vr.SmartRules(media_type="all",genres=["Sci-Fi"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,genre_only)},
+                         {"movie:200"})
+        # A deterministic mixed schedule actually includes both media types.
+        cycle=vr.build_cycle(catalog,rules)
+        self.assertEqual(len(cycle),3)
+        self.assertTrue(all(minutes>0 for _,minutes in cycle))
+
     def test_labels_and_tags_filter_independently_and_in_combination(self):
         with main.db() as c:
             c.execute("UPDATE media SET plex_labels=?, plex_tags=? WHERE id='episode:100'",
