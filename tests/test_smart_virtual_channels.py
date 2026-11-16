@@ -3,6 +3,7 @@ import tempfile
 import json
 import xml.etree.ElementTree as ET
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -111,6 +112,18 @@ class SmartChannelTests(unittest.TestCase):
                          ["Broadcast Block","Halloween"])
         self.assertEqual(main.plex_item_labels(item),
                          {"family, favorite","kid safe"})
+
+    def test_label_detail_cache_retains_metadata_omitted_from_listing(self):
+        listing=ET.fromstring('<Video ratingKey="200" type="movie" title="Space Movie"/>')
+        detail=ET.fromstring('<MediaContainer><Video ratingKey="200" type="movie" title="Space Movie"><Label tag="Family Approved"/></Video></MediaContainer>')
+        cache={}
+        with patch.object(main,"PLEX_ALLOWED_LABEL","Family Approved"), \\
+             patch.object(main,"PLEX_LABEL_MODE","allow"), \\
+             patch.object(main,"plex_xml",return_value=detail) as fetch:
+            self.assertTrue(main.plex_item_has_allowed_label(listing,cache))
+        fetch.assert_called_once_with("/library/metadata/200")
+        self.assertEqual(main.plex_metadata_tags(cache["200"],("Label",)),
+                         ["Family Approved"])
 
     def test_smart_rules_persist_and_drive_schedule(self):
         with main.db() as c:
