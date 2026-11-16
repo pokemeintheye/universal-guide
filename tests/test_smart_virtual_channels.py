@@ -158,6 +158,41 @@ class SmartChannelTests(unittest.TestCase):
         cm.delete_virtual(channel_id,Request())
         self.assertEqual(cm.virtual_definitions(),[])
 
+    def test_smart_channel_manual_includes_and_excludes_survive_reopen(self):
+        rule=vr.SmartRules(media_type="episodes",shows=["The Office"],
+                           order="chronological")
+        body=cm.VirtualUpdate(
+            name="Mixed overrides",mode="smart",rules=rule,
+            items=[cm.VirtualItem(rating_key=200,duration_minutes=115)],
+            exclude_rating_keys=[101])
+        created=cm.create_virtual(body,Request())
+        channel_id=created["id"]
+        saved=cm.virtual_definitions()[0]
+        self.assertEqual(saved["exclude_rating_keys"],[101])
+        self.assertEqual(saved["items"][0]["rating_key"],200)
+        start=datetime(2026,11,15,13,tzinfo=timezone.utc)
+        guide=cm.virtual_guide(start,start+timedelta(hours=8))
+        ids={p["plex"]["rating_key"] for p in guide[0]["programs"]}
+        self.assertEqual(ids,{"100","200"})
+        # Updating the same channel preserves the underlying channel ID,
+        # but overrides change dynamically at the next guide refresh.
+        cm.update_virtual(channel_id,cm.VirtualUpdate(
+            name="Mixed overrides",mode="smart",rules=rule,
+            items=[cm.VirtualItem(rating_key=201,duration_minutes=100)],
+            exclude_rating_keys=[100]),Request())
+        again=cm.virtual_guide(start,start+timedelta(hours=8))
+        self.assertEqual({p["plex"]["rating_key"] for p in again[0]["programs"]},
+                         {"101","201"})
+        cm.delete_virtual(channel_id,Request())
+        self.assertEqual(cm.virtual_definitions(),[])
+
+    def test_manual_include_cannot_also_be_excluded(self):
+        with self.assertRaises(HTTPException):
+            cm.create_virtual(cm.VirtualUpdate(name="Conflicting",
+                mode="smart",rules=vr.SmartRules(),
+                items=[cm.VirtualItem(rating_key=200,duration_minutes=120)],
+                exclude_rating_keys=[200]),Request())
+
     def test_existing_manual_playlist_remains_supported(self):
         body=cm.VirtualUpdate(name="Manual",items=[cm.VirtualItem(rating_key=200,duration_minutes=90)])
         cm.create_virtual(body,Request())
