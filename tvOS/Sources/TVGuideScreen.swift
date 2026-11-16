@@ -879,13 +879,26 @@ struct TVGuideScreen: View {
     // was throwing from CALayer.setBounds during initial iPhone layout.
     // tvOS retains its original horizontal-only focus behavior.
     private var timelineGrid: some View {
-    #if os(iOS)
-    // A LazyVStack outside a ScrollView does not have a scroll viewport to
-    // inform materialization. We only create six rows, so render them eagerly.
-    let rows = VStack(alignment: .leading, spacing: 0) {
-    #else
-    let rows = LazyVStack(alignment: .leading, spacing: 0) {
-    #endif
+        Group {
+            #if os(iOS)
+            // Only six iPhone rows are visible; eager layout is stable without
+            // an enclosing UIScrollView.
+            VStack(alignment: .leading, spacing: 0) {
+                timelineGridRows
+            }
+            #else
+            // Preserve the original lazy row creation on Apple TV.
+            LazyVStack(alignment: .leading, spacing: 0) {
+                timelineGridRows
+            }
+            #endif
+        }
+        .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
+               alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var timelineGridRows: some View {
         // The ruler never moves vertically, and only one axis
         // (time) scrolls. Channel navigation shifts the visible
         // six-row window instead of scheduling scroll animations.
@@ -948,10 +961,6 @@ struct TVGuideScreen: View {
             // Draw the selected row on top of adjacent rows.
             .zIndex(channelIndex == selectedChannel ? 1 : 0)
         }
-    }
-    return rows
-        .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
-               alignment: .leading)
     }
 
     private var timeline: some View {
