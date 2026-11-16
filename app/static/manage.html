@@ -92,6 +92,7 @@ let token='',stations=[],virtuals=[],editingId=null,playlist=[],excluded=[],sear
 const plexTitleCache=new Map();
 let guideLineup=[],lineupDirty=false;
 let metadataFilters={genres:[],shows:[],labels:[],tags:[]};
+let logicEnabled=true,logicTree=null;
 function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
 function err(e){message(e.message||String(e),true)}
@@ -139,13 +140,70 @@ $('useSmartRules').onchange=smartMode;
 function getSelections(id){return Array.from($(id).selectedOptions,x=>x.value)}
 function setSelections(id,values){for(const opt of $(id).options)opt.selected=(values||[]).includes(opt.value)}
 function fillSelect(id,items){const el=$(id);el.replaceChildren();for(const value of items){const option=document.createElement('option');option.value=value;option.textContent=value;el.append(option)}}
-async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[]);if(!(data.labels||[]).length)$('smartPreview').textContent='No Plex Labels are indexed yet. Refresh your Plex library in Universal Guide after installing the updated Docker image, then reopen this editor.'}catch(e){err(e)}}
-function readSmartRules(){return {media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
+async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[]);renderLogicBuilder();if(!(data.labels||[]).length)$('smartPreview').textContent='No Plex Labels are indexed yet. Refresh your Plex library in Universal Guide after installing the updated Docker image, then reopen this editor.'}catch(e){err(e)}}
+function readSmartRules(){return {logic:logicEnabled?logicTree:null,media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
 function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartLabels',r.labels||[]);setSelections('smartTags',r.tags||[]);setSelections('smartShows',r.shows||[])}
+
+const ruleFields=[['genre','Genre'],['year','Year'],['label','Plex Label'],['tag','Tag / Collection'],['show','TV show title'],['kind','Media type']];
+function ruleCondition(field='genre',value=''){return {field,operator:'is',value}}
+function ruleGroup(group='all',children=[ruleCondition()]){return {group,children}}
+function selectControl(items,selected,onChange){const el=document.createElement('select');for(const [value,label] of items){const o=document.createElement('option');o.value=value;o.textContent=label;el.append(o)}if(!items.some(x=>x[0]===String(selected))){const o=document.createElement('option');o.value=selected;o.textContent=selected;el.append(o)}el.value=selected;el.onchange=()=>onChange(el.value);return el}
+function actionButton(label,callback){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.onclick=callback;return btn}
+function choiceValues(field){if(field==='genre')return metadataFilters.genres||[];if(field==='label')return metadataFilters.labels||[];if(field==='tag')return metadataFilters.tags||[];if(field==='show')return metadataFilters.shows||[];if(field==='kind')return ['movie','episode'];return []}
+function renderLogicNode(node,parent,index,depth){
+  if('group' in node){
+    const section=document.createElement('div');section.className='logic-group';
+    const toolbar=document.createElement('div');toolbar.className='logic-group-controls';
+    toolbar.append(selectControl([['all','Match ALL (AND)'],['any','Match ANY (OR)'],['none','Match NONE (NOT)']],node.group,v=>{node.group=v;renderLogicBuilder()}));
+    toolbar.append(actionButton('+ Condition',()=>{node.children.push(ruleCondition());renderLogicBuilder()}));
+    if(depth<4)toolbar.append(actionButton('+ Nested group',()=>{node.children.push(ruleGroup());renderLogicBuilder()}));
+    if(parent)toolbar.append(actionButton('Remove group',()=>{parent.children.splice(index,1);renderLogicBuilder()}));
+    section.append(toolbar);
+    const children=document.createElement('div');children.className='logic-children';
+    node.children.forEach((child,i)=>children.append(renderLogicNode(child,node,i,depth+1)));
+    section.append(children);return section;
+  }
+  const row=document.createElement('div');row.className='logic-condition';
+  row.append(selectControl(ruleFields,node.field,v=>{node.field=v;node.operator='is';node.value=v==='year'?2020:'';renderLogicBuilder()}));
+  const ops=node.field==='year'?[['is','Is'],['is_not','Is not'],['gte','At least'],['lte','At most']]:[['is','Is'],['is_not','Is not']];
+  row.append(selectControl(ops,node.operator,v=>{node.operator=v}));
+  if(node.field==='year'){
+    const year=document.createElement('input');year.type='number';year.min='1880';year.max='2200';year.value=node.value||2020;year.onchange=()=>{node.value=Number(year.value)};row.append(year);
+  }else{
+    const vals=choiceValues(node.field).map(x=>[x,x==='movie'?'Movie':x==='episode'?'TV episode':x]);
+    const options=[['','Select a value'],...vals];
+    const picker=selectControl(options,node.value,v=>{node.value=v});row.append(picker);
+  }
+  row.append(actionButton('Remove',()=>{parent.children.splice(index,1);renderLogicBuilder()}));
+  return row;
+}
+function renderLogicBuilder(){
+  $('logicBuilder').hidden=!logicEnabled;
+  $('legacyFilters').hidden=logicEnabled;
+  $('switchToLogic').hidden=logicEnabled;
+  $('logicStatus').textContent=logicEnabled?'Nested logical rules (AND / OR / NOT)':'This channel uses earlier filters; convert when ready.';
+  const root=$('logicRoot');root.replaceChildren();if(logicTree&&logicEnabled)root.append(renderLogicNode(logicTree,null,0,0));
+}
+function legacyToLogic(r){
+  const condition=(field,value)=>ruleCondition(field,value);
+  const any=(field,values)=>values.length?ruleGroup('any',values.map(v=>condition(field,v))):null;
+  const metas=[any('genre',r.genres||[]),any('label',r.labels||[]),any('tag',r.tags||[])].filter(Boolean);
+  const shows=any('show',r.shows||[]);
+  let conditions=[];
+  if(r.media_type==='all'&&shows){
+    const movieBranch=metas.length?ruleGroup('all',[condition('kind','movie'),...metas]):null;
+    conditions.push(movieBranch?ruleGroup('any',[shows,movieBranch]):shows);
+  }else{conditions.push(...metas);if(shows)conditions.push(shows)}
+  if(r.year_min!=null)conditions.push({field:'year',operator:'gte',value:r.year_min});
+  if(r.year_max!=null)conditions.push({field:'year',operator:'lte',value:r.year_max});
+  if(!conditions.length)conditions=[ruleGroup('any',[condition('kind','movie'),condition('kind','episode')])];
+  return ruleGroup('all',conditions);
+}
+$('switchToLogic').onclick=()=>{logicTree=legacyToLogic(readSmartRules());logicEnabled=true;renderLogicBuilder();message('Converted current filters into editable rule groups. Review before saving.')};
 function plexItemName(item){return (item.show_title?item.show_title+' — ':'')+item.title}
 async function resolveSavedPlexTitles(){const keys=[...new Set([...playlist.map(x=>x.rating_key),...excluded])].filter(x=>!plexTitleCache.has(x));for(let i=0;i<keys.length;i+=300){const page=keys.slice(i,i+300);try{const data=await api('/api/manage/plex-items/resolve?ids='+encodeURIComponent(page.join(',')));for(const item of data.items||[])plexTitleCache.set(item.rating_key,plexItemName(item))}catch(e){message('Could not load some saved Plex titles: '+e.message,true)}}for(const p of playlist){const name=plexTitleCache.get(p.rating_key);if(name)p.title=name}renderPlaylist()}
 $('previewSmart').onclick=async()=>{try{const data=await api('/api/manage/virtual/preview',{method:'POST',body:JSON.stringify(readSmartRules())});$('smartPreview').textContent=data.matching+' matching titles ('+data.movies+' movies, '+data.episodes+' episodes). Sample: '+data.sample.map(x=>(x.show?x.show+' — ':'')+x.title).join('; ');message('Smart channel pool preview updated')}catch(e){err(e)}};
-async function openVirtual(v){editingId=v?.id||null;playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
+async function openVirtual(v){editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?structuredClone(v.rules.logic):ruleGroup();playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
 $('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};
 async function lookupPlex(){const q=$('plexSearch').value.trim();if(q.length<2){message('Enter at least two letters to search Plex');return}try{const d=await api('/api/manage/plex-items?q='+encodeURIComponent(q));searchHits=d.items||[];for(const item of searchHits)plexTitleCache.set(item.rating_key,plexItemName(item));const root=$('plexresults');root.replaceChildren();if(!searchHits.length)root.textContent='No matching synced Plex content';for(const item of searchHits){const row=document.createElement('div');row.className='mediaitem';row.innerHTML='<div><strong>'+safe(item.show_title?item.show_title+' — '+item.title:item.title)+'</strong><div class="hint">'+safe(item.kind)+(item.season!=null?' S'+item.season+' E'+item.episode:'')+'</div></div><div class="row"><button class="add">Include</button><button class="exclude warn">Exclude</button></div>';row.querySelector('.add').onclick=()=>{excluded=excluded.filter(x=>x!==item.rating_key);if(!playlist.some(x=>x.rating_key===item.rating_key))playlist.push({rating_key:item.rating_key,duration_minutes:item.kind==='movie'?120:30,title:item.show_title?item.show_title+' — '+item.title:item.title});renderPlaylist()};row.querySelector('.exclude').onclick=()=>{playlist=playlist.filter(x=>x.rating_key!==item.rating_key);if(!excluded.includes(item.rating_key))excluded.push(item.rating_key);renderPlaylist()};root.append(row)}message(searchHits.length+' Plex items found')}catch(e){err(e)}}
 $('plexLookup').onclick=lookupPlex;$('plexSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();lookupPlex()}};
