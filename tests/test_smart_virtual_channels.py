@@ -48,6 +48,70 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in vr.matching_items(items,movies)],["movie:200"])
         self.assertEqual(vr.duration_minutes(items[0],vr.SmartRules()),22)
 
+    def test_nested_boolean_logic_and_exception_collection(self):
+        with main.db() as c:
+            c.execute("UPDATE media SET genres=?,plex_tags=? WHERE id='movie:200'",
+                      ("Comedy,Action",'["Favorites"]'))
+            c.execute("UPDATE media SET genres=?,plex_tags=? WHERE id='movie:201'",
+                      ("Comedy,Action",'["No"]'))
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        # (Comedy AND NOT Action) OR in Favorites collection
+        root={"group":"any","children":[
+            {"group":"all","children":[
+                {"field":"genre","operator":"is","value":"Comedy"},
+                {"field":"genre","operator":"is_not","value":"Action"}]},
+            {"field":"tag","operator":"is","value":"Favorites"}]}
+        rule=vr.SmartRules(media_type="movies",logic=root,order="chronological")
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,rule)},
+                         {"movie:200"})
+        # (Comedy OR Romance) AND NOT (Horror OR Action)
+        root2={"group":"all","children":[
+            {"group":"any","children":[
+                {"field":"genre","operator":"is","value":"Comedy"},
+                {"field":"genre","operator":"is","value":"Romance"}]},
+            {"group":"none","children":[
+                {"field":"genre","operator":"is","value":"Horror"},
+                {"field":"genre","operator":"is","value":"Action"}]}]}
+        rule2=vr.SmartRules(media_type="all",logic=root2)
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,rule2)},
+                         {"episode:100","episode:101","episode:102"})
+
+    def test_boolean_logic_year_show_and_media_type(self):
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        r=vr.SmartRules(media_type="all",logic={"group":"all","children":[
+            {"field":"kind","operator":"is","value":"episode"},
+            {"field":"show","operator":"is","value":"The Office"},
+            {"field":"year","operator":"gte","value":2000},
+            {"field":"year","operator":"lte","value":2020}]})
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,r)},
+                         {"episode:100","episode:101"})
+        self.assertEqual(vr.pool(catalog,r)["matching"],2)
+
+    def test_bad_logic_expressions_rejected(self):
+        predicate={"field":"genre","operator":"is","value":"Comedy"}
+        for logic in [
+            {"group":"all","children":[]},
+            {"group":"xor","children":[predicate]},
+            {"group":"all","children":[{"field":"genre","operator":"bad","value":"Comedy"}]},
+            {"field":"genre","operator":"is","value":""},
+            {"field":"year","operator":"gte","value":"2020"},
+            {"field":"kind","operator":"is","value":"invalid"},
+            {"group":"all","children":[{"group":"all","children":[
+              {"group":"all","children":[{"group":"all","children":[
+                {"group":"all","children":[{"group":"all","children":[predicate]}]}]}]}]}]}
+        ]:
+            with self.assertRaises(HTTPException):
+                vr.validate_rules(vr.SmartRules(media_type="all",logic=logic))
+
+    def test_legacy_filters_still_work_without_logic(self):
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        r=vr.SmartRules(media_type="episodes",shows=["The Office"],genres=["Comedy"])
+        self.assertEqual({x["id"] for x in vr.matching_items(catalog,r)},
+                         {"episode:100","episode:101"})
+        self.assertIsNone(r.logic)
+
     def test_mixed_movies_and_selected_shows_match_independently(self):
         with main.db() as c:
             catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
