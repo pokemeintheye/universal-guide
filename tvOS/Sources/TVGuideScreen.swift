@@ -540,6 +540,14 @@ struct TVGuideScreen: View {
                         }
                     }
                 }
+                #if os(iOS)
+                // Without a ScrollView the wide EPG's ideal width can escape
+                // HStack and push the entire content column off screen.
+                // Explicitly reserve the usable column next to the sidebar.
+                .frame(width: max(180, viewportWidth - railWidth - 23),
+                       alignment: .topLeading)
+                .layoutPriority(1)
+                #endif
             }
             .padding(.horizontal, isCompact ? 8 : 16)
             .padding(.vertical, isCompact ? 5 : 10)
@@ -871,7 +879,13 @@ struct TVGuideScreen: View {
     // was throwing from CALayer.setBounds during initial iPhone layout.
     // tvOS retains its original horizontal-only focus behavior.
     private var timelineGrid: some View {
-    LazyVStack(alignment: .leading, spacing: 0) {
+    #if os(iOS)
+    // A LazyVStack outside a ScrollView does not have a scroll viewport to
+    // inform materialization. We only create six rows, so render them eagerly.
+    let rows = VStack(alignment: .leading, spacing: 0) {
+    #else
+    let rows = LazyVStack(alignment: .leading, spacing: 0) {
+    #endif
         // The ruler never moves vertically, and only one axis
         // (time) scrolls. Channel navigation shifts the visible
         // six-row window instead of scheduling scroll animations.
@@ -935,8 +949,9 @@ struct TVGuideScreen: View {
             .zIndex(channelIndex == selectedChannel ? 1 : 0)
         }
     }
-    .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
-           alignment: .leading)
+    return rows
+        .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
+               alignment: .leading)
     }
 
     private var timeline: some View {
