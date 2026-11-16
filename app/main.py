@@ -126,7 +126,7 @@ def plex_xml(path,params=None):
 def pages(path):
     start=0
     while True:
-        root=plex_xml(path,{"X-Plex-Container-Start":start,"X-Plex-Container-Size":250,"includeGuids":1})
+        root=plex_xml(path,{"X-Plex-Container-Start":start,"X-Plex-Container-Size":250,"includeGuids":1,"includeOptionalElements":"Label,Collection,Tag"})
         items=[n for n in root if n.tag in ("Directory","Video")]
         yield from items
         total=int(root.get("totalSize",root.get("size",len(items))))
@@ -151,7 +151,7 @@ def plex_metadata_tags(node, element):
                   key=str.casefold)
 
 
-def plex_item_has_allowed_label(node):
+def plex_item_has_allowed_label(node, detail_cache=None):
     """Apply Plex-style allow/exclude rules to full movie or show metadata.
 
     A listing may omit labels, so absence in the listing is not proof of
@@ -170,6 +170,8 @@ def plex_item_has_allowed_label(node):
     detail=plex_xml("/library/metadata/"+key)
     for item in detail:
         if item.tag in ("Directory","Video") and item.get("ratingKey")==key:
+            if detail_cache is not None:
+                detail_cache[key]=item
             labeled=wanted in plex_item_labels(item)
             return labeled if PLEX_LABEL_MODE=="allow" else not labeled
     # Unknown metadata is never considered safe to index under either mode.
@@ -182,18 +184,24 @@ def sync_plex():
     try:
         rows=[]
         libraries=0
+        detail_cache={}
         for sec in plex_xml("/library/sections").findall("Directory"):
             kind=sec.get("type")
             if kind not in ("movie","show"):continue
             libraries+=1
             for obj in pages("/library/sections/"+sec.get("key")+"/all"):
                 if kind=="movie" and obj.get("type")=="movie":
-                    if not plex_item_has_allowed_label(obj):continue
+                    if not plex_item_has_allowed_label(obj,detail_cache):continue
+                    # Plex listing summaries can omit Labels. The allow-list
+                    # verification already fetched full metadata: use that
+                    # richer response when recording labels in our catalog.
+                    obj=detail_cache.get(obj.get("ratingKey"),obj)
                     title=obj.get("title","")
                     rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(obj.get("duration","0") or 0),json.dumps(plex_metadata_tags(obj,("Label",))),json.dumps(plex_metadata_tags(obj,("Collection","Tag")))))
                 elif kind=="show" and obj.get("type")=="show" and obj.get("ratingKey"):
                     # A show-level label includes its episodes in the guide.
-                    if not plex_item_has_allowed_label(obj):continue
+                    if not plex_item_has_allowed_label(obj,detail_cache):continue
+                    obj=detail_cache.get(obj.get("ratingKey"),obj)
                     show=obj.get("title","")
                     for ep in pages("/library/metadata/"+obj.get("ratingKey")+"/allLeaves"):
                         if ep.get("type")!="episode":continue
