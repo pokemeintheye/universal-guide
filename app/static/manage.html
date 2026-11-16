@@ -22,6 +22,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 #plexresults,#playlist{max-height:330px;overflow:auto;border:1px solid #3c495d;border-radius:10px}
 .mediaitem{padding:9px 12px;border-bottom:1px solid #344155;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .mediaitem:last-child{border:0}.playlistitem{display:grid;grid-template-columns:minmax(130px,1fr) 100px auto;gap:10px;align-items:center}
+.logic-group{border:1px solid #46576b;border-radius:10px;padding:12px;margin:10px 0 10px 12px;background:#182332}.logic-children{margin:8px 0 8px 6px;border-left:2px solid #456584;padding-left:10px}.logic-condition{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:9px;border-radius:8px;background:#243244}.logic-condition select,.logic-condition input{max-width:220px}.logic-group-controls{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.logic-group-controls select{font-weight:600}
 .virtualcard{padding:12px;background:#222d3b;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:8px}
 #virtualEditor[hidden],#channelPanel[hidden],#virtualPanel[hidden],#lineupPanel[hidden]{display:none!important}
 #lineupList{display:grid;gap:6px;max-height:75vh;overflow:auto}
@@ -57,6 +58,12 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>Order <select id="smartOrder"><option value="shuffle">Stable shuffle</option><option value="chronological">Show / season / episode</option><option value="newest">Newest release first</option></select></label>
     <label>Shuffle seed <input type="number" id="smartSeed" min="0" max="1000000" value="0"></label>
   </div>
+  <div class="row" style="margin:12px 0"><button id="switchToLogic" type="button">Switch to logic builder</button><span class="hint" id="logicStatus"></span></div>
+  <div id="logicBuilder" hidden>
+    <p class="hint">Combine conditions with AND, OR, and NOT groups. Nest groups to express exceptions, for example: (Comedy OR Romance) AND NOT (Horror OR Action), unless the movie is in a chosen collection. Missing metadata will not match positive conditions. Every movie and episode is evaluated against the same expression.</p>
+    <div id="logicRoot"></div>
+  </div>
+  <div id="legacyFilters">
   <div class="row" style="margin:10px 0">
     <label>Genres <select id="smartGenres" multiple size="7" style="min-width:210px"></select></label>
     <label>Plex Labels <select id="smartLabels" multiple size="7" style="min-width:210px"></select></label>
@@ -65,11 +72,25 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>Year from <input id="smartYearMin" type="number" min="1880" max="2200" placeholder="Any"></label>
     <label>Year through <input id="smartYearMax" type="number" min="1880" max="2200" placeholder="Any"></label>
   </div>
+  </div>
   <div class="row"><label>Default episode length <input id="smartEpisodeMinutes" type="number" value="30" min="1" max="360">min</label>
   <label>Default movie length <input id="smartMovieMinutes" type="number" value="120" min="1" max="360">min</label></div>
   <p class="hint">Actual Plex runtime is used when available; defaults only apply to older items missing runtime metadata.</p>
-  <button id="previewSmart" type="button">Preview matching Plex content</button>
-  <div id="smartPreview" class="hint" style="margin:12px 0"></div>
+  <button id="previewSmart" type="button">Review matching Plex content</button>
+  <div id="smartPreview" class="hint" style="margin:12px 0" aria-live="polite"></div>
+  <section id="matchReview" hidden aria-label="Matching Plex titles">
+    <div class="row" style="margin:12px 0">
+      <input id="matchSearch" type="search" placeholder="Filter matching movie and episode titles" aria-label="Filter matching titles">
+      <label>Show <select id="matchKind"><option value="all">All matches</option><option value="movie">Movies only</option><option value="episode">TV episodes only</option></select></label>
+    </div>
+    <div id="matchReviewList" aria-label="Matches and exclusion actions"></div>
+    <div class="row" style="margin:12px 0">
+      <button id="matchPrevious" type="button">Previous</button>
+      <span id="matchPageInfo" class="hint" aria-live="polite"></span>
+      <button id="matchNext" type="button">Next</button>
+    </div>
+    <p class="hint">Exclude removes the title from this channel even when the rules match. Restore adds it back. Changes are saved when you save the virtual channel. Use the pages or title search to review every match.</p>
+  </section>
 </div>
 <div id="manualRules">
 <h3>Manual additions and exclusions</h3><p class="hint">Search for any Plex movie or episode. Add forces it into the channel even if no rules match; Exclude removes it even if rules match. Additions are played after the rule-generated items. Exclusions remain in effect after syncing Plex.</p><div class="row"><input id="plexSearch" type="search" placeholder="Search synced Plex movies and episodes"><button id="plexLookup">Search</button></div><div id="plexresults" aria-label="Plex search results"></div>
@@ -84,6 +105,8 @@ let token='',stations=[],virtuals=[],editingId=null,playlist=[],excluded=[],sear
 const plexTitleCache=new Map();
 let guideLineup=[],lineupDirty=false;
 let metadataFilters={genres:[],shows:[],labels:[],tags:[]};
+let logicEnabled=true,logicTree=null,matchPage=0,matchTotal=0,matchRequestId=0,matchPreviewActive=false;
+const MATCH_PAGE_SIZE=50;
 function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
 function err(e){message(e.message||String(e),true)}
@@ -131,13 +154,115 @@ $('useSmartRules').onchange=smartMode;
 function getSelections(id){return Array.from($(id).selectedOptions,x=>x.value)}
 function setSelections(id,values){for(const opt of $(id).options)opt.selected=(values||[]).includes(opt.value)}
 function fillSelect(id,items){const el=$(id);el.replaceChildren();for(const value of items){const option=document.createElement('option');option.value=value;option.textContent=value;el.append(option)}}
-async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[]);if(!(data.labels||[]).length)$('smartPreview').textContent='No Plex Labels are indexed yet. Refresh your Plex library in Universal Guide after installing the updated Docker image, then reopen this editor.'}catch(e){err(e)}}
-function readSmartRules(){return {media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
+async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[]);renderLogicBuilder();if(!(data.labels||[]).length)$('smartPreview').textContent='No Plex Labels are indexed yet. Refresh your Plex library in Universal Guide after installing the updated Docker image, then reopen this editor.'}catch(e){err(e)}}
+function readSmartRules(){return {logic:logicEnabled?logicTree:null,media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
 function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartLabels',r.labels||[]);setSelections('smartTags',r.tags||[]);setSelections('smartShows',r.shows||[])}
+
+const ruleFields=[['genre','Genre'],['year','Year'],['label','Plex Label'],['tag','Tag / Collection'],['show','TV show title'],['kind','Media type']];
+function ruleCondition(field='genre',value=''){return {field,operator:'is',value}}
+function ruleGroup(group='all',children=[ruleCondition()]){return {group,children}}
+function selectControl(items,selected,onChange){const el=document.createElement('select');for(const [value,label] of items){const o=document.createElement('option');o.value=value;o.textContent=label;el.append(o)}if(!items.some(x=>x[0]===String(selected))){const o=document.createElement('option');o.value=selected;o.textContent=selected;el.append(o)}el.value=selected;el.onchange=()=>onChange(el.value);return el}
+function actionButton(label,callback){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.onclick=callback;return btn}
+function choiceValues(field){if(field==='genre')return metadataFilters.genres||[];if(field==='label')return metadataFilters.labels||[];if(field==='tag')return metadataFilters.tags||[];if(field==='show')return metadataFilters.shows||[];if(field==='kind')return ['movie','episode'];return []}
+function renderLogicNode(node,parent,index,depth){
+  if('group' in node){
+    const section=document.createElement('div');section.className='logic-group';
+    const toolbar=document.createElement('div');toolbar.className='logic-group-controls';
+    toolbar.append(selectControl([['all','Match ALL (AND)'],['any','Match ANY (OR)'],['none','Match NONE (NOT)']],node.group,v=>{node.group=v;renderLogicBuilder()}));
+    toolbar.append(actionButton('+ Condition',()=>{node.children.push(ruleCondition());renderLogicBuilder()}));
+    if(depth<4)toolbar.append(actionButton('+ Nested group',()=>{node.children.push(ruleGroup());renderLogicBuilder()}));
+    if(parent)toolbar.append(actionButton('Remove group',()=>{parent.children.splice(index,1);renderLogicBuilder()}));
+    section.append(toolbar);
+    const children=document.createElement('div');children.className='logic-children';
+    node.children.forEach((child,i)=>children.append(renderLogicNode(child,node,i,depth+1)));
+    section.append(children);return section;
+  }
+  const row=document.createElement('div');row.className='logic-condition';
+  row.append(selectControl(ruleFields,node.field,v=>{node.field=v;node.operator='is';node.value=v==='year'?2020:'';renderLogicBuilder()}));
+  const ops=node.field==='year'?[['is','Is'],['is_not','Is not'],['gte','At least'],['lte','At most']]:[['is','Is'],['is_not','Is not']];
+  row.append(selectControl(ops,node.operator,v=>{node.operator=v}));
+  if(node.field==='year'){
+    const year=document.createElement('input');year.type='number';year.min='1880';year.max='2200';year.value=node.value||2020;year.onchange=()=>{node.value=Number(year.value)};row.append(year);
+  }else{
+    const vals=choiceValues(node.field).map(x=>[x,x==='movie'?'Movie':x==='episode'?'TV episode':x]);
+    const options=[['','Select a value'],...vals];
+    const picker=selectControl(options,node.value,v=>{node.value=v});row.append(picker);
+  }
+  row.append(actionButton('Remove',()=>{parent.children.splice(index,1);renderLogicBuilder()}));
+  return row;
+}
+function renderLogicBuilder(){
+  $('logicBuilder').hidden=!logicEnabled;
+  $('legacyFilters').hidden=logicEnabled;
+  $('switchToLogic').hidden=logicEnabled;
+  $('logicStatus').textContent=logicEnabled?'Nested logical rules (AND / OR / NOT)':'This channel uses earlier filters; convert when ready.';
+  const root=$('logicRoot');root.replaceChildren();if(logicTree&&logicEnabled)root.append(renderLogicNode(logicTree,null,0,0));
+}
+function legacyToLogic(r){
+  const condition=(field,value)=>ruleCondition(field,value);
+  const any=(field,values)=>values.length?ruleGroup('any',values.map(v=>condition(field,v))):null;
+  const metas=[any('genre',r.genres||[]),any('label',r.labels||[]),any('tag',r.tags||[])].filter(Boolean);
+  const shows=any('show',r.shows||[]);
+  let conditions=[];
+  if(r.media_type==='all'&&shows){
+    const movieBranch=metas.length?ruleGroup('all',[condition('kind','movie'),...metas]):null;
+    conditions.push(movieBranch?ruleGroup('any',[shows,movieBranch]):shows);
+  }else{conditions.push(...metas);if(shows)conditions.push(shows)}
+  if(r.year_min!=null)conditions.push({field:'year',operator:'gte',value:r.year_min});
+  if(r.year_max!=null)conditions.push({field:'year',operator:'lte',value:r.year_max});
+  if(!conditions.length)conditions=[ruleGroup('any',[condition('kind','movie'),condition('kind','episode')])];
+  return ruleGroup('all',conditions);
+}
+$('switchToLogic').onclick=()=>{logicTree=legacyToLogic(readSmartRules());logicEnabled=true;renderLogicBuilder();message('Converted current filters into editable rule groups. Review before saving.')};
 function plexItemName(item){return (item.show_title?item.show_title+' — ':'')+item.title}
 async function resolveSavedPlexTitles(){const keys=[...new Set([...playlist.map(x=>x.rating_key),...excluded])].filter(x=>!plexTitleCache.has(x));for(let i=0;i<keys.length;i+=300){const page=keys.slice(i,i+300);try{const data=await api('/api/manage/plex-items/resolve?ids='+encodeURIComponent(page.join(',')));for(const item of data.items||[])plexTitleCache.set(item.rating_key,plexItemName(item))}catch(e){message('Could not load some saved Plex titles: '+e.message,true)}}for(const p of playlist){const name=plexTitleCache.get(p.rating_key);if(name)p.title=name}renderPlaylist()}
-$('previewSmart').onclick=async()=>{try{const data=await api('/api/manage/virtual/preview',{method:'POST',body:JSON.stringify(readSmartRules())});$('smartPreview').textContent=data.matching+' matching titles ('+data.movies+' movies, '+data.episodes+' episodes). Sample: '+data.sample.map(x=>(x.show?x.show+' — ':'')+x.title).join('; ');message('Smart channel pool preview updated')}catch(e){err(e)}};
-async function openVirtual(v){editingId=v?.id||null;playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
+function renderMatchExclusionButton(button,key){
+  const isExcluded=excluded.includes(key);
+  button.textContent=isExcluded?'Restore':'Exclude';
+  button.className=isExcluded?'restore':'warn';
+  button.setAttribute('aria-label',(isExcluded?'Restore':'Exclude')+' Plex item '+key);
+}
+async function loadMatchPage(){
+  if(!matchPreviewActive)return;
+  const requestId=++matchRequestId;
+  const preview=$('smartPreview');
+  preview.textContent='Loading matching titles…';
+  try{
+    const data=await api('/api/manage/virtual/preview/items',{method:'POST',body:JSON.stringify({
+      rules:readSmartRules(),offset:matchPage*MATCH_PAGE_SIZE,limit:MATCH_PAGE_SIZE,
+      search:$('matchSearch').value.trim(),kind:$('matchKind').value
+    })});
+    if(requestId!==matchRequestId||!matchPreviewActive)return;
+    matchTotal=data.filtered;
+    const matchedExcluded=excluded.length;
+    preview.textContent=data.matching+' total matches ('+data.movies+' movies, '+data.episodes+' episodes). '+matchedExcluded+' saved exclusions in this editor; exclusions outside the current rules are retained.';
+    const list=$('matchReviewList');list.replaceChildren();
+    for(const item of data.items){
+      plexTitleCache.set(item.rating_key,plexItemName(item));
+      const row=document.createElement('div');row.className='mediaitem';
+      const info=document.createElement('div');info.style.flex='1';
+      const heading=document.createElement('strong');heading.textContent=plexItemName(item);
+      const meta=document.createElement('div');meta.className='hint';
+      meta.textContent=[item.kind==='movie'?'Movie':'TV episode',item.year,item.genres.join(' · ')].filter(Boolean).join(' | ');
+      info.append(heading,meta);
+      if(item.labels.length||item.tags.length){const more=document.createElement('div');more.className='hint';more.textContent=[item.labels.length?'Labels: '+item.labels.join(', '):'',item.tags.length?'Collections/Tags: '+item.tags.join(', '):''].filter(Boolean).join(' | ');info.append(more)}
+      const button=document.createElement('button');button.type='button';renderMatchExclusionButton(button,item.rating_key);
+      button.onclick=()=>{const key=item.rating_key;if(excluded.includes(key)){excluded=excluded.filter(x=>x!==key)}else{playlist=playlist.filter(x=>x.rating_key!==key);excluded.push(key)}renderMatchExclusionButton(button,key);renderPlaylist();preview.textContent=data.matching+' total matches ('+data.movies+' movies, '+data.episodes+' episodes). '+excluded.length+' saved exclusions in this editor.'};
+      row.append(info,button);list.append(row);
+    }
+    if(!data.items.length){const empty=document.createElement('p');empty.className='hint';empty.textContent=data.matching?'No matching titles on this page. Change the search or page.':'No Plex titles match these rules. Edit the conditions and review again.';list.append(empty)}
+    $('matchPrevious').disabled=matchPage===0;
+    $('matchNext').disabled=(matchPage+1)*MATCH_PAGE_SIZE>=data.filtered;
+    $('matchPageInfo').textContent=data.filtered?'Showing '+(data.offset+1)+'–'+(data.offset+data.items.length)+' of '+data.filtered:'0 titles';
+    $('matchReview').hidden=false;
+  }catch(e){if(requestId!==matchRequestId)return;preview.textContent='Could not load preview: '+e.message;message('Preview error: '+e.message,true)}
+}
+$('previewSmart').onclick=()=>{matchPreviewActive=true;matchPage=0;loadMatchPage()};
+$('matchPrevious').onclick=()=>{if(matchPage>0){matchPage--;loadMatchPage()}};
+$('matchNext').onclick=()=>{if((matchPage+1)*MATCH_PAGE_SIZE<matchTotal){matchPage++;loadMatchPage()}};
+$('matchKind').onchange=()=>{matchPage=0;loadMatchPage()};
+$('matchSearch').oninput=()=>{matchPage=0;loadMatchPage()};
+async function openVirtual(v){matchPreviewActive=false;matchRequestId++;$('matchReview').hidden=true;$('matchSearch').value='';$('matchKind').value='all';matchPage=0;editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?structuredClone(v.rules.logic):ruleGroup('all',[ruleGroup('any',[ruleCondition('kind','movie'),ruleCondition('kind','episode')])]);playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});if(!v?.rules)$('smartType').value='all';renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
 $('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};
 async function lookupPlex(){const q=$('plexSearch').value.trim();if(q.length<2){message('Enter at least two letters to search Plex');return}try{const d=await api('/api/manage/plex-items?q='+encodeURIComponent(q));searchHits=d.items||[];for(const item of searchHits)plexTitleCache.set(item.rating_key,plexItemName(item));const root=$('plexresults');root.replaceChildren();if(!searchHits.length)root.textContent='No matching synced Plex content';for(const item of searchHits){const row=document.createElement('div');row.className='mediaitem';row.innerHTML='<div><strong>'+safe(item.show_title?item.show_title+' — '+item.title:item.title)+'</strong><div class="hint">'+safe(item.kind)+(item.season!=null?' S'+item.season+' E'+item.episode:'')+'</div></div><div class="row"><button class="add">Include</button><button class="exclude warn">Exclude</button></div>';row.querySelector('.add').onclick=()=>{excluded=excluded.filter(x=>x!==item.rating_key);if(!playlist.some(x=>x.rating_key===item.rating_key))playlist.push({rating_key:item.rating_key,duration_minutes:item.kind==='movie'?120:30,title:item.show_title?item.show_title+' — '+item.title:item.title});renderPlaylist()};row.querySelector('.exclude').onclick=()=>{playlist=playlist.filter(x=>x.rating_key!==item.rating_key);if(!excluded.includes(item.rating_key))excluded.push(item.rating_key);renderPlaylist()};root.append(row)}message(searchHits.length+' Plex items found')}catch(e){err(e)}}
 $('plexLookup').onclick=lookupPlex;$('plexSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();lookupPlex()}};
