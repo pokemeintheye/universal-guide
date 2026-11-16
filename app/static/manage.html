@@ -76,8 +76,21 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
   <div class="row"><label>Default episode length <input id="smartEpisodeMinutes" type="number" value="30" min="1" max="360">min</label>
   <label>Default movie length <input id="smartMovieMinutes" type="number" value="120" min="1" max="360">min</label></div>
   <p class="hint">Actual Plex runtime is used when available; defaults only apply to older items missing runtime metadata.</p>
-  <button id="previewSmart" type="button">Preview matching Plex content</button>
-  <div id="smartPreview" class="hint" style="margin:12px 0"></div>
+  <button id="previewSmart" type="button">Review matching Plex content</button>
+  <div id="smartPreview" class="hint" style="margin:12px 0" aria-live="polite"></div>
+  <section id="matchReview" hidden aria-label="Matching Plex titles">
+    <div class="row" style="margin:12px 0">
+      <input id="matchSearch" type="search" placeholder="Filter matching movie and episode titles" aria-label="Filter matching titles">
+      <label>Show <select id="matchKind"><option value="all">All matches</option><option value="movie">Movies only</option><option value="episode">TV episodes only</option></select></label>
+    </div>
+    <div id="matchReviewList" aria-label="Matches and exclusion actions"></div>
+    <div class="row" style="margin:12px 0">
+      <button id="matchPrevious" type="button">Previous</button>
+      <span id="matchPageInfo" class="hint" aria-live="polite"></span>
+      <button id="matchNext" type="button">Next</button>
+    </div>
+    <p class="hint">Exclude removes the title from this channel even when the rules match. Restore adds it back. Changes are saved when you save the virtual channel. Use the pages or title search to review every match.</p>
+  </section>
 </div>
 <div id="manualRules">
 <h3>Manual additions and exclusions</h3><p class="hint">Search for any Plex movie or episode. Add forces it into the channel even if no rules match; Exclude removes it even if rules match. Additions are played after the rule-generated items. Exclusions remain in effect after syncing Plex.</p><div class="row"><input id="plexSearch" type="search" placeholder="Search synced Plex movies and episodes"><button id="plexLookup">Search</button></div><div id="plexresults" aria-label="Plex search results"></div>
@@ -92,7 +105,8 @@ let token='',stations=[],virtuals=[],editingId=null,playlist=[],excluded=[],sear
 const plexTitleCache=new Map();
 let guideLineup=[],lineupDirty=false;
 let metadataFilters={genres:[],shows:[],labels:[],tags:[]};
-let logicEnabled=true,logicTree=null;
+let logicEnabled=true,logicTree=null,matchPage=0,matchTotal=0,matchRequestId=0,matchPreviewActive=false;
+const MATCH_PAGE_SIZE=50;
 function message(t,err=false){$('message').textContent=t;$('message').classList.toggle('error',err)}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...(token?{'X-Guide-Admin-Token':token}:{}),...(opts.headers||{})},cache:'no-store'});let d;try{d=await r.json()}catch{throw Error('Unexpected server response ('+r.status+')')}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail||r.statusText));return d}
 function err(e){message(e.message||String(e),true)}
@@ -202,8 +216,53 @@ function legacyToLogic(r){
 $('switchToLogic').onclick=()=>{logicTree=legacyToLogic(readSmartRules());logicEnabled=true;renderLogicBuilder();message('Converted current filters into editable rule groups. Review before saving.')};
 function plexItemName(item){return (item.show_title?item.show_title+' — ':'')+item.title}
 async function resolveSavedPlexTitles(){const keys=[...new Set([...playlist.map(x=>x.rating_key),...excluded])].filter(x=>!plexTitleCache.has(x));for(let i=0;i<keys.length;i+=300){const page=keys.slice(i,i+300);try{const data=await api('/api/manage/plex-items/resolve?ids='+encodeURIComponent(page.join(',')));for(const item of data.items||[])plexTitleCache.set(item.rating_key,plexItemName(item))}catch(e){message('Could not load some saved Plex titles: '+e.message,true)}}for(const p of playlist){const name=plexTitleCache.get(p.rating_key);if(name)p.title=name}renderPlaylist()}
-$('previewSmart').onclick=async()=>{try{const data=await api('/api/manage/virtual/preview',{method:'POST',body:JSON.stringify(readSmartRules())});$('smartPreview').textContent=data.matching+' matching titles ('+data.movies+' movies, '+data.episodes+' episodes). Sample: '+data.sample.map(x=>(x.show?x.show+' — ':'')+x.title).join('; ');message('Smart channel pool preview updated')}catch(e){err(e)}};
-async function openVirtual(v){editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?structuredClone(v.rules.logic):ruleGroup();playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
+function renderMatchExclusionButton(button,key){
+  const isExcluded=excluded.includes(key);
+  button.textContent=isExcluded?'Restore':'Exclude';
+  button.className=isExcluded?'restore':'warn';
+  button.setAttribute('aria-label',(isExcluded?'Restore':'Exclude')+' Plex item '+key);
+}
+async function loadMatchPage(){
+  if(!matchPreviewActive)return;
+  const requestId=++matchRequestId;
+  const preview=$('smartPreview');
+  preview.textContent='Loading matching titles…';
+  try{
+    const data=await api('/api/manage/virtual/preview/items',{method:'POST',body:JSON.stringify({
+      rules:readSmartRules(),offset:matchPage*MATCH_PAGE_SIZE,limit:MATCH_PAGE_SIZE,
+      search:$('matchSearch').value.trim(),kind:$('matchKind').value
+    })});
+    if(requestId!==matchRequestId||!matchPreviewActive)return;
+    matchTotal=data.filtered;
+    const matchedExcluded=excluded.length;
+    preview.textContent=data.matching+' total matches ('+data.movies+' movies, '+data.episodes+' episodes). '+matchedExcluded+' saved exclusions in this editor; exclusions outside the current rules are retained.';
+    const list=$('matchReviewList');list.replaceChildren();
+    for(const item of data.items){
+      plexTitleCache.set(item.rating_key,plexItemName(item));
+      const row=document.createElement('div');row.className='mediaitem';
+      const info=document.createElement('div');info.style.flex='1';
+      const heading=document.createElement('strong');heading.textContent=plexItemName(item);
+      const meta=document.createElement('div');meta.className='hint';
+      meta.textContent=[item.kind==='movie'?'Movie':'TV episode',item.year,item.genres.join(' · ')].filter(Boolean).join(' | ');
+      info.append(heading,meta);
+      if(item.labels.length||item.tags.length){const more=document.createElement('div');more.className='hint';more.textContent=[item.labels.length?'Labels: '+item.labels.join(', '):'',item.tags.length?'Collections/Tags: '+item.tags.join(', '):''].filter(Boolean).join(' | ');info.append(more)}
+      const button=document.createElement('button');button.type='button';renderMatchExclusionButton(button,item.rating_key);
+      button.onclick=()=>{const key=item.rating_key;if(excluded.includes(key)){excluded=excluded.filter(x=>x!==key)}else{playlist=playlist.filter(x=>x.rating_key!==key);excluded.push(key)}renderMatchExclusionButton(button,key);renderPlaylist();preview.textContent=data.matching+' total matches ('+data.movies+' movies, '+data.episodes+' episodes). '+excluded.length+' saved exclusions in this editor.'};
+      row.append(info,button);list.append(row);
+    }
+    if(!data.items.length){const empty=document.createElement('p');empty.className='hint';empty.textContent=data.matching?'No matching titles on this page. Change the search or page.':'No Plex titles match these rules. Edit the conditions and review again.';list.append(empty)}
+    $('matchPrevious').disabled=matchPage===0;
+    $('matchNext').disabled=(matchPage+1)*MATCH_PAGE_SIZE>=data.filtered;
+    $('matchPageInfo').textContent=data.filtered?'Showing '+(data.offset+1)+'–'+(data.offset+data.items.length)+' of '+data.filtered:'0 titles';
+    $('matchReview').hidden=false;
+  }catch(e){if(requestId!==matchRequestId)return;preview.textContent='Could not load preview: '+e.message;message('Preview error: '+e.message,true)}
+}
+$('previewSmart').onclick=()=>{matchPreviewActive=true;matchPage=0;loadMatchPage()};
+$('matchPrevious').onclick=()=>{if(matchPage>0){matchPage--;loadMatchPage()}};
+$('matchNext').onclick=()=>{if((matchPage+1)*MATCH_PAGE_SIZE<matchTotal){matchPage++;loadMatchPage()}};
+$('matchKind').onchange=()=>{matchPage=0;loadMatchPage()};
+$('matchSearch').oninput=()=>{matchPage=0;loadMatchPage()};
+async function openVirtual(v){matchPreviewActive=false;matchRequestId++;$('matchReview').hidden=true;$('matchSearch').value='';$('matchKind').value='all';matchPage=0;editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?structuredClone(v.rules.logic):ruleGroup();playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
 $('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};
 async function lookupPlex(){const q=$('plexSearch').value.trim();if(q.length<2){message('Enter at least two letters to search Plex');return}try{const d=await api('/api/manage/plex-items?q='+encodeURIComponent(q));searchHits=d.items||[];for(const item of searchHits)plexTitleCache.set(item.rating_key,plexItemName(item));const root=$('plexresults');root.replaceChildren();if(!searchHits.length)root.textContent='No matching synced Plex content';for(const item of searchHits){const row=document.createElement('div');row.className='mediaitem';row.innerHTML='<div><strong>'+safe(item.show_title?item.show_title+' — '+item.title:item.title)+'</strong><div class="hint">'+safe(item.kind)+(item.season!=null?' S'+item.season+' E'+item.episode:'')+'</div></div><div class="row"><button class="add">Include</button><button class="exclude warn">Exclude</button></div>';row.querySelector('.add').onclick=()=>{excluded=excluded.filter(x=>x!==item.rating_key);if(!playlist.some(x=>x.rating_key===item.rating_key))playlist.push({rating_key:item.rating_key,duration_minutes:item.kind==='movie'?120:30,title:item.show_title?item.show_title+' — '+item.title:item.title});renderPlaylist()};row.querySelector('.exclude').onclick=()=>{playlist=playlist.filter(x=>x.rating_key!==item.rating_key);if(!excluded.includes(item.rating_key))excluded.push(item.rating_key);renderPlaylist()};root.append(row)}message(searchHits.length+' Plex items found')}catch(e){err(e)}}
 $('plexLookup').onclick=lookupPlex;$('plexSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();lookupPlex()}};
