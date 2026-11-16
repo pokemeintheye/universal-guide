@@ -98,6 +98,17 @@ struct TVGuideScreen: View {
     #if os(iOS)
     @State private var viewportHeight: CGFloat = 390
     @State private var viewportWidth: CGFloat = 844
+    // iPhone renders a bounded, gesture-driven guide viewport. This avoids
+    // UIScrollView/HostingScrollView entirely during the startup data reload.
+    @State private var phoneFirstChannel = 0
+    @State private var phoneGuideX: CGFloat = 0
+    @GestureState private var phoneGuideDrag = CGSize.zero
+    private var phoneGuideViewportWidth: CGFloat {
+        max(180, viewportWidth - railWidth - 23)
+    }
+    private var phoneGuideMaxX: CGFloat {
+        max(0, stationWidth + CGFloat(durationMinutes) * minutePixels - phoneGuideViewportWidth)
+    }
     private var minutePixels: CGFloat {
         max(3.5, (viewportWidth - stationWidth - railWidth - 34) / 65)
     }
@@ -136,10 +147,15 @@ struct TVGuideScreen: View {
     // during rapid remote presses.
     private var visibleChannelRange: Range<Int> {
         let count = channels.count
-        let window = min(guideRowCount, count)
-        let start = isCompact ? 0 :
-            min(max(0, selectedChannel - 3), max(0, count - window))
+        #if os(iOS)
+        let window = min(6, count)
+        let start = min(max(0, phoneFirstChannel), max(0, count - window))
         return start..<(start + window)
+        #else
+        let window = min(guideRowCount, count)
+        let start = min(max(0, selectedChannel - 3), max(0, count - window))
+        return start..<(start + window)
+        #endif
     }
 
     private var anchor: Date {
@@ -924,30 +940,49 @@ struct TVGuideScreen: View {
     }
 
     private var timeline: some View {
-        ScrollViewReader { horizontal in
-            Group {
-                #if os(iOS)
-                // Each scroll view owns one finite axis. This prevents the
-                // two-axis hosting scroll view from resizing both bounds at
-                // once while the guide first receives channel data.
-                ScrollView(.vertical) {
-                    ScrollView(.horizontal) {
-                        timelineGrid
-                    }
-                    .scrollIndicators(.hidden)
-                }
-                .scrollIndicators(.hidden)
-                #else
+        Group {
+            #if os(iOS)
+            // No SwiftUI ScrollView on iPhone: the previous combined and
+            // nested scroll layouts both aborted in CALayer.setBounds after
+            // the first channels appeared. Keep the content at finite bounds
+            // and render only six channel rows at a time.
+            timelineGrid
+                .offset(x: -max(0, min(phoneGuideMaxX,
+                                      phoneGuideX - phoneGuideDrag.width)))
+                .frame(width: phoneGuideViewportWidth, alignment: .leading)
+                .frame(height: timelineHeaderHeight + CGFloat(visibleChannelRange.count) * rowHeight,
+                       alignment: .topLeading)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .updating($phoneGuideDrag) { value, state, _ in
+                            state = value.translation
+                        }
+                        .onEnded { value in
+                            if abs(value.translation.height) > abs(value.translation.width) {
+                                let jump = max(1, Int((abs(value.translation.height) /
+                                                      rowHeight).rounded()))
+                                let delta = value.translation.height < 0 ? jump : -jump
+                                phoneFirstChannel = max(0, min(
+                                    max(0, channels.count - 6),
+                                    phoneFirstChannel + delta))
+                            } else {
+                                phoneGuideX = max(0, min(phoneGuideMaxX,
+                                    phoneGuideX - value.translation.width))
+                            }
+                        }
+                )
+            #else
+            ScrollViewReader { horizontal in
                 ScrollView(.horizontal) {
                     timelineGrid
                 }
-                #endif
+                .onChange(of: selectedProgram) { _, _ in
+                    if !lastMoveWasVertical { followSelectedTime(horizontal) }
+                }
             }
-            // Touch users can swipe freely in both directions. TV keeps
-            // its fixed seven-row focus-controlled channel window.
-            .onChange(of: selectedProgram) { _, _ in
-                if !isCompact && !lastMoveWasVertical { followSelectedTime(horizontal) }
-            }
+            #endif
         }
         .background {
             if isCompact {
