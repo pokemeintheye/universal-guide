@@ -850,78 +850,98 @@ struct TVGuideScreen: View {
         .frame(height: (isCompact ? 60 : 52) * uiScale)
     }
 
-    private var timeline: some View {
-        ScrollViewReader { horizontal in
-            ScrollView(isCompact ? [.horizontal, .vertical] : .horizontal) {
-                // Lazily create guide rows as they become visible instead of
-                // eagerly instantiating every channel and its program tiles.
-                // tvOS still displays only its seven-row focus window.
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    // The ruler never moves vertically, and only one axis
-                    // (time) scrolls. Channel navigation shifts the visible
-                    // six-row window instead of scheduling scroll animations.
-                    HStack(spacing: 0) {
-                        Text("CHANNEL")
-                            .font(.system(size: isCompact ? 10 : 17, weight: .bold))
+    // Render one guide content tree for both platforms. On iOS, keep the
+    // scroll axes in separate containers: a combined two-axis HostingScrollView
+    // was throwing from CALayer.setBounds during initial iPhone layout.
+    // tvOS retains its original horizontal-only focus behavior.
+    private var timelineGrid: some View {
+    LazyVStack(alignment: .leading, spacing: 0) {
+        // The ruler never moves vertically, and only one axis
+        // (time) scrolls. Channel navigation shifts the visible
+        // six-row window instead of scheduling scroll animations.
+        HStack(spacing: 0) {
+            Text("CHANNEL")
+                .font(.system(size: isCompact ? 10 : 17, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: stationWidth, alignment: .leading)
+                .padding(.leading, 13)
+                .id("guide-horizontal-start")
+            ForEach(0..<16, id: \.self) { slot in
+                Text(anchor.addingTimeInterval(Double(slot * 1800))
+                    .formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: isCompact ? 10 : 18, weight: .semibold))
+                    .foregroundStyle(isCompact ? Color(red: 0.83, green: 0.77, blue: 0.95) : Color.white.opacity(0.74))
+                    .frame(width: minutePixels * 30, alignment: .leading)
+                    .id("guide-time-slot-\(slot)")
+            }
+        }
+        .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
+        .background(isCompact ?
+                    TVPalette.panel :
+                    tvGuideSurface)
+        ForEach(visibleChannelRange, id: \.self) { channelIndex in
+            let channel = channels[channelIndex]
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 3) {
+                    // Channel name is primary; its number is secondary.
+                    let stationName = channel.network.flatMap {
+                        $0.isEmpty ? nil : $0
+                    } ?? channel.label
+                    Text(stationName)
+                        .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                    if let number = channel.number, !number.isEmpty,
+                       number != stationName {
+                        Text(number)
+                            .font(.system(size: isCompact ? 10 : 16, weight: .medium))
                             .foregroundStyle(.secondary)
-                            .frame(width: stationWidth, alignment: .leading)
-                            .padding(.leading, 13)
-                            .id("guide-horizontal-start")
-                        ForEach(0..<16, id: \.self) { slot in
-                            Text(anchor.addingTimeInterval(Double(slot * 1800))
-                                .formatted(date: .omitted, time: .shortened))
-                                .font(.system(size: isCompact ? 10 : 18, weight: .semibold))
-                                .foregroundStyle(isCompact ? Color(red: 0.83, green: 0.77, blue: 0.95) : Color.white.opacity(0.74))
-                                .frame(width: minutePixels * 30, alignment: .leading)
-                                .id("guide-time-slot-\(slot)")
-                        }
-                    }
-                    .frame(height: max(isCompact ? 22 : 38, timelineHeaderHeight))
-                    .background(isCompact ?
-                                TVPalette.panel :
-                                tvGuideSurface)
-                    ForEach(visibleChannelRange, id: \.self) { channelIndex in
-                        let channel = channels[channelIndex]
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                // Channel name is primary; its number is secondary.
-                                let stationName = channel.network.flatMap {
-                                    $0.isEmpty ? nil : $0
-                                } ?? channel.label
-                                Text(stationName)
-                                    .font(.system(size: isCompact ? 14 : 27, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.72)
-                                if let number = channel.number, !number.isEmpty,
-                                   number != stationName {
-                                    Text(number)
-                                        .font(.system(size: isCompact ? 10 : 16, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            .padding(.leading, isCompact ? 7 : 12)
-                            .frame(width: stationWidth, height: rowHeight, alignment: .leading)
-                            .background(isCompact ?
-                                        TVPalette.panel :
-                                        tvGuideSurface)
-                            timelineRow(channel, index: channelIndex)
-                        }
-                        .frame(height: rowHeight)
-                        .background(isCompact ?
-                                    (channelIndex.isMultiple(of: 2) ?
-                                        TVPalette.background : TVPalette.panel.opacity(0.6)) :
-                                    (channelIndex.isMultiple(of: 2) ?
-                                        tvGuideSurface : tvGuideSurface))
-                        .id("row-\(channelIndex)")
-                        // Focus outlines sit outside the tile's inner bounds.
-                        // Draw the selected row on top of adjacent rows.
-                        .zIndex(channelIndex == selectedChannel ? 1 : 0)
+                            .lineLimit(1)
                     }
                 }
-                .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
-                       alignment: .leading)
+                .padding(.leading, isCompact ? 7 : 12)
+                .frame(width: stationWidth, height: rowHeight, alignment: .leading)
+                .background(isCompact ?
+                            TVPalette.panel :
+                            tvGuideSurface)
+                timelineRow(channel, index: channelIndex)
+            }
+            .frame(height: rowHeight)
+            .background(isCompact ?
+                        (channelIndex.isMultiple(of: 2) ?
+                            TVPalette.background : TVPalette.panel.opacity(0.6)) :
+                        (channelIndex.isMultiple(of: 2) ?
+                            tvGuideSurface : tvGuideSurface))
+            .id("row-\(channelIndex)")
+            // Focus outlines sit outside the tile's inner bounds.
+            // Draw the selected row on top of adjacent rows.
+            .zIndex(channelIndex == selectedChannel ? 1 : 0)
+        }
+    }
+    .frame(width: stationWidth + CGFloat(durationMinutes) * minutePixels,
+           alignment: .leading)
+    }
+
+    private var timeline: some View {
+        ScrollViewReader { horizontal in
+            Group {
+                #if os(iOS)
+                // Each scroll view owns one finite axis. This prevents the
+                // two-axis hosting scroll view from resizing both bounds at
+                // once while the guide first receives channel data.
+                ScrollView(.vertical) {
+                    ScrollView(.horizontal) {
+                        timelineGrid
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                .scrollIndicators(.hidden)
+                #else
+                ScrollView(.horizontal) {
+                    timelineGrid
+                }
+                #endif
             }
             // Touch users can swipe freely in both directions. TV keeps
             // its fixed seven-row focus-controlled channel window.
