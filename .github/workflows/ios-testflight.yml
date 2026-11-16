@@ -1,7 +1,7 @@
 name: Publish iPhone TestFlight build
 on:
   workflow_dispatch:
-  # iPhone TestFlight release: bound iOS root guide viewport, PR #55, 2026-11-15.
+  # iPhone TestFlight release: restore touch scrolling and centered sidebar, PR #56, 2026-11-15.
   # Simulator startup smoke test passed on PR #51; verify device launch and touch guide.
   push:
     branches: [main]
