@@ -286,6 +286,64 @@ def preview_rules(body: SmartRules, request: Request):
     return rule_pool(catalog,body)
 
 
+class VirtualPreviewPage(BaseModel):
+    rules: SmartRules
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=50, ge=1, le=100)
+    search: str = Field(default="", max_length=100)
+    kind: str = "all"
+
+
+@router.post("/virtual/preview/items")
+def preview_matching_items(body: VirtualPreviewPage, request: Request):
+    """Return every matching item through paginated, searchable previews.
+
+    Unlike the old 15-item sample, this is an authoritative view of the
+    rule-generated pool. Exclusions remain client-side until Save, so a title
+    can be excluded or restored without rewriting the smart rule.
+    """
+    require_admin(request)
+    validate_rules(body.rules)
+    if body.kind not in ("all", "movie", "episode"):
+        raise HTTPException(422, "Invalid preview media type")
+    from app.main import db
+    from app.virtual_rules import matching_items, _metadata_values
+    with db() as c:
+        catalog = [dict(x) for x in c.execute("SELECT * FROM media")]
+    matched = matching_items(catalog, body.rules)
+    totals = {
+        "matching": len(matched),
+        "movies": sum(x["kind"] == "movie" for x in matched),
+        "episodes": sum(x["kind"] == "episode" for x in matched),
+    }
+    needle = body.search.strip().casefold()
+    filtered = [
+        x for x in matched
+        if (body.kind == "all" or x["kind"] == body.kind)
+        and (not needle or needle in (x.get("title") or "").casefold()
+             or needle in (x.get("show_title") or "").casefold())
+    ]
+    page = filtered[body.offset:body.offset+body.limit]
+    return {
+        **totals, "filtered": len(filtered),
+        "offset": body.offset, "limit": body.limit,
+        "items": [
+            {
+                "rating_key": int(item["id"].rsplit(":", 1)[-1]),
+                "kind": item["kind"],
+                "title": item.get("title") or "",
+                "show_title": item.get("show_title") or "",
+                "year": item.get("year"),
+                "genres": [x.strip() for x in (item.get("genres") or "").split(",") if x.strip()],
+                "labels": sorted(_metadata_values(item.get("plex_labels"))),
+                "tags": sorted(_metadata_values(item.get("plex_tags"))),
+                "season": item.get("season"),
+                "episode": item.get("episode"),
+            } for item in page
+        ],
+    }
+
+
 @router.get("/virtual/filters")
 def rule_filters(request: Request):
     require_admin(request)
