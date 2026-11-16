@@ -246,6 +246,36 @@ def plex_items(request: Request, q: str = ""):
     ]}
 
 
+@router.get("/plex-items/resolve")
+def resolve_plex_items(request: Request, ids: str = ""):
+    """Resolve saved Plex IDs to readable titles without a free-text search.
+
+    A search only returns the first 100 matches; excluded items must remain
+    identifiable even after a channel is saved, the editor is reopened, or
+    the current search results change.
+    """
+    require_admin(request)
+    raw = [x.strip() for x in ids.split(",") if x.strip()]
+    if len(raw) > 500 or any(not x.isascii() or not x.isdecimal() or int(x) <= 0 for x in raw):
+        raise HTTPException(422, "Supply up to 500 valid Plex rating keys")
+    keys = list(dict.fromkeys(int(x) for x in raw))
+    if not keys:
+        return {"items": []}
+    from app.main import db
+    media_ids = [f"{kind}:{key}" for key in keys for kind in ("movie", "episode")]
+    marks = ",".join("?" for _ in media_ids)
+    with db() as c:
+        rows = c.execute(
+            f"SELECT id,kind,title,show_title,year,season,episode FROM media WHERE id IN ({marks})",
+            media_ids).fetchall()
+    return {"items": [
+        {"rating_key": int(r["id"].rsplit(":", 1)[-1]), "kind": r["kind"],
+         "title": r["title"], "show_title": r["show_title"],
+         "year": r["year"], "season": r["season"], "episode": r["episode"]}
+        for r in rows
+    ]}
+
+
 @router.post("/virtual/preview")
 def preview_rules(body: SmartRules, request: Request):
     require_admin(request)

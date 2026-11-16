@@ -199,6 +199,20 @@ class SmartChannelTests(unittest.TestCase):
         cm.delete_virtual(channel_id,Request())
         self.assertEqual(cm.virtual_definitions(),[])
 
+    def test_saved_exclusions_resolve_plex_titles_by_id(self):
+        # Saved items must resolve independently of the current search query.
+        result=cm.resolve_plex_items(Request(),ids="100,200,999999")
+        names={x["rating_key"]:(x["show_title"],x["title"])
+               for x in result["items"]}
+        self.assertEqual(names[100],("The Office","Pilot"))
+        self.assertEqual(names[200],("","Space Movie"))
+        self.assertNotIn(999999,names)
+        self.assertEqual(cm.resolve_plex_items(Request(),ids="")["items"],[])
+        with self.assertRaises(HTTPException):
+            cm.resolve_plex_items(Request(),ids="100,not-an-id")
+        with self.assertRaises(HTTPException):
+            cm.resolve_plex_items(Request(),ids=",".join(str(i) for i in range(1,502)))
+
     def test_manual_include_cannot_also_be_excluded(self):
         with self.assertRaises(HTTPException):
             cm.create_virtual(cm.VirtualUpdate(name="Conflicting",
