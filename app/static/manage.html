@@ -22,6 +22,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
 #plexresults,#playlist{max-height:330px;overflow:auto;border:1px solid #3c495d;border-radius:10px}
 .mediaitem{padding:9px 12px;border-bottom:1px solid #344155;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .mediaitem:last-child{border:0}.playlistitem{display:grid;grid-template-columns:minmax(130px,1fr) 100px auto;gap:10px;align-items:center}
+.logic-group{border:1px solid #46576b;border-radius:10px;padding:12px;margin:10px 0 10px 12px;background:#182332}.logic-children{margin:8px 0 8px 6px;border-left:2px solid #456584;padding-left:10px}.logic-condition{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:9px;border-radius:8px;background:#243244}.logic-condition select,.logic-condition input{max-width:220px}.logic-group-controls{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.logic-group-controls select{font-weight:600}
 .virtualcard{padding:12px;background:#222d3b;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:8px}
 #virtualEditor[hidden],#channelPanel[hidden],#virtualPanel[hidden],#lineupPanel[hidden]{display:none!important}
 #lineupList{display:grid;gap:6px;max-height:75vh;overflow:auto}
@@ -57,6 +58,12 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>Order <select id="smartOrder"><option value="shuffle">Stable shuffle</option><option value="chronological">Show / season / episode</option><option value="newest">Newest release first</option></select></label>
     <label>Shuffle seed <input type="number" id="smartSeed" min="0" max="1000000" value="0"></label>
   </div>
+  <div class="row" style="margin:12px 0"><button id="switchToLogic" type="button">Switch to logic builder</button><span class="hint" id="logicStatus"></span></div>
+  <div id="logicBuilder" hidden>
+    <p class="hint">Combine conditions with AND, OR, and NOT groups. Nest groups to express exceptions, for example: (Comedy OR Romance) AND NOT (Horror OR Action), unless the movie is in a chosen collection. Missing metadata will not match positive conditions. Every movie and episode is evaluated against the same expression.</p>
+    <div id="logicRoot"></div>
+  </div>
+  <div id="legacyFilters">
   <div class="row" style="margin:10px 0">
     <label>Genres <select id="smartGenres" multiple size="7" style="min-width:210px"></select></label>
     <label>Plex Labels <select id="smartLabels" multiple size="7" style="min-width:210px"></select></label>
@@ -64,6 +71,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>TV shows <select id="smartShows" multiple size="7" style="min-width:280px"></select></label>
     <label>Year from <input id="smartYearMin" type="number" min="1880" max="2200" placeholder="Any"></label>
     <label>Year through <input id="smartYearMax" type="number" min="1880" max="2200" placeholder="Any"></label>
+  </div>
   </div>
   <div class="row"><label>Default episode length <input id="smartEpisodeMinutes" type="number" value="30" min="1" max="360">min</label>
   <label>Default movie length <input id="smartMovieMinutes" type="number" value="120" min="1" max="360">min</label></div>
