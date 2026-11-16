@@ -71,14 +71,27 @@ def matching_items(catalog, rule):
         if rule.year_max is not None and (not year or year>rule.year_max):
             continue
         item_genres={_normalize(x) for x in (item.get("genres") or "").split(",") if x}
-        if genres and not genres.intersection(item_genres):
-            continue
-        if labels and not labels.intersection(_metadata_values(item.get("plex_labels"))):
-            continue
-        if tags and not tags.intersection(_metadata_values(item.get("plex_tags"))):
-            continue
-        if shows and _normalize(item.get("show_title")) not in shows:
-            continue
+        metadata_match=(
+            (not genres or bool(genres.intersection(item_genres))) and
+            (not labels or bool(labels.intersection(_metadata_values(item.get("plex_labels"))))) and
+            (not tags or bool(tags.intersection(_metadata_values(item.get("plex_tags")))))
+        )
+        if rule.media_type=="all" and shows:
+            # Mixed channels have two independent sources: selected TV shows
+            # and movies matching metadata filters. Requiring a movie to have
+            # a show_title, or requiring a selected sitcom to share a movie's
+            # genre, previously produced an empty pool.
+            if item["kind"]=="episode":
+                if _normalize(item.get("show_title")) not in shows:
+                    continue
+            elif not (genres or labels or tags) or not metadata_match:
+                # A show-only selection must not add every Plex movie.
+                continue
+        else:
+            if not metadata_match:
+                continue
+            if shows and _normalize(item.get("show_title")) not in shows:
+                continue
         if not str(item.get("id","")).rsplit(":",1)[-1].isdigit():
             continue
         result.append(item)
