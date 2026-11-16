@@ -48,6 +48,42 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in vr.matching_items(items,movies)],["movie:200"])
         self.assertEqual(vr.duration_minutes(items[0],vr.SmartRules()),22)
 
+    def test_full_matching_preview_pages_and_filtering(self):
+        # Full results must be browsable rather than limited to 15 samples.
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,show_title,year,genres) VALUES (?,?,?,?,?,?)",
+                [(f"movie:{1000+i}","movie",f"Comedy {i:03d}","",2000+i%20,"Comedy,Drama")
+                 for i in range(122)])
+        rule=vr.SmartRules(media_type="movies",genres=["Comedy"],order="chronological")
+        first=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,offset=0,limit=50),Request())
+        second=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,offset=50,limit=50),Request())
+        third=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,offset=100,limit=50),Request())
+        self.assertEqual(first["matching"],123)
+        self.assertEqual((len(first["items"]),len(second["items"]),len(third["items"])),(50,50,23))
+        keys=[x["rating_key"] for x in first["items"]+second["items"]+third["items"]]
+        self.assertEqual(len(keys),len(set(keys)))
+        self.assertTrue(all("Comedy" in x["genres"] for x in first["items"]))
+        only=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,search="Comedy 004",kind="movie"),Request())
+        self.assertEqual(only["filtered"],1)
+        self.assertEqual(only["items"][0]["title"],"Comedy 004")
+        noepisodes=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,kind="episode"),Request())
+        self.assertEqual(noepisodes["filtered"],0)
+        self.assertEqual(noepisodes["matching"],123)
+        with self.assertRaises(HTTPException):
+            cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule,kind="music"),Request())
+
+    def test_match_preview_retains_genre_label_collection_metadata(self):
+        with main.db() as c:
+            c.execute("UPDATE media SET plex_labels=?,plex_tags=? WHERE id='movie:201'",
+                      ('["Family"]','["Comedy Night"]'))
+        rule=vr.SmartRules(media_type="movies",genres=["Comedy"])
+        data=cm.preview_matching_items(cm.VirtualPreviewPage(rules=rule),Request())
+        item=next(x for x in data["items"] if x["rating_key"]==201)
+        self.assertEqual(item["genres"],["Comedy"])
+        self.assertEqual(item["labels"],["family"])
+        self.assertEqual(item["tags"],["comedy night"])
+
     def test_nested_boolean_logic_and_exception_collection(self):
         with main.db() as c:
             c.execute("UPDATE media SET genres=?,plex_tags=? WHERE id='movie:200'",
