@@ -106,6 +106,12 @@ struct TVGuideScreen: View {
     private var phoneGuideViewportWidth: CGFloat {
         max(120, viewportWidth - railWidth - 32)
     }
+    // Fit the guide to the actual usable height in both orientations.
+    // Only draw the visible rows; dragging pages through the remainder.
+    private var phoneVisibleRowCount: Int {
+        let available = max(160, viewportHeight - 105 - timelineHeaderHeight)
+        return max(1, min(14, Int(available / rowHeight)))
+    }
     private var phoneGuideMaxX: CGFloat {
         max(0, stationWidth + CGFloat(durationMinutes) * minutePixels - phoneGuideViewportWidth)
     }
@@ -138,7 +144,7 @@ struct TVGuideScreen: View {
     }
     private var guideRowCount: Int { isCompact ? channels.count : 7 }
     private var timelineHeight: CGFloat {
-        isCompact ? max(180, viewportHeight - 54) :
+        isCompact ? max(180, viewportHeight - 90) :
             timelineHeaderHeight + CGFloat(guideRowCount) * rowHeight
     }
     private var detailHeight: CGFloat { (isCompact ? 300 : 335) * uiScale }
@@ -148,7 +154,7 @@ struct TVGuideScreen: View {
     private var visibleChannelRange: Range<Int> {
         let count = channels.count
         #if os(iOS)
-        let window = min(6, count)
+        let window = min(phoneVisibleRowCount, count)
         let start = min(max(0, phoneFirstChannel), max(0, count - window))
         return start..<(start + window)
         #else
@@ -803,13 +809,13 @@ struct TVGuideScreen: View {
 
     private var sidebarRail: some View {
         VStack(spacing: isCompact ? 8 : 16) {
-            if !isCompact { Spacer(minLength: 0) }
+            Spacer(minLength: 0)
             railButton("magnifyingglass", name: "Search", key: "rail-search") { showSearch = true }
             railButton("line.3.horizontal.decrease", name: "Filter", key: "rail-filter") { showFilters = true }
             railButton("gearshape", name: "Settings", key: "rail-settings") { showSettings = true }
             Spacer(minLength: 0)
         }
-        .frame(width: railWidth, height: timelineHeight, alignment: .top)
+        .frame(width: railWidth, height: timelineHeight, alignment: .center)
         .padding(0)
         .background(isCompact ? TVPalette.panel : tvGuideSurface, in: RoundedRectangle(cornerRadius: 12))
     }
@@ -989,11 +995,14 @@ struct TVGuideScreen: View {
                 .offset(x: -max(0, min(phoneGuideMaxX,
                                       phoneGuideX - phoneGuideDrag.width)))
                 .frame(width: phoneGuideViewportWidth, alignment: .leading)
-                .frame(height: timelineHeaderHeight + CGFloat(visibleChannelRange.count) * rowHeight,
-                       alignment: .topLeading)
+                .frame(height: timelineHeight, alignment: .topLeading)
                 .clipped()
                 .contentShape(Rectangle())
-                .gesture(
+                // A high-priority pan recognizer is necessary here: each tile
+                // is a Button and its touch recognizer previously won the drag,
+                // unexpectedly opening Philo or a playback choice instead.
+                // The 12pt threshold still permits deliberate taps.
+                .highPriorityGesture(
                     DragGesture(minimumDistance: 12)
                         .updating($phoneGuideDrag) { value, state, _ in
                             state = value.translation
@@ -1004,7 +1013,7 @@ struct TVGuideScreen: View {
                                                       rowHeight).rounded()))
                                 let delta = value.translation.height < 0 ? jump : -jump
                                 phoneFirstChannel = max(0, min(
-                                    max(0, channels.count - 6),
+                                    max(0, channels.count - phoneVisibleRowCount),
                                     phoneFirstChannel + delta))
                             } else {
                                 phoneGuideX = max(0, min(phoneGuideMaxX,
