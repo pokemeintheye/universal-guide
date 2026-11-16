@@ -117,9 +117,9 @@ class SmartChannelTests(unittest.TestCase):
         listing=ET.fromstring('<Video ratingKey="200" type="movie" title="Space Movie"/>')
         detail=ET.fromstring('<MediaContainer><Video ratingKey="200" type="movie" title="Space Movie"><Label tag="Family Approved"/></Video></MediaContainer>')
         cache={}
-        with patch.object(main,"PLEX_ALLOWED_LABEL","Family Approved"), \\
-             patch.object(main,"PLEX_LABEL_MODE","allow"), \\
-             patch.object(main,"plex_xml",return_value=detail) as fetch:
+        with (patch.object(main,"PLEX_ALLOWED_LABEL","Family Approved"),
+              patch.object(main,"PLEX_LABEL_MODE","allow"),
+              patch.object(main,"plex_xml",return_value=detail) as fetch):
             self.assertTrue(main.plex_item_has_allowed_label(listing,cache))
         fetch.assert_called_once_with("/library/metadata/200")
         self.assertEqual(main.plex_metadata_tags(cache["200"],("Label",)),
