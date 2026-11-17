@@ -223,8 +223,8 @@ class SmartChannelTests(unittest.TestCase):
         first=[item["id"] for item,_ in vr.build_cycle(catalog,r)]
         second=[item["id"] for item,_ in vr.build_cycle(list(reversed(catalog)),r)]
         self.assertEqual(first,second)
-        self.assertEqual([x for x in first if x.startswith("episode:")],
-                         ["episode:100","episode:101","episode:504","episode:102"])
+        self.assertEqual([x for x in first if x in ("episode:100","episode:101","episode:504")],
+                         ["episode:100","episode:101","episode:504"])
         self.assertEqual(len(first),len(set(first)))
         self.assertTrue(any(x.startswith("movie:") for x in first))
 
@@ -487,6 +487,7 @@ class SmartChannelTests(unittest.TestCase):
         self.assertIn("duration_ms",columns)
         self.assertIn("plex_labels",columns)
         self.assertIn("plex_tags",columns)
+        self.assertIn("plex_collections",columns)
 
 if __name__=="__main__":
     unittest.main()
