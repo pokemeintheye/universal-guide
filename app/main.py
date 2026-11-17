@@ -74,7 +74,7 @@ def initialize():
             c.execute("ALTER TABLE media ADD COLUMN genres TEXT NOT NULL DEFAULT ''")
         if "duration_ms" not in media_columns:
             c.execute("ALTER TABLE media ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
-        for column in ("plex_labels", "plex_tags"):
+        for column in ("plex_labels", "plex_tags", "plex_collections"):
             if column not in media_columns:
                 c.execute("ALTER TABLE media ADD COLUMN "+column+" TEXT NOT NULL DEFAULT '[]'")
         # Existing installations retain their databases; add classification safely.
@@ -197,7 +197,7 @@ def sync_plex():
                     # richer response when recording labels in our catalog.
                     obj=detail_cache.get(obj.get("ratingKey"),obj)
                     title=obj.get("title","")
-                    rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(obj.get("duration","0") or 0),json.dumps(plex_metadata_tags(obj,("Label",))),json.dumps(plex_metadata_tags(obj,("Collection","Tag")))))
+                    rows.append(("movie:"+str(obj.get("ratingKey")),"movie",title,int(obj.get("year","0") or 0),norm(title),"",None,None,",".join(x.get("id","") for x in obj.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(obj.get("duration","0") or 0),json.dumps(plex_metadata_tags(obj,("Label",))),json.dumps(plex_metadata_tags(obj,("Collection","Tag"))),json.dumps(plex_metadata_tags(obj,("Collection",)))))
                 elif kind=="show" and obj.get("type")=="show" and obj.get("ratingKey"):
                     # A show-level label includes its episodes in the guide.
                     if not plex_item_has_allowed_label(obj,detail_cache):continue
@@ -205,12 +205,12 @@ def sync_plex():
                     show=obj.get("title","")
                     for ep in pages("/library/metadata/"+obj.get("ratingKey")+"/allLeaves"):
                         if ep.get("type")!="episode":continue
-                        rows.append(("episode:"+str(ep.get("ratingKey")),"episode",ep.get("title",""),int(ep.get("year","0") or 0),norm(show),show,int(ep.get("parentIndex","0") or 0),int(ep.get("index","0") or 0),",".join(x.get("id","") for x in ep.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(ep.get("duration","0") or 0),json.dumps(sorted(set(plex_metadata_tags(obj,("Label",)))|set(plex_metadata_tags(ep,("Label",))),key=str.casefold)),json.dumps(sorted(set(plex_metadata_tags(obj,("Collection","Tag")))|set(plex_metadata_tags(ep,("Collection","Tag"))),key=str.casefold))))
+                        rows.append(("episode:"+str(ep.get("ratingKey")),"episode",ep.get("title",""),int(ep.get("year","0") or 0),norm(show),show,int(ep.get("parentIndex","0") or 0),int(ep.get("index","0") or 0),",".join(x.get("id","") for x in ep.findall("Guid")),",".join(x.get("tag","") for x in obj.findall("Genre") if x.get("tag")),int(ep.get("duration","0") or 0),json.dumps(sorted(set(plex_metadata_tags(obj,("Label",)))|set(plex_metadata_tags(ep,("Label",))),key=str.casefold)),json.dumps(sorted(set(plex_metadata_tags(obj,("Collection","Tag")))|set(plex_metadata_tags(ep,("Collection","Tag"))),key=str.casefold)),json.dumps(sorted(set(plex_metadata_tags(obj,("Collection",)))|set(plex_metadata_tags(ep,("Collection",))),key=str.casefold))))
         with db() as c:
             c.execute("DELETE FROM media")
             c.executemany("""INSERT INTO media
-                (id,kind,title,year,normalized,show_title,season,episode,guids,genres,duration_ms,plex_labels,plex_tags)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",rows)
+                (id,kind,title,year,normalized,show_title,season,episode,guids,genres,duration_ms,plex_labels,plex_tags,plex_collections)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",rows)
             putmeta(c,"last_plex_sync",datetime.now(timezone.utc).isoformat())
             putmeta(c,"plex_sections",libraries)
         errors["plex"]=""
