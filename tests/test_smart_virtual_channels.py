@@ -228,6 +228,24 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual(len(first),len(set(first)))
         self.assertTrue(any(x.startswith("movie:") for x in first))
 
+    def test_plex_sync_persists_collection_and_actual_release_date(self):
+        sections=ET.fromstring('<MediaContainer><Directory type="movie" key="8"/></MediaContainer>')
+        movie=ET.fromstring(
+            '<Video type="movie" ratingKey="901" title="Part One" '
+            'year="2004" originallyAvailableAt="2004-04-02" duration="60000">'
+            '<Collection tag="Film Series"/><Tag tag="Holiday">'
+            '<Genre tag="Drama"/></Video>')
+        with patch.object(main,"PLEX_ALLOWED_LABEL",""), \\
+             patch.object(main,"plex_xml",return_value=sections), \\
+             patch.object(main,"pages",return_value=[movie]):
+            result=main.sync_plex()
+        self.assertEqual(result["media_count"],1)
+        with main.db() as c:
+            item=dict(c.execute("SELECT * FROM media WHERE id='movie:901'").fetchone())
+        self.assertEqual(json.loads(item["plex_collections"]),["Film Series"])
+        self.assertEqual(json.loads(item["plex_tags"]),["Film Series","Holiday"])
+        self.assertEqual(item["release_date"],"2004-04-02")
+
     def test_movie_collections_play_contiguously_in_release_order(self):
         with main.db() as c:
             c.executemany(
