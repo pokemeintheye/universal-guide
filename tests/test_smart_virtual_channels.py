@@ -84,40 +84,56 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual(item["labels"],["family"])
         self.assertEqual(item["tags"],["comedy night"])
 
-    def test_exclusive_genre_set_allows_drama_and_romance_only(self):
+    def test_is_only_one_genre_or_exact_and_combination(self):
         with main.db() as c:
             c.executemany(
                 "INSERT INTO media (id,kind,title,year,genres) VALUES (?,?,?,?,?)",
-                [("movie:301","movie","Drama",2020,"Drama"),
-                 ("movie:302","movie","Romance",2021,"Romance"),
-                 ("movie:303","movie","Both",2022,"Drama,Romance"),
-                 ("movie:304","movie","Action Drama",2023,"Drama,Action"),
+                [("movie:301","movie","Comedy",2020,"Comedy"),
+                 ("movie:302","movie","Drama",2021,"Drama"),
+                 ("movie:303","movie","Both",2022,"Comedy,Drama"),
+                 ("movie:304","movie","Three genres",2023,"Comedy,Drama,Action"),
                  ("movie:305","movie","Action",2024,"Action"),
                  ("movie:306","movie","No genres",2025,"")])
             catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
-        expression={"field":"genre","operator":"is_only","value":["Drama","Romance"]}
-        matches={x["id"] for x in vr.matching_items(
-            catalog,vr.SmartRules(media_type="movies",logic=expression))}
-        self.assertEqual(matches,{"movie:301","movie:302","movie:303"})
-        inverse={"field":"genre","operator":"is_only_not","value":["Drama","Romance"]}
-        opposite={x["id"] for x in vr.matching_items(
-            catalog,vr.SmartRules(media_type="movies",logic=inverse))}
-        self.assertIn("movie:304",opposite)
-        self.assertIn("movie:305",opposite)
-        self.assertNotIn("movie:301",opposite)
-        self.assertNotIn("movie:302",opposite)
-        self.assertNotIn("movie:303",opposite)
-        self.assertNotIn("movie:306",opposite)
-        self.assertNotIn("movie:306",matches)
-        # Exact comparison is case insensitive and permits a single choice.
-        single={"field":"genre","operator":"is_only","value":["drama"]}
-        self.assertIn("movie:301",{x["id"] for x in vr.matching_items(
-            catalog,vr.SmartRules(media_type="movies",logic=single))})
+        comedy={"field":"genre","operator":"is_only","value":"Comedy"}
+        drama={"field":"genre","operator":"is_only","value":"Drama"}
+        def results(expr):
+            return {x["id"] for x in vr.matching_items(
+                catalog,vr.SmartRules(media_type="movies",logic=expr))}
+        self.assertEqual(results(comedy),{"movie:301"})
+        self.assertEqual(results(drama),{"movie:302"})
+        # The requested AND expression requires both genres exactly.
+        together={"group":"all","children":[comedy,drama]}
+        self.assertEqual(results(together),{"movie:303"})
+        self.assertNotIn("movie:304",results(together))
+        self.assertEqual(results({"group":"any","children":[comedy,drama]}),
+                         {"movie:301","movie:302"})
+        self.assertEqual(results({"group":"all","children":[
+            comedy,drama,{"field":"year","operator":"gte","value":2022}]}),
+            {"movie:303"})
+        self.assertEqual(results({"group":"none","children":[together]}),
+            {"movie:200","movie:201","movie:301","movie:302","movie:304","movie:305","movie:306"})
+        self.assertEqual(results({"field":"genre","operator":"is_only","value":"comedy"}),
+                         {"movie:301"})
+        inverse={"field":"genre","operator":"is_only_not","value":"Comedy"}
+        self.assertIn("movie:303",results(inverse))
+        self.assertNotIn("movie:301",results(inverse))
+        self.assertNotIn("movie:306",results(inverse))
 
-    def test_exclusive_operators_restricted_to_genre_and_nonempty_set(self):
+    def test_saved_multi_genre_is_only_requires_exact_combination(self):
+        # Previously saved array values still load, but now require exactly
+        # that combination and not a subset of selected genres.
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        legacy={"field":"genre","operator":"is_only","value":["Comedy","Animation"]}
+        matched={x["id"] for x in vr.matching_items(
+            catalog,vr.SmartRules(media_type="all",logic=legacy))}
+        self.assertEqual(matched,{"episode:102"})
+
+    def test_exclusive_operators_restricted_to_genre_and_valid_values(self):
         invalid=[
             {"field":"genre","operator":"is_only","value":[]},
-            {"field":"genre","operator":"is_only","value":"Drama"},
+            {"field":"genre","operator":"is_only","value":""},
             {"field":"genre","operator":"is_only_not","value":[]},
             {"field":"genre","operator":"is_only","value":[""]},
             {"field":"year","operator":"is_only","value":2020},
