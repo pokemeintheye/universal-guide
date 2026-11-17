@@ -261,6 +261,19 @@ class SmartChannelTests(unittest.TestCase):
         ids=[item["id"] for item,_ in vr.build_cycle(catalog,newest)]
         self.assertLess(ids.index("movie:602"),ids.index("movie:606"))
 
+    def test_same_year_collection_movies_follow_actual_release_dates(self):
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,year,genres,plex_collections,release_date) VALUES (?,?,?,?,?,?,?)",
+                [("movie:670","movie","March",2020,"Drama",'["Trilogy"]',"2020-03-02"),
+                 ("movie:671","movie","January",2020,"Drama",'["Trilogy"]',"2020-01-10"),
+                 ("movie:672","movie","December",2020,"Drama",'["Trilogy"]',"2020-12-25")])
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        r=vr.SmartRules(media_type="movies",movie_order="oldest",collection_order="release")
+        ids=[item["id"] for item,_ in vr.build_cycle(catalog,r)]
+        self.assertEqual([x for x in ids if x in ("movie:670","movie:671","movie:672")],
+                         ["movie:671","movie:670","movie:672"])
+
     def test_mixed_collection_block_does_not_interrupt_movie_series(self):
         with main.db() as c:
             c.executemany(
@@ -488,6 +501,7 @@ class SmartChannelTests(unittest.TestCase):
         self.assertIn("plex_labels",columns)
         self.assertIn("plex_tags",columns)
         self.assertIn("plex_collections",columns)
+        self.assertIn("release_date",columns)
 
 if __name__=="__main__":
     unittest.main()
