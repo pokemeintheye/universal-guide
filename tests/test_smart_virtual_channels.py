@@ -107,7 +107,7 @@ class SmartChannelTests(unittest.TestCase):
         self.assertEqual(results(together),{"movie:303"})
         self.assertNotIn("movie:304",results(together))
         self.assertEqual(results({"group":"any","children":[comedy,drama]}),
-                         {"movie:301","movie:302"})
+                         {"movie:201","movie:301","movie:302"})
         self.assertEqual(results({"group":"all","children":[
             comedy,drama,{"field":"year","operator":"gte","value":2022}]}),
             {"movie:303"})
