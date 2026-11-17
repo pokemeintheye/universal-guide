@@ -235,9 +235,9 @@ class SmartChannelTests(unittest.TestCase):
             'year="2004" originallyAvailableAt="2004-04-02" duration="60000">'
             '<Collection tag="Film Series"/><Tag tag="Holiday">'
             '<Genre tag="Drama"/></Video>')
-        with patch.object(main,"PLEX_ALLOWED_LABEL",""), \\
-             patch.object(main,"plex_xml",return_value=sections), \\
-             patch.object(main,"pages",return_value=[movie]):
+        with (patch.object(main,"PLEX_ALLOWED_LABEL",""),
+              patch.object(main,"plex_xml",return_value=sections),
+              patch.object(main,"pages",return_value=[movie])):
             result=main.sync_plex()
         self.assertEqual(result["media_count"],1)
         with main.db() as c:
