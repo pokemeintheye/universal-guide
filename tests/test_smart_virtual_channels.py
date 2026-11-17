@@ -208,6 +208,83 @@ class SmartChannelTests(unittest.TestCase):
                          {"episode:100","episode:101"})
         self.assertIsNone(r.logic)
 
+    def test_independent_tv_chronology_and_movie_shuffle(self):
+        # Interleaving random movies must not shuffle episodes out of order.
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,show_title,year,season,episode,genres) VALUES (?,?,?,?,?,?,?,?)",
+                [("movie:501","movie","Film A","",2001,None,None,"Drama"),
+                 ("movie:502","movie","Film B","",2012,None,None,"Drama"),
+                 ("movie:503","movie","Film C","",1999,None,None,"Drama"),
+                 ("episode:504","episode","Later","The Office",2005,1,3,"Comedy")])
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        r=vr.SmartRules(media_type="all",episode_order="chronological",
+                        movie_order="shuffle",seed=41)
+        first=[item["id"] for item,_ in vr.build_cycle(catalog,r)]
+        second=[item["id"] for item,_ in vr.build_cycle(list(reversed(catalog)),r)]
+        self.assertEqual(first,second)
+        self.assertEqual([x for x in first if x.startswith("episode:")],
+                         ["episode:100","episode:101","episode:504","episode:102"])
+        self.assertEqual(len(first),len(set(first)))
+        self.assertTrue(any(x.startswith("movie:") for x in first))
+
+    def test_movie_collections_play_contiguously_in_release_order(self):
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,year,genres,plex_tags,plex_collections) VALUES (?,?,?,?,?,?,?)",
+                [("movie:601","movie","Saga Part Three",2008,"Adventure",'["tag"]','["Space Saga"]'),
+                 ("movie:602","movie","Saga Part One",1994,"Adventure",'[]','["Space Saga"]'),
+                 ("movie:603","movie","Saga Part Two",2001,"Adventure",'[]','["Space Saga"]'),
+                 ("movie:604","movie","Standalone",2002,"Adventure",'["Space Saga"]','[]'),
+                 ("movie:605","movie","Other Sequel",2010,"Adventure",'[]','["Other Saga"]'),
+                 ("movie:606","movie","Other Original",1982,"Adventure",'[]','["Other Saga"]')])
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        for movie_order in ("shuffle","oldest","newest"):
+            with self.subTest(movie_order=movie_order):
+                r=vr.SmartRules(media_type="movies",movie_order=movie_order,
+                                collection_order="release",seed=123)
+                ids=[item["id"] for item,_ in vr.build_cycle(catalog,r)]
+                saga=[ids.index("movie:"+str(x)) for x in (602,603,601)]
+                self.assertEqual(saga,list(range(saga[0],saga[0]+3)))
+                other=[ids.index("movie:"+str(x)) for x in (606,605)]
+                self.assertEqual(other,[other[0],other[0]+1])
+                # A generic Tag named like a collection must not join it.
+                self.assertNotIn(ids.index("movie:604"),saga)
+                self.assertEqual(ids,[item["id"] for item,_ in
+                                      vr.build_cycle(list(reversed(catalog)),r)])
+        oldest=vr.SmartRules(media_type="movies",movie_order="oldest",
+                             collection_order="release")
+        ids=[item["id"] for item,_ in vr.build_cycle(catalog,oldest)]
+        self.assertLess(ids.index("movie:606"),ids.index("movie:602"))
+        newest=vr.SmartRules(media_type="movies",movie_order="newest",
+                             collection_order="release")
+        ids=[item["id"] for item,_ in vr.build_cycle(catalog,newest)]
+        self.assertLess(ids.index("movie:602"),ids.index("movie:606"))
+
+    def test_mixed_collection_block_does_not_interrupt_movie_series(self):
+        with main.db() as c:
+            c.executemany(
+                "INSERT INTO media (id,kind,title,year,genres,plex_collections) VALUES (?,?,?,?,?,?)",
+                [("movie:650","movie","Part 2",2010,"Drama",'["Series"]'),
+                 ("movie:651","movie","Part 1",2000,"Drama",'["Series"]')])
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        r=vr.SmartRules(media_type="all",episode_order="chronological",
+                        movie_order="shuffle",collection_order="release")
+        ids=[item["id"] for item,_ in vr.build_cycle(catalog,r)]
+        self.assertEqual(ids.index("movie:651")+1,ids.index("movie:650"))
+        self.assertLess(ids.index("episode:100"),ids.index("episode:101"))
+
+    def test_order_validation_and_legacy_compatibility(self):
+        with main.db() as c:
+            catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
+        legacy=vr.SmartRules(media_type="all",order="shuffle",seed=222)
+        self.assertEqual([x["id"] for x in vr.ordered_programming(catalog,legacy)],
+                         [x["id"] for x in vr.matching_items(catalog,legacy)])
+        for kw in ({"episode_order":"bad"},{"movie_order":"bad"},
+                   {"collection_order":"bad"}):
+            with self.subTest(kw=kw),self.assertRaises(HTTPException):
+                vr.validate_rules(vr.SmartRules(**kw))
+
     def test_mixed_movies_and_selected_shows_match_independently(self):
         with main.db() as c:
             catalog=[dict(x) for x in c.execute("SELECT * FROM media")]
