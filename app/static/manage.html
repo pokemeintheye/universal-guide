@@ -68,15 +68,15 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>Movie order <select id="smartMovieOrder">
       <option value="">Use existing Order setting</option>
       <option value="shuffle">Stable shuffle</option>
-      <option value="oldest">Release year — oldest first</option>
-      <option value="newest">Release year — newest first</option>
+      <option value="oldest">Release date — oldest first</option>
+      <option value="newest">Release date — newest first</option>
     </select></label>
     <label>Movie collections <select id="smartCollectionOrder">
       <option value="off">Don't keep collections together</option>
       <option value="release">Play collection movies together, oldest to newest</option>
     </select></label>
   </div>
-  <p class="hint">These new ordering choices override the existing Order setting separately for TV and movies. For a mixed channel, TV episodes retain their selected order while movies are inserted between episodes. Each Plex Collection plays as one uninterrupted block, in release-year order. Movies in more than one collection are assigned to one collection to avoid duplicate plays. Run a Plex library sync after updating Docker to load Collection metadata.</p>
+  <p class="hint">These new ordering choices override the existing Order setting separately for TV and movies. For a mixed channel, TV episodes retain their selected order while movies are inserted between episodes. Each Plex Collection plays as one uninterrupted block, in release-date order (year fallback). Movies in more than one collection are assigned to one collection to avoid duplicate plays. Run a Plex library sync after updating Docker to load Collection metadata.</p>
   <div class="row" style="margin:12px 0"><button id="switchToLogic" type="button">Switch to logic builder</button><span class="hint" id="logicStatus"></span></div>
   <div id="logicBuilder" hidden>
     <p class="hint">Combine conditions with AND, OR, and NOT groups. IS ONLY selects one exact genre. To require ONLY Comedy and Drama together (and no other genres), put Genre → Is only → Comedy and Genre → Is only → Drama in the same ALL (AND) group. A single IS ONLY Comedy matches Comedy-only titles. IS ONLY NOT excludes that exact genre-only match. Missing genre metadata matches neither exclusive operator. Nest OR/NOT groups for other combinations and exceptions.</p>
