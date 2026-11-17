@@ -60,7 +60,7 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
   </div>
   <div class="row" style="margin:12px 0"><button id="switchToLogic" type="button">Switch to logic builder</button><span class="hint" id="logicStatus"></span></div>
   <div id="logicBuilder" hidden>
-    <p class="hint">Combine conditions with AND, OR, and NOT groups. Nest groups to express exceptions, for example: (Comedy OR Romance) AND NOT (Horror OR Action), unless the movie is in a chosen collection. To allow ONLY Drama and/or Romance with no other genres, add one Genre → Is only condition and select both genres in its multi-select list (Ctrl/Command-click). Genre → Is only not matches the opposite: movies with at least one genre outside that set. Missing genre metadata matches neither exclusive operator.</p>
+    <p class="hint">Combine conditions with AND, OR, and NOT groups. IS ONLY selects one exact genre. To require ONLY Comedy and Drama together (and no other genres), put Genre → Is only → Comedy and Genre → Is only → Drama in the same ALL (AND) group. A single IS ONLY Comedy matches Comedy-only titles. IS ONLY NOT excludes that exact genre-only match. Missing genre metadata matches neither exclusive operator. Nest OR/NOT groups for other combinations and exceptions.</p>
     <div id="logicRoot"></div>
   </div>
   <div id="legacyFilters">
@@ -183,29 +183,12 @@ function renderLogicNode(node,parent,index,depth){
     node.field==='genre'?[['is','Is'],['is_not','Is not'],['is_only','Is only'],['is_only_not','Is only not']]:
     [['is','Is'],['is_not','Is not']];
   row.append(selectControl(ops,node.operator,v=>{
-    const wasExclusive=['is_only','is_only_not'].includes(node.operator);
-    const nowExclusive=['is_only','is_only_not'].includes(v);
     node.operator=v;
-    if(nowExclusive&&!wasExclusive)node.value=node.value?[String(node.value)]:[];
-    else if(wasExclusive&&!nowExclusive)node.value=Array.isArray(node.value)?(node.value[0]||''):node.value;
+    if(Array.isArray(node.value))node.value=node.value[0]||'';
     renderLogicBuilder()
   }));
   if(node.field==='year'){
     const year=document.createElement('input');year.type='number';year.min='1880';year.max='2200';year.value=node.value||2020;year.onchange=()=>{node.value=Number(year.value)};row.append(year);
-  }else if(node.field==='genre'&&['is_only','is_only_not'].includes(node.operator)){
-    const picker=document.createElement('select');picker.multiple=true;picker.size=5;
-    picker.setAttribute('aria-label','Allowed genres (select multiple)');
-    picker.title='Select all genres allowed together. Ctrl/Command-click to select multiple genres.';
-    const chosen=new Set(Array.isArray(node.value)?node.value:[]);
-    for(const genre of choiceValues('genre')){
-      const option=document.createElement('option');option.value=genre;option.textContent=genre;option.selected=chosen.has(genre);picker.append(option)
-    }
-    picker.onchange=()=>{node.value=Array.from(picker.selectedOptions,x=>x.value)};
-    row.append(picker);
-    const note=document.createElement('span');note.className='hint';note.textContent=
-      node.operator==='is_only'?'No other genres allowed. Select all acceptable genres together (Ctrl/Command-click).':
-      'Matches titles with genres outside the selected set. Select genres together (Ctrl/Command-click).';
-    row.append(note);
   }else{
     const vals=choiceValues(node.field).map(x=>[x,x==='movie'?'Movie':x==='episode'?'TV episode':x]);
     const options=[['','Select a value'],...vals];
@@ -237,6 +220,21 @@ function legacyToLogic(r){
   return ruleGroup('all',conditions);
 }
 $('switchToLogic').onclick=()=>{logicTree=legacyToLogic(readSmartRules());logicEnabled=true;renderLogicBuilder();message('Converted current filters into editable rule groups. Review before saving.')};
+function normalizeExclusiveLogic(node){
+  if('group' in node){node.children=node.children.map(normalizeExclusiveLogic);return node}
+  if(node.field==='genre'&&['is_only','is_only_not'].includes(node.operator)&&Array.isArray(node.value)){
+    const genres=[...new Set(node.value)];
+    if(genres.length===1){node.value=genres[0];return node}
+    if(genres.length>1){
+      const conditions=genres.map(genre=>ruleCondition('genre',genre));
+      for(const condition of conditions)condition.operator='is_only';
+      const exactGroup=ruleGroup('all',conditions);
+      return node.operator==='is_only'?exactGroup:ruleGroup('none',[exactGroup]);
+    }
+    node.value='';
+  }
+  return node;
+}
 function plexItemName(item){return (item.show_title?item.show_title+' — ':'')+item.title}
 async function resolveSavedPlexTitles(){const keys=[...new Set([...playlist.map(x=>x.rating_key),...excluded])].filter(x=>!plexTitleCache.has(x));for(let i=0;i<keys.length;i+=300){const page=keys.slice(i,i+300);try{const data=await api('/api/manage/plex-items/resolve?ids='+encodeURIComponent(page.join(',')));for(const item of data.items||[])plexTitleCache.set(item.rating_key,plexItemName(item))}catch(e){message('Could not load some saved Plex titles: '+e.message,true)}}for(const p of playlist){const name=plexTitleCache.get(p.rating_key);if(name)p.title=name}renderPlaylist()}
 function renderMatchExclusionButton(button,key){
@@ -285,7 +283,7 @@ $('matchPrevious').onclick=()=>{if(matchPage>0){matchPage--;loadMatchPage()}};
 $('matchNext').onclick=()=>{if((matchPage+1)*MATCH_PAGE_SIZE<matchTotal){matchPage++;loadMatchPage()}};
 $('matchKind').onchange=()=>{matchPage=0;loadMatchPage()};
 $('matchSearch').oninput=()=>{matchPage=0;loadMatchPage()};
-async function openVirtual(v){matchPreviewActive=false;matchRequestId++;$('matchReview').hidden=true;$('matchSearch').value='';$('matchKind').value='all';matchPage=0;editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?structuredClone(v.rules.logic):ruleGroup('all',[ruleGroup('any',[ruleCondition('kind','movie'),ruleCondition('kind','episode')])]);playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});if(!v?.rules)$('smartType').value='all';renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
+async function openVirtual(v){matchPreviewActive=false;matchRequestId++;$('matchReview').hidden=true;$('matchSearch').value='';$('matchKind').value='all';matchPage=0;editingId=v?.id||null;logicEnabled=!(v?.mode==='smart'&&v?.rules&&!v.rules.logic);logicTree=v?.rules?.logic?normalizeExclusiveLogic(structuredClone(v.rules.logic)):ruleGroup('all',[ruleGroup('any',[ruleCondition('kind','movie'),ruleCondition('kind','episode')])]);playlist=(v?.items||[]).map(x=>({...x,title:plexTitleCache.get(x.rating_key)||'Plex item '+x.rating_key}));excluded=(v?.exclude_rating_keys||[]).map(Number);$('virtualName').value=v?.name||'';$('virtualEnabled').checked=v?.enabled??true;$('virtualHeading').textContent=v?'Edit '+v.name:'New virtual channel';$('useSmartRules').checked=v?.mode==='smart';$('smartPreview').textContent='';$('virtualEditor').hidden=false;smartMode();renderPlaylist();await loadSmartFilters();applySmartRules(v?.rules||{});if(!v?.rules)$('smartType').value='all';renderLogicBuilder();await resolveSavedPlexTitles();$('virtualEditor').scrollIntoView({behavior:'smooth',block:'start'})}
 $('newVirtual').onclick=()=>openVirtual(null);$('cancelVirtual').onclick=()=>{$('virtualEditor').hidden=true};
 async function lookupPlex(){const q=$('plexSearch').value.trim();if(q.length<2){message('Enter at least two letters to search Plex');return}try{const d=await api('/api/manage/plex-items?q='+encodeURIComponent(q));searchHits=d.items||[];for(const item of searchHits)plexTitleCache.set(item.rating_key,plexItemName(item));const root=$('plexresults');root.replaceChildren();if(!searchHits.length)root.textContent='No matching synced Plex content';for(const item of searchHits){const row=document.createElement('div');row.className='mediaitem';row.innerHTML='<div><strong>'+safe(item.show_title?item.show_title+' — '+item.title:item.title)+'</strong><div class="hint">'+safe(item.kind)+(item.season!=null?' S'+item.season+' E'+item.episode:'')+'</div></div><div class="row"><button class="add">Include</button><button class="exclude warn">Exclude</button></div>';row.querySelector('.add').onclick=()=>{excluded=excluded.filter(x=>x!==item.rating_key);if(!playlist.some(x=>x.rating_key===item.rating_key))playlist.push({rating_key:item.rating_key,duration_minutes:item.kind==='movie'?120:30,title:item.show_title?item.show_title+' — '+item.title:item.title});renderPlaylist()};row.querySelector('.exclude').onclick=()=>{playlist=playlist.filter(x=>x.rating_key!==item.rating_key);if(!excluded.includes(item.rating_key))excluded.push(item.rating_key);renderPlaylist()};root.append(row)}message(searchHits.length+' Plex items found')}catch(e){err(e)}}
 $('plexLookup').onclick=lookupPlex;$('plexSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();lookupPlex()}};
