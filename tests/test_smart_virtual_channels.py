@@ -233,7 +233,7 @@ class SmartChannelTests(unittest.TestCase):
         movie=ET.fromstring(
             '<Video type="movie" ratingKey="901" title="Part One" '
             'year="2004" originallyAvailableAt="2004-04-02" duration="60000">'
-            '<Collection tag="Film Series"/><Tag tag="Holiday">'
+            '<Collection tag="Film Series"/><Tag tag="Holiday"/>'
             '<Genre tag="Drama"/></Video>')
         with (patch.object(main,"PLEX_ALLOWED_LABEL",""),
               patch.object(main,"plex_xml",return_value=sections),
