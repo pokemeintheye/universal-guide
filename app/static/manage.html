@@ -58,6 +58,25 @@ section{background:#1a222f;border:1px solid #333f52;border-radius:13px;padding:1
     <label>Order <select id="smartOrder"><option value="shuffle">Stable shuffle</option><option value="chronological">Show / season / episode</option><option value="newest">Newest release first</option></select></label>
     <label>Shuffle seed <input type="number" id="smartSeed" min="0" max="1000000" value="0"></label>
   </div>
+  <div class="row" style="margin:12px 0">
+    <label>TV episode order <select id="smartEpisodeOrder">
+      <option value="">Use existing Order setting</option>
+      <option value="chronological">Season / episode order (recommended)</option>
+      <option value="shuffle">Stable shuffle</option>
+      <option value="newest">Newest series/episode year first</option>
+    </select></label>
+    <label>Movie order <select id="smartMovieOrder">
+      <option value="">Use existing Order setting</option>
+      <option value="shuffle">Stable shuffle</option>
+      <option value="oldest">Release year — oldest first</option>
+      <option value="newest">Release year — newest first</option>
+    </select></label>
+    <label>Movie collections <select id="smartCollectionOrder">
+      <option value="off">Don't keep collections together</option>
+      <option value="release">Play collection movies together, oldest to newest</option>
+    </select></label>
+  </div>
+  <p class="hint">These new ordering choices override the existing Order setting separately for TV and movies. For a mixed channel, TV episodes retain their selected order while movies are inserted between episodes. Each Plex Collection plays as one uninterrupted block, in release-year order. Movies in more than one collection are assigned to one collection to avoid duplicate plays. Run a Plex library sync after updating Docker to load Collection metadata.</p>
   <div class="row" style="margin:12px 0"><button id="switchToLogic" type="button">Switch to logic builder</button><span class="hint" id="logicStatus"></span></div>
   <div id="logicBuilder" hidden>
     <p class="hint">Combine conditions with AND, OR, and NOT groups. IS ONLY selects one exact genre. To require ONLY Comedy and Drama together (and no other genres), put Genre → Is only → Comedy and Genre → Is only → Drama in the same ALL (AND) group. A single IS ONLY Comedy matches Comedy-only titles. IS ONLY NOT excludes that exact genre-only match. Missing genre metadata matches neither exclusive operator. Nest OR/NOT groups for other combinations and exceptions.</p>
@@ -155,8 +174,8 @@ function getSelections(id){return Array.from($(id).selectedOptions,x=>x.value)}
 function setSelections(id,values){for(const opt of $(id).options)opt.selected=(values||[]).includes(opt.value)}
 function fillSelect(id,items){const el=$(id);el.replaceChildren();for(const value of items){const option=document.createElement('option');option.value=value;option.textContent=value;el.append(option)}}
 async function loadSmartFilters(){try{const data=await api('/api/manage/virtual/filters');metadataFilters=data;fillSelect('smartGenres',data.genres||[]);fillSelect('smartShows',data.shows||[]);fillSelect('smartLabels',data.labels||[]);fillSelect('smartTags',data.tags||[]);renderLogicBuilder();if(!(data.labels||[]).length)$('smartPreview').textContent='No Plex Labels are indexed yet. Refresh your Plex library in Universal Guide after installing the updated Docker image, then reopen this editor.'}catch(e){err(e)}}
-function readSmartRules(){return {logic:logicEnabled?logicTree:null,media_type:$('smartType').value,order:$('smartOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
-function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartLabels',r.labels||[]);setSelections('smartTags',r.tags||[]);setSelections('smartShows',r.shows||[])}
+function readSmartRules(){return {logic:logicEnabled?logicTree:null,media_type:$('smartType').value,order:$('smartOrder').value,episode_order:$('smartEpisodeOrder').value||null,movie_order:$('smartMovieOrder').value||null,collection_order:$('smartCollectionOrder').value,seed:Number($('smartSeed').value)||0,genres:getSelections('smartGenres'),labels:getSelections('smartLabels'),tags:getSelections('smartTags'),shows:$('smartType').value==='movies'?[]:getSelections('smartShows'),year_min:$('smartYearMin').value?Number($('smartYearMin').value):null,year_max:$('smartYearMax').value?Number($('smartYearMax').value):null,default_episode_minutes:Number($('smartEpisodeMinutes').value)||30,default_movie_minutes:Number($('smartMovieMinutes').value)||120}}
+function applySmartRules(r={}){$('smartType').value=r.media_type||'episodes';$('smartOrder').value=r.order||'shuffle';$('smartEpisodeOrder').value=r.episode_order||'';$('smartMovieOrder').value=r.movie_order||'';$('smartCollectionOrder').value=r.collection_order||'off';$('smartSeed').value=r.seed??0;$('smartYearMin').value=r.year_min??'';$('smartYearMax').value=r.year_max??'';$('smartEpisodeMinutes').value=r.default_episode_minutes??30;$('smartMovieMinutes').value=r.default_movie_minutes??120;setSelections('smartGenres',r.genres||[]);setSelections('smartLabels',r.labels||[]);setSelections('smartTags',r.tags||[]);setSelections('smartShows',r.shows||[])}
 
 const ruleFields=[['genre','Genre'],['year','Year'],['label','Plex Label'],['tag','Tag / Collection'],['show','TV show title'],['kind','Media type']];
 function ruleCondition(field='genre',value=''){return {field,operator:'is',value}}
