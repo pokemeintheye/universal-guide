@@ -20,7 +20,10 @@ class SmartRules(BaseModel):
     shows: list[str] = Field(default_factory=list, max_length=30)
     year_min: int | None = Field(default=None, ge=1880, le=2200)
     year_max: int | None = Field(default=None, ge=1880, le=2200)
-    order: str = "shuffle"  # shuffle, chronological, newest
+    order: str = "shuffle"  # legacy order, preserved for saved channels
+    episode_order: str | None = None  # chronological, shuffle, newest
+    movie_order: str | None = None  # shuffle, oldest, newest
+    collection_order: str = "off"  # off, release (keep films grouped in release order)
     seed: int = Field(default=0, ge=0, le=1000000)
     default_episode_minutes: int = Field(default=30, ge=1, le=360)
     default_movie_minutes: int = Field(default=120, ge=1, le=360)
@@ -30,6 +33,12 @@ def validate_rules(rule):
         raise HTTPException(422,"Invalid content type")
     if rule.order not in ("shuffle","chronological","newest"):
         raise HTTPException(422,"Invalid programming order")
+    if rule.episode_order not in (None,"chronological","shuffle","newest"):
+        raise HTTPException(422,"Invalid TV episode order")
+    if rule.movie_order not in (None,"shuffle","oldest","newest"):
+        raise HTTPException(422,"Invalid movie order")
+    if rule.collection_order not in ("off","release"):
+        raise HTTPException(422,"Invalid movie collection order")
     if rule.year_min is not None and rule.year_max is not None and rule.year_min > rule.year_max:
         raise HTTPException(422,"Year range is reversed")
     for v in rule.genres + rule.shows + rule.labels + rule.tags:
@@ -222,6 +231,114 @@ def matching_items(catalog, rule):
                 (str(rule.seed)+"|"+str(m["id"])).encode()).digest())
     return result
 
+def _chronology(item):
+    return (_normalize(item.get("show_title") or item.get("title")),
+            int(item.get("season") or 0), int(item.get("episode") or 0),
+            int(item.get("year") or 0), str(item["id"]))
+
+
+def _stable_shuffle_key(seed, value):
+    return hashlib.sha256((str(seed)+"|"+str(value)).encode()).digest()
+
+
+def _ordered_tv_episodes(episodes, rule):
+    """Maintain series chronology, even while movies are interleaved."""
+    order=rule.episode_order or ("chronological" if rule.order=="chronological" else rule.order)
+    if order=="newest":
+        return sorted(episodes,key=lambda x:(-int(x.get("year") or 0),)+_chronology(x))
+    if order=="shuffle":
+        return sorted(episodes,key=lambda x:_stable_shuffle_key(rule.seed,x["id"]))
+    # Round-robin between TV shows, retaining season/episode order within
+    # each series. This prevents one long-running show monopolizing a mixed
+    # channel while still never playing episode 2 before episode 1.
+    series={}
+    for item in episodes:
+        series.setdefault(_normalize(item.get("show_title") or item.get("title")),[]).append(item)
+    for group in series.values():
+        group.sort(key=lambda x:(int(x.get("season") or 0),int(x.get("episode") or 0),
+                                 str(x["id"])))
+    result=[]
+    names=sorted(series)
+    while any(series.values()):
+        for name in names:
+            if series[name]:
+                result.append(series[name].pop(0))
+    return result
+
+
+def _release_ordinal(item):
+    """Plex originallyAvailableAt is YYYY-MM-DD; fall back to release year.
+
+    Missing metadata sorts last in oldest-first mode and last in newest-first
+    mode. Same-year titles use the actual date if Plex supplies it.
+    """
+    date=str(item.get("release_date") or "")
+    if (len(date)==10 and date[4]=="-" and date[7]=="-"
+        and date[:4].isdigit() and date[5:7].isdigit() and date[8:10].isdigit()):
+        return int(date[:4]+date[5:7]+date[8:10])
+    year=int(item.get("year") or 0)
+    return year*10000+101 if year>0 else 0
+
+
+def _movie_blocks(movies, rule):
+    """Return movie blocks; Plex collections stay together in release order.
+
+    Plex movies may be in multiple collections. Assign each to the first
+    alphabetically sorted collection to avoid duplicates and non-determinism.
+    Standalone movies form their own blocks.
+    """
+    groups={}
+    for item in movies:
+        collections=sorted(_metadata_values(item.get("plex_collections")),key=str.casefold)
+        collection=collections[0] if collections and rule.collection_order=="release" else None
+        key=("collection",collection) if collection else ("movie",str(item["id"]))
+        groups.setdefault(key,[]).append(item)
+    blocks=list(groups.values())
+    for block in blocks:
+        block.sort(key=lambda x:(_release_ordinal(x) or 99999999,
+                                 _normalize(x.get("title")),str(x["id"])))
+    order=rule.movie_order or {"chronological":"oldest","newest":"newest","shuffle":"shuffle"}[rule.order]
+    if order=="shuffle":
+        blocks.sort(key=lambda block:_stable_shuffle_key(
+            rule.seed,"|".join(sorted(str(x["id"]) for x in block))))
+    elif order=="newest":
+        blocks.sort(key=lambda block:(-(_release_ordinal(block[0]) or -1),
+                                      _normalize(block[0].get("title"))))
+    else:
+        blocks.sort(key=lambda block:(_release_ordinal(block[0]) or 99999999,
+                                      _normalize(block[0].get("title"))))
+    return blocks
+
+
+def ordered_programming(catalog, rule):
+    """Order TV and movies independently and keep collection films contiguous.
+
+    Older rules retain their previous ordering unless new options are used.
+    New mixed channels alternate an episode and a movie (or an entire movie
+    collection). TV series order is preserved across those insertions.
+    """
+    items=matching_items(catalog,rule)
+    if rule.episode_order is None and rule.movie_order is None and rule.collection_order=="off":
+        return items
+    episodes=[x for x in items if x["kind"]=="episode"]
+    movies=[x for x in items if x["kind"]=="movie"]
+    tv=_ordered_tv_episodes(episodes,rule)
+    blocks=_movie_blocks(movies,rule)
+    if not tv:
+        return [item for block in blocks for item in block]
+    if not blocks:
+        return tv
+    result=[]
+    ep_index=0
+    for block in blocks:
+        if ep_index<len(tv):
+            result.append(tv[ep_index])
+            ep_index+=1
+        result.extend(block)
+    result.extend(tv[ep_index:])
+    return result
+
+
 def pool(catalog,rule):
     result=matching_items(catalog,rule)
     return {"matching":len(result),"movies":sum(x["kind"]=="movie" for x in result),
@@ -237,7 +354,7 @@ def duration_minutes(item,rule):
     return rule.default_movie_minutes if item["kind"]=="movie" else rule.default_episode_minutes
 
 def build_cycle(catalog,rule):
-    return [(item,duration_minutes(item,rule)) for item in matching_items(catalog,rule)]
+    return [(item,duration_minutes(item,rule)) for item in ordered_programming(catalog,rule)]
 
 def schedule_cycle(playlist,window_start,window_end):
     """Yield only overlapping programs, anchored to a stable UTC epoch.
