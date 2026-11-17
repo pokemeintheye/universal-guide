@@ -266,6 +266,20 @@ def _ordered_tv_episodes(episodes, rule):
     return result
 
 
+def _release_ordinal(item):
+    """Plex originallyAvailableAt is YYYY-MM-DD; fall back to release year.
+
+    Missing metadata sorts last in oldest-first mode and last in newest-first
+    mode. Same-year titles use the actual date if Plex supplies it.
+    """
+    date=str(item.get("release_date") or "")
+    if (len(date)==10 and date[4]=="-" and date[7]=="-"
+        and date[:4].isdigit() and date[5:7].isdigit() and date[8:10].isdigit()):
+        return int(date[:4]+date[5:7]+date[8:10])
+    year=int(item.get("year") or 0)
+    return year*10000+101 if year>0 else 0
+
+
 def _movie_blocks(movies, rule):
     """Return movie blocks; Plex collections stay together in release order.
 
@@ -281,17 +295,17 @@ def _movie_blocks(movies, rule):
         groups.setdefault(key,[]).append(item)
     blocks=list(groups.values())
     for block in blocks:
-        block.sort(key=lambda x:(int(x.get("year") or 0) or 9999,
+        block.sort(key=lambda x:(_release_ordinal(x) or 99999999,
                                  _normalize(x.get("title")),str(x["id"])))
     order=rule.movie_order or {"chronological":"oldest","newest":"newest","shuffle":"shuffle"}[rule.order]
     if order=="shuffle":
         blocks.sort(key=lambda block:_stable_shuffle_key(
             rule.seed,"|".join(sorted(str(x["id"]) for x in block))))
     elif order=="newest":
-        blocks.sort(key=lambda block:(-min(int(x.get("year") or 0) or 9999 for x in block),
+        blocks.sort(key=lambda block:(-(_release_ordinal(block[0]) or -1),
                                       _normalize(block[0].get("title"))))
     else:
-        blocks.sort(key=lambda block:(min(int(x.get("year") or 0) or 9999 for x in block),
+        blocks.sort(key=lambda block:(_release_ordinal(block[0]) or 99999999,
                                       _normalize(block[0].get("title"))))
     return blocks
 
