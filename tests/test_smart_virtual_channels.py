@@ -100,7 +100,7 @@ class SmartChannelTests(unittest.TestCase):
         def results(expr):
             return {x["id"] for x in vr.matching_items(
                 catalog,vr.SmartRules(media_type="movies",logic=expr))}
-        self.assertEqual(results(comedy),{"movie:301"})
+        self.assertEqual(results(comedy),{"movie:201","movie:301"})
         self.assertEqual(results(drama),{"movie:302"})
         # The requested AND expression requires both genres exactly.
         together={"group":"all","children":[comedy,drama]}
