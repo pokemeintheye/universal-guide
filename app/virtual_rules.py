@@ -84,12 +84,13 @@ def validate_logic(node):
                 if op not in ("is", "is_not", "gte", "lte") or type(value) is not int or not 1880 <= value <= 2200:
                     raise HTTPException(422, "Year must be a valid numeric year")
             elif field == "genre" and op in ("is_only", "is_only_not"):
-                # The allowed genres form one set, e.g. [Drama, Romance].
-                # A single choice cannot express Drama OR Romance exclusively.
-                if (not isinstance(value, list) or not 1 <= len(value) <= 30
+                # New editor uses a single genre. Saved multi-select rules
+                # remain readable, now with exact-set rather than subset semantics.
+                selected = value if isinstance(value, list) else [value]
+                if (not 1 <= len(selected) <= 30
                     or any(not isinstance(v, str) or not v.strip() or len(v) > 100
-                           or any(ord(c) < 32 for c in v) for v in value)):
-                    raise HTTPException(422, "Choose one or more allowed genres for IS ONLY")
+                           or any(ord(c) < 32 for c in v) for v in selected)):
+                    raise HTTPException(422, "Select a valid genre for IS ONLY")
             else:
                 if op not in ("is", "is_not") or not isinstance(value, str) or not value.strip() or len(value) > 100 or any(ord(c)<32 for c in value):
                     raise HTTPException(422, "Invalid metadata comparison")
@@ -101,9 +102,26 @@ def validate_logic(node):
 def matches_logic(item, expr):
     """Evaluate a validated condition on metadata already indexed from Plex."""
     if "group" in expr:
-        matches = [matches_logic(item, child) for child in expr["children"]]
+        children = expr["children"]
         if expr["group"] == "all":
-            return all(matches)
+            # Adjacent IS ONLY genres in one AND group define the exact
+            # required genre set. For example Comedy AND Drama means BOTH
+            # genres, with no third genre. Other conditions are evaluated
+            # normally, including nested OR/NOT groups and year filters.
+            exclusive = [child for child in children
+                         if child.get("field") == "genre"
+                         and child.get("operator") == "is_only"]
+            remaining = [child for child in children if child not in exclusive]
+            if exclusive:
+                expected = {_normalize(genre)
+                            for cond in exclusive
+                            for genre in (cond["value"] if isinstance(cond["value"], list)
+                                          else [cond["value"]])}
+                actual = {_normalize(v) for v in (item.get("genres") or "").split(",") if v.strip()}
+                if not actual or actual != expected:
+                    return False
+            return all(matches_logic(item, child) for child in remaining)
+        matches = [matches_logic(item, child) for child in children]
         if expr["group"] == "any":
             return any(matches)
         return not any(matches)  # none = NOT (A OR B)
@@ -117,13 +135,16 @@ def matches_logic(item, expr):
     if field == "genre":
         values = {_normalize(x) for x in (item.get("genres") or "").split(",") if x.strip()}
         if op in ("is_only", "is_only_not"):
-            allowed = {_normalize(x) for x in wanted}
-            exclusive = bool(values) and values.issubset(allowed)
-            # IS ONLY NOT is the inverse: any additional/unallowed genre
-            # means it matches; no genre metadata never matches either.
+            selected = wanted if isinstance(wanted, list) else [wanted]
+            expected = {_normalize(x) for x in selected}
+            exact = bool(values) and values == expected
+            # A standalone IS ONLY requires exactly the selected genre(s).
+            # An AND group combines individual IS ONLY criteria above.
+            # IS ONLY NOT negates that exact comparison, except on titles
+            # with no genre metadata.
             if not values:
                 return False
-            return exclusive if op == "is_only" else not exclusive
+            return exact if op == "is_only" else not exact
     elif field == "label":
         values = _metadata_values(item.get("plex_labels"))
     elif field == "tag":
