@@ -224,6 +224,9 @@ struct TVGuideScreen: View {
         // Preserve staged startup to avoid the tvOS scene watchdog.
         if diagnosticLoadGuide {
             productionBody
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { refreshStaleTVGuideOnResume() }
+                }
         } else {
             diagnosticStartupBody
         }
@@ -769,26 +772,9 @@ struct TVGuideScreen: View {
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             now = Date()
             #if os(tvOS)
-            // Poll on the foreground scene only; normal clock ticks should
-            // not spawn duplicate HTTP requests.
-            if scenePhase == .active &&
-               Date().timeIntervalSince(lastGuideRefreshAttempt) >= 300 {
-                Task { await refreshGuide() }
-            }
+            refreshStaleTVGuideOnTimer()
             #endif
         }
-        #if os(tvOS)
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                now = Date()
-                // tvOS may preserve our scene for hours while the EPG expires.
-                // Do not rely on onAppear/.task being invoked again on resume.
-                if Date().timeIntervalSince(lastGuideRefreshAttempt) >= 60 {
-                    Task { await refreshGuide() }
-                }
-            }
-        }
-        #endif
         .onChange(of: selected?.1.id) { _, _ in
             #if os(tvOS)
             // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
@@ -1529,6 +1515,19 @@ struct TVGuideScreen: View {
         resetSelection()
         Task { await refreshGuide() }
     }
+    #if os(tvOS)
+    private func refreshStaleTVGuideOnResume() {
+        now = Date()
+        if Date().timeIntervalSince(lastGuideRefreshAttempt) >= 60 {
+            Task { await refreshGuide() }
+        }
+    }
+    private func refreshStaleTVGuideOnTimer() {
+        guard scenePhase == .active,
+              Date().timeIntervalSince(lastGuideRefreshAttempt) >= 300 else { return }
+        Task { await refreshGuide() }
+    }
+    #endif
     private func refreshGuide() async {
         #if os(tvOS)
         // Throttle both the foreground callback and repeating clock timer.
