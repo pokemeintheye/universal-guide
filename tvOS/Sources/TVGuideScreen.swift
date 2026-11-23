@@ -2348,6 +2348,34 @@ private final class UniversalTVGuideRemoteView: UIView {
     var onBack: (() -> Void)?
     override var canBecomeFocused: Bool { true }
     #if os(tvOS)
+    // The iPhone Apple TV Remote delivers swipes as touch-surface gestures,
+    // which can bypass directional UIPress events. Observe the gesture
+    // directly instead of depending on a proposed UIKit focus change.
+    func installSwipeRecognizers() {
+        for (direction, action) in [
+            (UISwipeGestureRecognizer.Direction.up, #selector(swipedUp(_:))),
+            (.down, #selector(swipedDown(_:))),
+            (.left, #selector(swipedLeft(_:))),
+            (.right, #selector(swipedRight(_:)))
+        ] {
+            let recognizer = UISwipeGestureRecognizer(target: self, action: action)
+            recognizer.direction = direction
+            recognizer.cancelsTouchesInView = false
+            addGestureRecognizer(recognizer)
+        }
+    }
+    @objc private func swipedUp(_ recognizer: UISwipeGestureRecognizer) {
+        if recognizer.state == .ended { deliverDirection("up") }
+    }
+    @objc private func swipedDown(_ recognizer: UISwipeGestureRecognizer) {
+        if recognizer.state == .ended { deliverDirection("down") }
+    }
+    @objc private func swipedLeft(_ recognizer: UISwipeGestureRecognizer) {
+        if recognizer.state == .ended { deliverDirection("left") }
+    }
+    @objc private func swipedRight(_ recognizer: UISwipeGestureRecognizer) {
+        if recognizer.state == .ended { deliverDirection("right") }
+    }
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil {
@@ -2417,6 +2445,9 @@ private struct UniversalTVGuideRemoteReceiver: UIViewRepresentable {
     func makeUIView(context: Context) -> UniversalTVGuideRemoteView {
         let view = UniversalTVGuideRemoteView()
         view.backgroundColor = .clear
+        #if os(tvOS)
+        view.installSwipeRecognizers()
+        #endif
         return view
     }
     func updateUIView(_ view: UniversalTVGuideRemoteView, context: Context) {
