@@ -1,6 +1,11 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
+  # Publish on an explicit workflow-file release commit as well.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tvos-testflight.yml'
 permissions:
   contents: read
 concurrency:
