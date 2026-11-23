@@ -540,7 +540,58 @@ struct TVGuideScreen: View {
     }
     #endif
 
+    // Keep lifecycle observers separate from the large guide layout to
+    // avoid exponential SwiftUI view-builder type checking.
     private var productionBody: some View {
+        productionLayout
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            now = Date()
+        }
+        .onChange(of: selected?.1.id) { _, _ in
+            #if os(tvOS)
+            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
+            #else
+            refreshSelectedArtwork()
+            #endif
+        }
+        .onChange(of: serverURL) { _, _ in
+            liveOptions.removeAll()
+            artworkCache.removeAll()
+            noArtwork.removeAll()
+            #if os(iOS)
+            refreshSelectedArtwork()
+            #endif
+        }
+        .onChange(of: store.channels.count) { _, _ in resetSelection() }
+        .onChange(of: searchText) { _, _ in resetSelection() }
+        .onChange(of: focus) { _, next in
+            if isCompact, let next, next.hasPrefix("program-") {
+                let parts = next.split(separator: "-")
+                if parts.count == 3,
+                   let ch = Int(parts[1]), let pg = Int(parts[2]),
+                   channels.indices.contains(ch), channels[ch].programs.indices.contains(pg) {
+                    choose(ch, pg)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            handlePhoneGamepadDirection(event)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            handlePhoneGamepadSelect()
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            handlePhoneGamepadBack()
+            #endif
+        }
+    }
+
+    private var productionLayout: some View {
         ZStack {
             (isCompact ? TVPalette.background : tvGuideSurface).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
@@ -774,51 +825,6 @@ struct TVGuideScreen: View {
             #else
             await refreshGuide()
             refreshSelectedArtwork()
-            #endif
-        }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-            now = Date()
-        }
-        .onChange(of: selected?.1.id) { _, _ in
-            #if os(tvOS)
-            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
-            #else
-            refreshSelectedArtwork()
-            #endif
-        }
-        .onChange(of: serverURL) { _, _ in
-            liveOptions.removeAll()
-            artworkCache.removeAll()
-            noArtwork.removeAll()
-            #if os(iOS)
-            refreshSelectedArtwork()
-            #endif
-        }
-        .onChange(of: store.channels.count) { _, _ in resetSelection() }
-        .onChange(of: searchText) { _, _ in resetSelection() }
-        .onChange(of: focus) { _, next in
-            if isCompact, let next, next.hasPrefix("program-") {
-                let parts = next.split(separator: "-")
-                if parts.count == 3,
-                   let ch = Int(parts[1]), let pg = Int(parts[2]),
-                   channels.indices.contains(ch), channels[ch].programs.indices.contains(pg) {
-                    choose(ch, pg)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
-            #if os(iOS)
-            handlePhoneGamepadDirection(event)
-            #endif
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
-            #if os(iOS)
-            handlePhoneGamepadSelect()
-            #endif
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
-            #if os(iOS)
-            handlePhoneGamepadBack()
             #endif
         }
     }
