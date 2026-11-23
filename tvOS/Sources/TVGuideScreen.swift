@@ -20,6 +20,7 @@ private struct TVFocusCard: ButtonStyle {
 }
 
 struct TVGuideScreen: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("guide.serverURL") private var serverURL = ""
     @StateObject private var store = GuideStore()
     @State private var filter = "All"
@@ -91,6 +92,11 @@ struct TVGuideScreen: View {
     @State private var horizontalScrollTask: Task<Void, Never>?
     #endif
     @State private var now = Date()
+    #if os(tvOS)
+    // A foreground refresh and periodic polling keep the 8-hour EPG current.
+    @State private var lastGuideRefreshAttempt: Date = .distantPast
+    @State private var guideRefreshInProgress = false
+    #endif
     @State private var lastMoveWasVertical = false
     @State private var navigationTime: Date?
     // A shared 16:9 design canvas scales the guide's vertical proportions
@@ -218,6 +224,16 @@ struct TVGuideScreen: View {
         // Preserve staged startup to avoid the tvOS scene watchdog.
         if diagnosticLoadGuide {
             productionBody
+                .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
+                    refreshStaleTVGuideOnTimer()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { refreshStaleTVGuideOnResume() }
+                }
+                .onChange(of: serverURL) { _, _ in
+                    lastGuideRefreshAttempt = .distantPast
+                    Task { await refreshGuide() }
+                }
         } else {
             diagnosticStartupBody
         }
@@ -524,7 +540,98 @@ struct TVGuideScreen: View {
     }
     #endif
 
+    // Keep lifecycle observers separate from the large guide layout to
+    // avoid exponential SwiftUI view-builder type checking.
     private var productionBody: some View {
+        productionLayout
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            now = Date()
+        }
+        .onChange(of: selected?.1.id) { _, _ in
+            #if os(tvOS)
+            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
+            #else
+            refreshSelectedArtwork()
+            #endif
+        }
+        .onChange(of: serverURL) { _, _ in
+            liveOptions.removeAll()
+            artworkCache.removeAll()
+            noArtwork.removeAll()
+            #if os(iOS)
+            refreshSelectedArtwork()
+            #endif
+        }
+        .onChange(of: store.channels.count) { _, _ in resetSelection() }
+        .onChange(of: searchText) { _, _ in resetSelection() }
+        .onChange(of: focus) { _, next in
+            if isCompact, let next, next.hasPrefix("program-") {
+                let parts = next.split(separator: "-")
+                if parts.count == 3,
+                   let ch = Int(parts[1]), let pg = Int(parts[2]),
+                   channels.indices.contains(ch), channels[ch].programs.indices.contains(pg) {
+                    choose(ch, pg)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
+            #if os(iOS)
+            handlePhoneGamepadDirection(event)
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
+            #if os(iOS)
+            handlePhoneGamepadSelect()
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
+            #if os(iOS)
+            handlePhoneGamepadBack()
+            #endif
+        }
+    }
+
+    private var productionLayout: some View {
+        productionPresentation
+        #if os(tvOS)
+        .alert("Guide Diagnostics", isPresented: Binding(
+            get: { diagnosticCaptureStatus != nil },
+            set: { if !$0 { diagnosticCaptureStatus = nil } }
+        )) {
+            Button("OK") { diagnosticCaptureStatus = nil }
+        } message: { Text(diagnosticCaptureStatus ?? "") }
+        #endif
+        .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
+            Button("OK") { playbackError = nil }
+        } message: { Text(playbackError ?? "") }
+        .onAppear {
+            #if os(tvOS)
+            if TVVisualPreview.enabled {
+                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
+            }
+            #endif
+        }
+        .task {
+            #if os(tvOS)
+            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
+                NSLog("UG_PREVIEW_STAGE guide-task-start")
+
+                store.channels = TVVisualPreview.channels()
+                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
+                resetSelection()
+                NSLog("UG_PREVIEW_STAGE selection-reset")
+            } else {
+                await refreshGuide()
+                // tvOS guide tiles are text-only; do not fetch unused artwork.
+            }
+            #else
+            await refreshGuide()
+            refreshSelectedArtwork()
+            #endif
+        }
+    }
+
+    private var productionPresentation: some View {
         ZStack {
             (isCompact ? TVPalette.background : tvGuideSurface).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
@@ -579,20 +686,9 @@ struct TVGuideScreen: View {
             .padding(.horizontal, isCompact ? 8 : 16)
             .padding(.vertical, isCompact ? 5 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            #if os(iOS)
-            // The root GeometryReader owns phone viewport measurements;
-            // never derive screen size from this wide inner guide HStack.
-            #else
-            .background {
-                GeometryReader { geometry in
-                    Color.clear
-                        .onAppear { viewportHeight = geometry.size.height }
-                        .onChange(of: geometry.size) { _, size in
-                            viewportHeight = size.height
-                        }
-                }
-            }
-            #endif
+            // Apple TV's logical guide canvas uses the fixed 1080-point
+            // design scale. iPhone viewport measurement lives in its own root.
+
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
@@ -724,88 +820,8 @@ struct TVGuideScreen: View {
                 },
                 onClose: { showFilters = false })
         }
-        #if os(tvOS)
-        .alert("Guide Diagnostics", isPresented: Binding(
-            get: { diagnosticCaptureStatus != nil },
-            set: { if !$0 { diagnosticCaptureStatus = nil } }
-        )) {
-            Button("OK") { diagnosticCaptureStatus = nil }
-        } message: { Text(diagnosticCaptureStatus ?? "") }
-        #endif
-        .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
-            Button("OK") { playbackError = nil }
-        } message: { Text(playbackError ?? "") }
-        .onAppear {
-            #if os(tvOS)
-            if TVVisualPreview.enabled {
-                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
-            }
-            #endif
-        }
-        .task {
-            #if os(tvOS)
-            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
-                NSLog("UG_PREVIEW_STAGE guide-task-start")
-
-                store.channels = TVVisualPreview.channels()
-                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
-                resetSelection()
-                NSLog("UG_PREVIEW_STAGE selection-reset")
-            } else {
-                await refreshGuide()
-                // tvOS guide tiles are text-only; do not fetch unused artwork.
-            }
-            #else
-            await refreshGuide()
-            refreshSelectedArtwork()
-            #endif
-        }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-            now = Date()
-        }
-        .onChange(of: selected?.1.id) { _, _ in
-            #if os(tvOS)
-            // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
-            #else
-            refreshSelectedArtwork()
-            #endif
-        }
-        .onChange(of: serverURL) { _, _ in
-            liveOptions.removeAll()
-            artworkCache.removeAll()
-            noArtwork.removeAll()
-            #if os(iOS)
-            refreshSelectedArtwork()
-            #endif
-        }
-        .onChange(of: store.channels.count) { _, _ in resetSelection() }
-        .onChange(of: searchText) { _, _ in resetSelection() }
-        .onChange(of: focus) { _, next in
-            if isCompact, let next, next.hasPrefix("program-") {
-                let parts = next.split(separator: "-")
-                if parts.count == 3,
-                   let ch = Int(parts[1]), let pg = Int(parts[2]),
-                   channels.indices.contains(ch), channels[ch].programs.indices.contains(pg) {
-                    choose(ch, pg)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadDirection)) { event in
-            #if os(iOS)
-            handlePhoneGamepadDirection(event)
-            #endif
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadSelect)) { _ in
-            #if os(iOS)
-            handlePhoneGamepadSelect()
-            #endif
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ugGamepadBack)) { _ in
-            #if os(iOS)
-            handlePhoneGamepadBack()
-            #endif
-        }
     }
+
 
     private var sidebarRail: some View {
         VStack(spacing: isCompact ? 8 : 16) {
@@ -1499,7 +1515,27 @@ struct TVGuideScreen: View {
         resetSelection()
         Task { await refreshGuide() }
     }
+    #if os(tvOS)
+    private func refreshStaleTVGuideOnResume() {
+        now = Date()
+        if Date().timeIntervalSince(lastGuideRefreshAttempt) >= 60 {
+            Task { await refreshGuide() }
+        }
+    }
+    private func refreshStaleTVGuideOnTimer() {
+        guard scenePhase == .active,
+              Date().timeIntervalSince(lastGuideRefreshAttempt) >= 300 else { return }
+        Task { await refreshGuide() }
+    }
+    #endif
     private func refreshGuide() async {
+        #if os(tvOS)
+        // Throttle both the foreground callback and repeating clock timer.
+        guard !guideRefreshInProgress else { return }
+        guideRefreshInProgress = true
+        lastGuideRefreshAttempt = Date()
+        defer { guideRefreshInProgress = false }
+        #endif
         await store.refresh(server: serverURL)
         liveOptions = await TVChannelsService.availableOptions(serverURL: serverURL)
     }
@@ -2321,21 +2357,49 @@ private final class UniversalTVGuideRemoteView: UIView {
             }
         }
     }
+    private var lastDirection: String?
+    private var lastDirectionTime: TimeInterval = 0
+    private func deliverDirection(_ direction: String) {
+        // A remote click may produce both a key press and a focus update.
+        // Coalesce those reports without losing separate swipes.
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        guard lastDirection != direction ||
+              timestamp - lastDirectionTime > 0.13 else { return }
+        lastDirection = direction
+        lastDirectionTime = timestamp
+        onMove?(direction)
+    }
     override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
-        // Prevent the UIKit spatial engine from moving onto the next tile
-        // after our explicit one-step navigator has already handled the D-pad.
+        // iPhone Control Center's Apple TV Remote sends touchpad swipes as
+        // focus movements, not necessarily UIPress arrow events. Translate
+        // the proposed direction into our deterministic EPG navigator, while
+        // keeping the receiver focused so rows never skip.
         if context.previouslyFocusedView === self,
-           context.nextFocusedView !== self { return false }
+           context.nextFocusedView !== self {
+            let heading = context.focusHeading
+            let direction: String?
+            if heading.contains(.up) { direction = "up" }
+            else if heading.contains(.down) { direction = "down" }
+            else if heading.contains(.left) { direction = "left" }
+            else if heading.contains(.right) { direction = "right" }
+            else { direction = nil }
+            if let direction {
+                DispatchQueue.main.async { [weak self] in
+                    self?.deliverDirection(direction)
+                }
+            }
+            return false
+        }
         return super.shouldUpdateFocus(in: context)
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
         for press in presses {
             switch press.type {
-            case .upArrow: onMove?("up"); handled = true
-            case .downArrow: onMove?("down"); handled = true
-            case .leftArrow: onMove?("left"); handled = true
-            case .rightArrow: onMove?("right"); handled = true
+            case .upArrow: deliverDirection("up"); handled = true
+            case .downArrow: deliverDirection("down"); handled = true
+            case .leftArrow: deliverDirection("left"); handled = true
+            case .rightArrow: deliverDirection("right"); handled = true
             case .select: onSelect?(); handled = true
             case .menu: onBack?(); handled = true
             default: break
