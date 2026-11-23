@@ -20,6 +20,7 @@ private struct TVFocusCard: ButtonStyle {
 }
 
 struct TVGuideScreen: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("guide.serverURL") private var serverURL = ""
     @StateObject private var store = GuideStore()
     @State private var filter = "All"
@@ -91,6 +92,11 @@ struct TVGuideScreen: View {
     @State private var horizontalScrollTask: Task<Void, Never>?
     #endif
     @State private var now = Date()
+    #if os(tvOS)
+    // A foreground refresh and periodic polling keep the 8-hour EPG current.
+    @State private var lastGuideRefreshAttempt: Date = .distantPast
+    @State private var guideRefreshInProgress = false
+    #endif
     @State private var lastMoveWasVertical = false
     @State private var navigationTime: Date?
     // A shared 16:9 design canvas scales the guide's vertical proportions
@@ -762,7 +768,27 @@ struct TVGuideScreen: View {
         }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             now = Date()
+            #if os(tvOS)
+            // Poll on the foreground scene only; normal clock ticks should
+            // not spawn duplicate HTTP requests.
+            if scenePhase == .active &&
+               Date().timeIntervalSince(lastGuideRefreshAttempt) >= 300 {
+                Task { await refreshGuide() }
+            }
+            #endif
         }
+        #if os(tvOS)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                now = Date()
+                // tvOS may preserve our scene for hours while the EPG expires.
+                // Do not rely on onAppear/.task being invoked again on resume.
+                if Date().timeIntervalSince(lastGuideRefreshAttempt) >= 60 {
+                    Task { await refreshGuide() }
+                }
+            }
+        }
+        #endif
         .onChange(of: selected?.1.id) { _, _ in
             #if os(tvOS)
             // tvOS guide tiles are text-only; avoid artwork requests on focus moves.
@@ -771,6 +797,10 @@ struct TVGuideScreen: View {
             #endif
         }
         .onChange(of: serverURL) { _, _ in
+            #if os(tvOS)
+            lastGuideRefreshAttempt = .distantPast
+            Task { await refreshGuide() }
+            #endif
             liveOptions.removeAll()
             artworkCache.removeAll()
             noArtwork.removeAll()
@@ -1500,6 +1530,13 @@ struct TVGuideScreen: View {
         Task { await refreshGuide() }
     }
     private func refreshGuide() async {
+        #if os(tvOS)
+        // Throttle both the foreground callback and repeating clock timer.
+        guard !guideRefreshInProgress else { return }
+        guideRefreshInProgress = true
+        lastGuideRefreshAttempt = Date()
+        defer { guideRefreshInProgress = false }
+        #endif
         await store.refresh(server: serverURL)
         liveOptions = await TVChannelsService.availableOptions(serverURL: serverURL)
     }
@@ -2321,21 +2358,49 @@ private final class UniversalTVGuideRemoteView: UIView {
             }
         }
     }
+    private var lastDirection: String?
+    private var lastDirectionTime: TimeInterval = 0
+    private func deliverDirection(_ direction: String) {
+        // A remote click may produce both a key press and a focus update.
+        // Coalesce those reports without losing separate swipes.
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        guard lastDirection != direction ||
+              timestamp - lastDirectionTime > 0.13 else { return }
+        lastDirection = direction
+        lastDirectionTime = timestamp
+        onMove?(direction)
+    }
     override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
-        // Prevent the UIKit spatial engine from moving onto the next tile
-        // after our explicit one-step navigator has already handled the D-pad.
+        // iPhone Control Center's Apple TV Remote sends touchpad swipes as
+        // focus movements, not necessarily UIPress arrow events. Translate
+        // the proposed direction into our deterministic EPG navigator, while
+        // keeping the receiver focused so rows never skip.
         if context.previouslyFocusedView === self,
-           context.nextFocusedView !== self { return false }
+           context.nextFocusedView !== self {
+            let heading = context.focusHeading
+            let direction: String?
+            if heading.contains(.up) { direction = "up" }
+            else if heading.contains(.down) { direction = "down" }
+            else if heading.contains(.left) { direction = "left" }
+            else if heading.contains(.right) { direction = "right" }
+            else { direction = nil }
+            if let direction {
+                DispatchQueue.main.async { [weak self] in
+                    self?.deliverDirection(direction)
+                }
+            }
+            return false
+        }
         return super.shouldUpdateFocus(in: context)
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
         for press in presses {
             switch press.type {
-            case .upArrow: onMove?("up"); handled = true
-            case .downArrow: onMove?("down"); handled = true
-            case .leftArrow: onMove?("left"); handled = true
-            case .rightArrow: onMove?("right"); handled = true
+            case .upArrow: deliverDirection("up"); handled = true
+            case .downArrow: deliverDirection("down"); handled = true
+            case .leftArrow: deliverDirection("left"); handled = true
+            case .rightArrow: deliverDirection("right"); handled = true
             case .select: onSelect?(); handled = true
             case .menu: onBack?(); handled = true
             default: break
