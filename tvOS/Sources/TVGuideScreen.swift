@@ -592,6 +592,46 @@ struct TVGuideScreen: View {
     }
 
     private var productionLayout: some View {
+        productionPresentation
+        #if os(tvOS)
+        .alert("Guide Diagnostics", isPresented: Binding(
+            get: { diagnosticCaptureStatus != nil },
+            set: { if !$0 { diagnosticCaptureStatus = nil } }
+        )) {
+            Button("OK") { diagnosticCaptureStatus = nil }
+        } message: { Text(diagnosticCaptureStatus ?? "") }
+        #endif
+        .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
+            Button("OK") { playbackError = nil }
+        } message: { Text(playbackError ?? "") }
+        .onAppear {
+            #if os(tvOS)
+            if TVVisualPreview.enabled {
+                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
+            }
+            #endif
+        }
+        .task {
+            #if os(tvOS)
+            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
+                NSLog("UG_PREVIEW_STAGE guide-task-start")
+
+                store.channels = TVVisualPreview.channels()
+                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
+                resetSelection()
+                NSLog("UG_PREVIEW_STAGE selection-reset")
+            } else {
+                await refreshGuide()
+                // tvOS guide tiles are text-only; do not fetch unused artwork.
+            }
+            #else
+            await refreshGuide()
+            refreshSelectedArtwork()
+            #endif
+        }
+    }
+
+    private var productionPresentation: some View {
         ZStack {
             (isCompact ? TVPalette.background : tvGuideSurface).ignoresSafeArea()
             HStack(spacing: isCompact ? 7 : 10) {
@@ -791,43 +831,8 @@ struct TVGuideScreen: View {
                 },
                 onClose: { showFilters = false })
         }
-        #if os(tvOS)
-        .alert("Guide Diagnostics", isPresented: Binding(
-            get: { diagnosticCaptureStatus != nil },
-            set: { if !$0 { diagnosticCaptureStatus = nil } }
-        )) {
-            Button("OK") { diagnosticCaptureStatus = nil }
-        } message: { Text(diagnosticCaptureStatus ?? "") }
-        #endif
-        .alert("Playback or app handoff unavailable", isPresented: Binding(get: { playbackError != nil }, set: { if !$0 { playbackError = nil } })) {
-            Button("OK") { playbackError = nil }
-        } message: { Text(playbackError ?? "") }
-        .onAppear {
-            #if os(tvOS)
-            if TVVisualPreview.enabled {
-                NSLog("UG_PREVIEW_STAGE guide-root-onAppear channels=%ld", store.channels.count)
-            }
-            #endif
-        }
-        .task {
-            #if os(tvOS)
-            if TVVisualPreview.enabled || ProcessInfo.processInfo.arguments.contains("--navigation-test") {
-                NSLog("UG_PREVIEW_STAGE guide-task-start")
-
-                store.channels = TVVisualPreview.channels()
-                NSLog("UG_PREVIEW_STAGE fixtures-loaded channels=%ld", store.channels.count)
-                resetSelection()
-                NSLog("UG_PREVIEW_STAGE selection-reset")
-            } else {
-                await refreshGuide()
-                // tvOS guide tiles are text-only; do not fetch unused artwork.
-            }
-            #else
-            await refreshGuide()
-            refreshSelectedArtwork()
-            #endif
-        }
     }
+
 
     private var sidebarRail: some View {
         VStack(spacing: isCompact ? 8 : 16) {
