@@ -224,8 +224,15 @@ struct TVGuideScreen: View {
         // Preserve staged startup to avoid the tvOS scene watchdog.
         if diagnosticLoadGuide {
             productionBody
+                .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
+                    refreshStaleTVGuideOnTimer()
+                }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { refreshStaleTVGuideOnResume() }
+                }
+                .onChange(of: serverURL) { _, _ in
+                    lastGuideRefreshAttempt = .distantPast
+                    Task { await refreshGuide() }
                 }
         } else {
             diagnosticStartupBody
@@ -771,9 +778,6 @@ struct TVGuideScreen: View {
         }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             now = Date()
-            #if os(tvOS)
-            refreshStaleTVGuideOnTimer()
-            #endif
         }
         .onChange(of: selected?.1.id) { _, _ in
             #if os(tvOS)
@@ -783,10 +787,6 @@ struct TVGuideScreen: View {
             #endif
         }
         .onChange(of: serverURL) { _, _ in
-            #if os(tvOS)
-            lastGuideRefreshAttempt = .distantPast
-            Task { await refreshGuide() }
-            #endif
             liveOptions.removeAll()
             artworkCache.removeAll()
             noArtwork.removeAll()
