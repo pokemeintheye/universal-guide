@@ -686,20 +686,9 @@ struct TVGuideScreen: View {
             .padding(.horizontal, isCompact ? 8 : 16)
             .padding(.vertical, isCompact ? 5 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            #if os(iOS)
-            // The root GeometryReader owns phone viewport measurements;
-            // never derive screen size from this wide inner guide HStack.
-            #else
-            .background {
-                GeometryReader { geometry in
-                    Color.clear
-                        .onAppear { viewportHeight = geometry.size.height }
-                        .onChange(of: geometry.size) { _, size in
-                            viewportHeight = size.height
-                        }
-                }
-            }
-            #endif
+            // Apple TV's logical guide canvas uses the fixed 1080-point
+            // design scale. iPhone viewport measurement lives in its own root.
+
             // Only one tvOS focus target receives remote presses.
             // It consumes direction/OK before the spatial focus engine can
             // advance again, fixing two jumps for a single remote press.
