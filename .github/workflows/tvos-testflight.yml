@@ -1,7 +1,7 @@
 name: Publish Apple TV TestFlight build
 on:
   workflow_dispatch:
-  # Publish on an explicit workflow-file release commit as well.
+  # Release: direct iPhone Apple TV Remote swipe recognizers (PR #64), 2026-11-23.
   push:
     branches: [main]
     paths:
